@@ -1,0 +1,5 @@
+* A demonstration / sample interpreter for the borrow script language
+After installing dependencies run with
+$ cargo run -- example.bs
+
+The only current dependency is the Chumsky package for parsing.
