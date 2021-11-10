@@ -21,4 +21,9 @@ main=()=>{
 	fn2=fnFactory(3)
 	print(fn2( 6))
 	print(fn( 6))
+	print("hello"+" "+"world")
+	str="yes"
+	str2="no"
+	print(str)
+	print(4+" apples")
 }
