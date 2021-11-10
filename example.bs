@@ -26,4 +26,9 @@ main=()=>{
 	str2="no"
 	print(str)
 	print(4+" apples")
+	print("Please enter your first name")
+	firstName=getInput()
+	print("Please enter your last name")
+	lastName=getInput()
+	print("Hello "+firstName+" "+lastName)
 }

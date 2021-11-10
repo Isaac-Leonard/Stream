@@ -1,5 +1,10 @@
 use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
-use std::{cell::RefCell, env, fs, rc::Rc};
+use std::{
+    cell::RefCell,
+    env, fs,
+    io::{self, BufRead},
+    rc::Rc,
+};
 
 #[derive(Clone, Debug)]
 enum Symbol {
@@ -269,6 +274,7 @@ fn exp_parser<'a>(
             });
 
         let func_call = ident()
+            .padded()
             .map(String::from)
             .then(
                 exp.clone()
@@ -680,6 +686,20 @@ fn main() {
             parent: None,
         }))),
     };
+    let lang_input = ActiveFunction {
+        args: Vec::new(),
+        body: Vec::new(),
+        call: |args, params, _, _, _| {
+            if args.len() != params.len() {
+                panic!("Function called with invalid parameters {:?}", params)
+            }
+            return RawData::Str(io::stdin().lock().lines().next().unwrap().unwrap());
+        },
+        stack: ScopeRef(Rc::new(RefCell::new(Scope {
+            variables: Vec::new(),
+            parent: None,
+        }))),
+    };
 
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
         .expect("Failed to read file");
@@ -687,11 +707,18 @@ fn main() {
     // let src = "[!]+";
     let variables = ScopeRef(Rc::new(RefCell::new(Scope {
         parent: None,
-        variables: vec![Variable {
-            name: "print".to_string(),
-            value: RawData::ActiveFunc(lang_print),
-            data_type: LangType::Func(vec![LangType::Str], Box::new(LangType::Null)),
-        }],
+        variables: vec![
+            Variable {
+                name: "print".to_string(),
+                value: RawData::ActiveFunc(lang_print),
+                data_type: LangType::Func(vec![LangType::Str], Box::new(LangType::Null)),
+            },
+            Variable {
+                name: "getInput".to_string(),
+                value: RawData::ActiveFunc(lang_input),
+                data_type: LangType::Func(Vec::new(), Box::new(LangType::Str)),
+            },
+        ],
     })));
     let types = vec![
         TypeDescriptor {
