@@ -73,7 +73,24 @@ enum LangType {
     Union(Vec<LangType>),
     Null,
 }
-
+impl LangType {
+    fn flatten(&self) -> LangType {
+        match self {
+            LangType::Union(types) => {
+                if types.len() == 1 {
+                    return types[0].clone();
+                } else {
+                    return self.clone();
+                }
+            }
+            LangType::Func(args, ret) => LangType::Func(
+                args.iter().map(|x| x.flatten()).collect(),
+                Box::new(ret.flatten()),
+            ),
+            _ => self.clone(),
+        }
+    }
+}
 struct TypeDescriptor {
     name: String,
     shape: LangType,
@@ -100,9 +117,8 @@ fn consolidate_type(
     if errors.len() > 0 {
         Result::Err(errors)
     } else {
-        Result::Ok(LangType::Union(
-            res.iter().map(|x| x.clone().unwrap()).collect(),
-        ))
+        // Flatten the union to simplify the type if its only got one member
+        Result::Ok(LangType::Union(res.iter().map(|x| x.clone().unwrap()).collect()).flatten())
     }
 }
 
@@ -672,10 +688,20 @@ fn main() {
             data_type: LangType::Func(vec![LangType::Str], Box::new(LangType::Null)),
         }],
     })));
-    let types = vec![TypeDescriptor {
-        name: "int".to_string(),
-        shape: LangType::Int,
-    }];
+    let types = vec![
+        TypeDescriptor {
+            name: "int".to_string(),
+            shape: LangType::Int,
+        },
+        TypeDescriptor {
+            name: "string".to_string(),
+            shape: LangType::Str,
+        },
+        TypeDescriptor {
+            name: "null".to_string(),
+            shape: LangType::Null,
+        },
+    ];
 
     let parsed = parser().parse(src.trim());
     println!("{:?}", parsed);
