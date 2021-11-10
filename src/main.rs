@@ -192,7 +192,6 @@ fn set_variable(
     exp: &Expression,
     types: &Vec<TypeDescriptor>,
 ) -> RawData {
-    println!("setting '{}' in scope  {:?}", name, stack);
     let value = &eval_exp(exp, ScopeRef(Rc::clone(&stack.0)), &types);
     let data_type = &get_type(value, types).unwrap();
     let location = stack.get_copy().get_variable_location(name);
