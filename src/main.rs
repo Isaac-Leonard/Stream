@@ -475,10 +475,16 @@ fn eval_exp(exp: &Expression, variables: ScopeRef, types: &Vec<TypeDescriptor>) 
             int_or_panic(eval_exp(left, variables.get_copy(), types))
                 < int_or_panic(eval_exp(right, variables.get_copy(), types)),
         ),
-        Addition(left, right) => RawData::Int(
-            int_or_panic(eval_exp(left, variables.get_copy(), types))
-                + int_or_panic(eval_exp(right, variables, types)),
-        ),
+        Addition(left, right) => match (
+            eval_exp(left, variables.get_copy(), types),
+            eval_exp(right, variables.get_copy(), types),
+        ) {
+            (RawData::Int(x), RawData::Int(y)) => RawData::Int(x + y),
+            (RawData::Str(x), RawData::Str(y)) => RawData::Str(format!("{}{}", x, y)),
+            (RawData::Int(x), RawData::Str(y)) => RawData::Str(format!("{}{}", x, y)),
+            (RawData::Str(x), RawData::Int(y)) => RawData::Str(format!("{}{}", x, y)),
+            (x, y) => panic!("Addition operator '+' not supported for {:?}, {:?}", x, y),
+        },
         Subtraction(left, right) => RawData::Int(
             int_or_panic(eval_exp(left, variables.get_copy(), types))
                 - int_or_panic(eval_exp(right, variables, types)),
