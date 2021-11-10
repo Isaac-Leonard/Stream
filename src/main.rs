@@ -520,6 +520,127 @@ fn eval_exp(exp: &Expression, variables: ScopeRef, types: &Vec<TypeDescriptor>) 
     }
 }
 
+fn create_type_error(
+    op_name: &str,
+    touple: (Result<LangType, Vec<String>>, Result<LangType, Vec<String>>),
+) -> Result<LangType, Vec<String>> {
+    // Check if both branches failed, if so merge the errors and return them.
+    // Otherwise check each branch for errors and return it
+    // Otherwise the successful types don't match at this point so create a new error and return it
+    match touple {
+        // TODO: Maybe change these to linkedlists for less copying and mutibility
+        (Err(mut l), Err(mut r)) => {
+            l.append(&mut r);
+            Err(l)
+        }
+        // TODO: I feel like this should be optemisible, directly return each branch instead of unwrapping them perhaps?
+        (Err(l), _) => Err(l),
+        (_, Err(r)) => Err(r),
+        (l, r) => Err(vec![format!(
+            "The '{}' operator cannot be used on differing types: '{:?} and '{:?}'",
+            op_name, l, r
+        )]),
+    }
+}
+
+fn get_exp_type(
+    exp: &Expression,
+    variables: &mut Vec<TypeDescriptor>,
+    types: &mut Vec<TypeDescriptor>,
+) -> Result<LangType, Vec<String>> {
+    use Expression::*;
+    use LangType::*;
+    match exp {
+        Terminal(sym) => match sym {
+            Symbol::Data(data) => get_type(data, types),
+            Symbol::Identifier(name) => variables
+                .iter()
+                .find(|x| x.name == *name)
+                .map(|x| x.shape.clone())
+                .ok_or(vec![format!(
+                    "Cannot access undeclared variable '{}'",
+                    name
+                )]),
+        },
+        Addition(x, y) => match (
+            get_exp_type(x, variables, types),
+            get_exp_type(y, variables, types),
+        ) {
+            (Ok(x), Ok(y)) => match (x, y) {
+                (Int, Int) => Ok(Int),
+                (Str, Str) | (Str, Int) | (Int, Str) => Ok(Str),
+                // Let the rest go to the error manager
+                (x, y) => create_type_error("==", (Ok(x), Ok(y))),
+            },
+            invalid => create_type_error("==", invalid),
+        },
+        Subtraction(x, y) | Multiplication(x, y) | Division(x, y) => {
+            match (
+                get_exp_type(x, variables, types),
+                get_exp_type(y, variables, types),
+            ) {
+                (Ok(LangType::Int), Ok(LangType::Int)) => Ok(LangType::Int),
+                // Kinda cheating here with the op_name param
+                invalid => create_type_error("+' or '*' or '/", invalid),
+            }
+        }
+        LessThan(x, y) => match (
+            get_exp_type(x, variables, types),
+            get_exp_type(y, variables, types),
+        ) {
+            (Ok(Int), Ok(Int)) => Ok(Int),
+            // More cheeting here
+            invalid => create_type_error("<' or '=>' or '>=' or '>", invalid),
+        },
+        Equal(l, r) => match (
+            get_exp_type(l, variables, types),
+            get_exp_type(r, variables, types),
+        ) {
+            (Ok(x), Ok(y)) => match (x, y) {
+                (Int, Int) | (Str, Str) | (Bool, Bool) => Ok(Bool),
+                (l, r) => create_type_error("==", (Ok(l), Ok(r))),
+            },
+            invalid => create_type_error("==", invalid),
+        },
+        FuncCall(name, args) => {
+            let func_type = variables
+                .iter()
+                .find(|x| x.name == *name)
+                .map(|x| x.shape.clone())
+                .ok_or_else(|| panic!("Attempted to access undeclared variable '{}'", name));
+            if func_type.is_err() {
+                return func_type;
+            }
+            let func = func_type.unwrap();
+            if let Func(expected_args, ret) = func {
+                if args.len() != expected_args.len() {
+                    return Err(vec![format!(
+                        "Function '{}' called with {} args but it expects {}",
+                        name,
+                        args.len(),
+                        expected_args.len(),
+                    )]);
+                }
+                let mismatched_args=                args.iter().zip(expected_args).filter_map(|x| {
+                    let passed_type = get_exp_type(x.0, variables, types);
+		    if let Err(error)=passed_type{return Some(error.clone());}
+                    if !types_match(&passed_type.clone().unwrap(), &x.1) {Some(vec![format!("Attempted to pass type {:?} as argument to {} but {} expected {:?} at that possition", passed_type, name,name, x.1)])}else{None}
+                }).flatten().map(|x|x.clone()).collect::<Vec<_>>();
+                if mismatched_args.len() != 0 {
+                    Err(mismatched_args)
+                } else {
+                    Ok(*ret.clone())
+                }
+            } else {
+                Err(vec![format!(
+                    "Attempted to call '{}' as a function but '{}' has type '{:?}'",
+                    name, name, func
+                )])
+            }
+        }
+    }
+}
+
 fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, Vec<String>> {
     use LangType::*;
     match val {
