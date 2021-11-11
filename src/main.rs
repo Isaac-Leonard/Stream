@@ -26,7 +26,7 @@ enum Expression {
 
 #[derive(Clone, Debug)]
 enum Instr {
-    Invalid,
+    Invalid(String),
     Assign(String, Expression),
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
@@ -96,6 +96,8 @@ impl LangType {
         }
     }
 }
+
+#[derive(Clone, Debug)]
 struct TypeDescriptor {
     name: String,
     shape: LangType,
@@ -344,7 +346,9 @@ fn parser() -> impl Parser<char, Vec<Instr>, Error = Cheap<char>> {
                 .then(bf.clone().delimited_by('{', '}'))
                 .map(|x| Loop(x.0, x.1)))
             .or(exp.map(LoneExpression))
-            .recover_with(nested_delimiters('{', '}', [], |_| Invalid))
+            .recover_with(nested_delimiters('{', '}', [], |_| {
+                Invalid("Syntax error".to_string())
+            }))
             .recover_with(skip_then_retry_until(['}']))
             .padded()
             .repeated()
@@ -547,11 +551,42 @@ fn get_exp_type(
     exp: &Expression,
     variables: &mut Vec<TypeDescriptor>,
     types: &mut Vec<TypeDescriptor>,
+    global: bool,
 ) -> Result<LangType, Vec<String>> {
     use Expression::*;
     use LangType::*;
     match exp {
         Terminal(sym) => match sym {
+            Symbol::Data(RawData::Func(func)) => {
+                let arg_types: Result<Vec<TypeDescriptor>, Vec<String>> = func
+                    .args
+                    .iter()
+                    .map(|x| {
+                        let shape = consolidate_type(&x.1, types);
+                        if let Err(e) = shape {
+                            return Err(e);
+                        }
+                        let shape = shape.unwrap();
+                        Ok(TypeDescriptor {
+                            name: x.0.clone(),
+                            shape,
+                        })
+                    })
+                    .collect();
+                if let Err(e) = arg_types {
+                    return Err(e);
+                };
+                let mut arg_types = arg_types.unwrap();
+                let mut variables_with_args = variables.clone();
+                variables_with_args.append(&mut arg_types);
+                let final_errors = type_check(&func.body, &mut variables_with_args, types, false);
+                if final_errors.len() > 0 {
+                    Err(final_errors)
+                } else {
+                    // Replace this when we implement defined return types on functions
+                    Ok(LangType::Null)
+                }
+            }
             Symbol::Data(data) => get_type(data, types),
             Symbol::Identifier(name) => variables
                 .iter()
@@ -563,8 +598,8 @@ fn get_exp_type(
                 )]),
         },
         Addition(x, y) => match (
-            get_exp_type(x, variables, types),
-            get_exp_type(y, variables, types),
+            get_exp_type(x, variables, types, global),
+            get_exp_type(y, variables, types, global),
         ) {
             (Ok(x), Ok(y)) => match (x, y) {
                 (Int, Int) => Ok(Int),
@@ -576,8 +611,8 @@ fn get_exp_type(
         },
         Subtraction(x, y) | Multiplication(x, y) | Division(x, y) => {
             match (
-                get_exp_type(x, variables, types),
-                get_exp_type(y, variables, types),
+                get_exp_type(x, variables, types, global),
+                get_exp_type(y, variables, types, global),
             ) {
                 (Ok(LangType::Int), Ok(LangType::Int)) => Ok(LangType::Int),
                 // Kinda cheating here with the op_name param
@@ -585,16 +620,16 @@ fn get_exp_type(
             }
         }
         LessThan(x, y) => match (
-            get_exp_type(x, variables, types),
-            get_exp_type(y, variables, types),
+            get_exp_type(x, variables, types, global),
+            get_exp_type(y, variables, types, global),
         ) {
             (Ok(Int), Ok(Int)) => Ok(Int),
             // More cheeting here
             invalid => create_type_error("<' or '=>' or '>=' or '>", invalid),
         },
         Equal(l, r) => match (
-            get_exp_type(l, variables, types),
-            get_exp_type(r, variables, types),
+            get_exp_type(l, variables, types, global),
+            get_exp_type(r, variables, types, global),
         ) {
             (Ok(x), Ok(y)) => match (x, y) {
                 (Int, Int) | (Str, Str) | (Bool, Bool) => Ok(Bool),
@@ -622,7 +657,7 @@ fn get_exp_type(
                     )]);
                 }
                 let mismatched_args=                args.iter().zip(expected_args).filter_map(|x| {
-                    let passed_type = get_exp_type(x.0, variables, types);
+                    let passed_type = get_exp_type(x.0, variables, types, global);
 		    if let Err(error)=passed_type{return Some(error.clone());}
                     if !types_match(&passed_type.clone().unwrap(), &x.1) {Some(vec![format!("Attempted to pass type {:?} as argument to {} but {} expected {:?} at that possition", passed_type, name,name, x.1)])}else{None}
                 }).flatten().map(|x|x.clone()).collect::<Vec<_>>();
@@ -707,7 +742,7 @@ fn execute(
     let mut last_value = RawData::Null;
     for symbol in ast {
         match symbol {
-            Invalid => unreachable!(),
+            Invalid(_) => unreachable!(),
             LoneExpression(exp) => last_value = eval_exp(exp, variables.get_copy(), types),
             Assign(name, exp) => last_value = set_variable(variables.get_copy(), name, exp, types),
             Loop(exp, ast) => {
@@ -733,7 +768,7 @@ fn execute(
 
 fn valid_exp(
     exp: &Expression,
-    variables: &mut Vec<String>,
+    variables: &mut Vec<TypeDescriptor>,
     types: &Vec<TypeDescriptor>,
     top_level: bool,
 ) {
@@ -748,7 +783,6 @@ fn valid_exp(
             }
         }
         Terminal(sym) => match sym {
-            Symbol::Data(RawData::Func(func)) => type_check(&func.body, variables, types, false),
             _ => {}
         },
         Equal(_, _) => {}
@@ -764,31 +798,64 @@ fn valid_exp(
     }
 }
 
+fn type_check_statement(
+    stat: &Instr,
+    variables: &mut Vec<TypeDescriptor>,
+    types: &mut Vec<TypeDescriptor>,
+    global: bool,
+) -> Vec<String> {
+    use Instr::*;
+    return match stat {
+        Assign(name, exp) => {
+            let assigned_type = get_exp_type(exp, variables, types, global);
+            if let Ok(shape) = assigned_type {
+                variables.push(TypeDescriptor {
+                    name: name.clone(),
+                    shape: shape.clone(),
+                });
+            } else if let Err(e) = assigned_type {
+                return e;
+            };
+            return Vec::new();
+        }
+        LoneExpression(exp) => match get_exp_type(exp, variables, types, global) {
+            Err(e) => return e,
+            _ => return Vec::new(),
+        },
+        Loop(check, body) => {
+            if global {
+                vec!["Cannot use loops outside of a function".to_string()]
+            } else {
+                let check_type = get_exp_type(check, variables, types, global);
+                if let Err(e) = check_type {
+                    return e;
+                } else if let Ok(LangType::Bool) = check_type {
+                    // Dont check for errors just return Err here because if the returned Vec is empty then there'll be no effect but if its not they'll be automatically added
+                    return type_check(body, variables, types, global);
+                } else {
+                    return vec![
+                        "The check expression in a while loop must result in a boolean value"
+                            .to_string(),
+                    ];
+                }
+            }
+        }
+        Invalid(msg) => vec![msg.clone()],
+    };
+}
+
 fn type_check(
     ast: &[Instr],
-    variables: &mut Vec<String>,
-    types: &Vec<TypeDescriptor>,
-    top_level: bool,
-) {
-    use Instr::*;
+    variables: &mut Vec<TypeDescriptor>,
+    types: &mut Vec<TypeDescriptor>,
+    global: bool,
+) -> Vec<String> {
+    let mut errors = Vec::new();
     for sym in ast {
-        match sym {
-            Assign(name, exp) => {
-                valid_exp(exp, variables, types, top_level);
-                variables.push(name.clone());
-            }
-            LoneExpression(exp) => valid_exp(exp, variables, types, top_level),
-            Loop(check, body) => {
-                if top_level {
-                    panic!("Cannot use loops outside of a function")
-                }
-                valid_exp(check, variables, types, top_level);
-                body.iter()
-                    .for_each(|x| type_check(&[x.clone()], variables, types, top_level))
-            }
-            _ => {}
-        }
+        // typecheck each statement and unwrap the error result automatically so we can push it to the main list, otherwise do nothing
+        errors.append(&mut type_check_statement(&sym, variables, types, global))
     }
+    return errors;
 }
 
 fn main() {
@@ -861,7 +928,22 @@ fn main() {
     match parsed {
         Ok(ast) => {
             println!("Parsing succeeded");
-            type_check(&ast, &mut vec!["print".into()], &Vec::new(), true);
+            type_check(
+                &ast,
+                &mut variables
+                    .0
+                    .as_ref()
+                    .borrow()
+                    .variables
+                    .iter()
+                    .map(|x| TypeDescriptor {
+                        name: x.name.clone(),
+                        shape: x.data_type.clone(),
+                    })
+                    .collect(),
+                &mut Vec::new(),
+                true,
+            );
             execute(&ast, variables, &types, true);
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
