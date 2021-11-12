@@ -205,15 +205,7 @@ fn set_variable(
     match location {
         Some((scope, index)) => {
             let variables = &mut scope.0.as_ref().borrow_mut().variables;
-            if types_match(&variables[index].data_type, data_type) {
-                variables[index.clone()].value = value.clone();
-            } else {
-                panic!(
-                    "Attempted to assign value of type {:?} to variable of type {:?}",
-                    data_type,
-                    variables[index.clone()].data_type
-                )
-            }
+            variables[index.clone()].value = value.clone();
         }
         None => {
             stack.0.as_ref().borrow_mut().variables.push(Variable {
