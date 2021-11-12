@@ -244,6 +244,7 @@ fn exp_parser<'a>(
             .or_not()
             .flatten()
             .delimited_by('(', ')')
+            .then_ignore(type_specifyer().padded())
             .then_ignore(seq(['=', '>']))
             .then(
                 main_parser
@@ -614,11 +615,11 @@ fn get_exp_type(
         ) {
             (Ok(x), Ok(y)) => match (x, y) {
                 (Int, Int) => Ok(Int),
-                (Str, Str) | (Str, Int) | (Int, Str) => Ok(Str),
+                (Str, Str) | (Str, Int) | (Int, Str) | (Null, Null) => Ok(Str),
                 // Let the rest go to the error manager
-                (x, y) => create_type_error("==", (Ok(x), Ok(y))),
+                (x, y) => create_type_error("+", (Ok(x), Ok(y))),
             },
-            invalid => create_type_error("==", invalid),
+            invalid => create_type_error("+", invalid),
         },
         Subtraction(x, y) | Multiplication(x, y) | Division(x, y) => {
             match (
@@ -789,7 +790,6 @@ fn type_check_statement(
     return match stat {
         Assign(name, exp) => {
             let assigned_type = get_exp_type(exp, variables, types, global);
-            println!("Adding '{}'", name.clone());
             if let Ok(shape) = assigned_type {
                 variables.push(TypeDescriptor {
                     name: name.clone(),
