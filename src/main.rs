@@ -244,7 +244,7 @@ fn exp_parser<'a>(
             .or_not()
             .flatten()
             .delimited_by('(', ')')
-            .then_ignore(type_specifyer().padded())
+            .then(type_specifyer().padded())
             .then_ignore(seq(['=', '>']))
             .then(
                 main_parser
@@ -252,7 +252,7 @@ fn exp_parser<'a>(
                     .delimited_by('{', '}')
                     .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x])),
             )
-            .map(|(args, body)| {
+            .map(|((args, ret), body)| {
                 Symbol::Data(RawData::Func(Function {
                     args,
                     body,
@@ -273,6 +273,7 @@ fn exp_parser<'a>(
                         let res = execute(&body, local_stack, itypes, false);
                         return res;
                     },
+                    return_type: ret,
                 }))
             });
 
@@ -378,6 +379,7 @@ struct Function {
         types: &Vec<TypeDescriptor>,
     ) -> RawData,
     body: Vec<Instr>,
+    return_type: Vec<String>,
 }
 impl std::fmt::Debug for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -397,6 +399,7 @@ struct ActiveFunction {
     ) -> RawData,
     body: Vec<Instr>,
     stack: ScopeRef,
+    return_type: Vec<String>,
 }
 
 impl ActiveFunction {
@@ -406,6 +409,7 @@ impl ActiveFunction {
             call: func.call,
             body: func.body,
             stack,
+            return_type: func.return_type,
         }
     }
     fn execute(&self, params: Vec<RawData>, types: &Vec<TypeDescriptor>) -> RawData {
@@ -558,12 +562,18 @@ fn get_exp_type(
     use LangType::*;
     match exp {
         Terminal(sym) => match sym {
-            Symbol::Data(RawData::Func(Function { args, body, call }))
+            Symbol::Data(RawData::Func(Function {
+                args,
+                body,
+                call,
+                return_type,
+            }))
             | Symbol::Data(RawData::ActiveFunc(ActiveFunction {
                 args,
                 body,
                 stack: _,
                 call,
+                return_type,
             })) => {
                 let arg_types: Result<Vec<TypeDescriptor>, Vec<String>> = args
                     .iter()
@@ -588,15 +598,20 @@ fn get_exp_type(
                 println!("arg_types: {:?}", arg_types);
                 let mut variables_with_args = variables.clone();
                 variables_with_args.append(&mut arg_types.clone());
-                let final_errors = type_check(body, &mut variables_with_args, types, false);
-                if final_errors.len() > 0 {
-                    Err(final_errors)
+                let ret = consolidate_type(return_type, types);
+                if ret.is_err() {
+                    ret
                 } else {
-                    // Replace this when we implement defined return types on functions
-                    Ok(LangType::Func(
-                        arg_types.iter().map(|x| x.shape.clone()).collect(),
-                        Box::new(LangType::Null),
-                    ))
+                    let final_errors = type_check(body, &mut variables_with_args, types, false);
+                    if final_errors.len() > 0 {
+                        Err(final_errors)
+                    } else {
+                        // Replace this when we implement defined return types on functions
+                        Ok(LangType::Func(
+                            arg_types.iter().map(|x| x.shape.clone()).collect(),
+                            Box::new(ret.unwrap()),
+                        ))
+                    }
                 }
             }
             Symbol::Data(data) => get_type(data, types),
@@ -673,7 +688,7 @@ fn get_exp_type(
                 let mismatched_args=                args.iter().zip(expected_args).filter_map(|x| {
                     let passed_type = get_exp_type(x.0, variables, types, global);
 		    if let Err(error)=passed_type{return Some(error.clone());}
-                    if !types_match(&passed_type.clone().unwrap(), &x.1) {Some(vec![format!("Attempted to pass type {:?} as argument to {} but {} expected {:?} at that possition", passed_type, name,name, x.1)])}else{None}
+                    if !types_match(&passed_type.clone().unwrap(), &x.1) {Some(vec![format!("Attempted to pass type {:?} as argument to {} but {} expected {:?} at that position", passed_type, name,name, x.1)])}else{None}
                 }).flatten().map(|x|x.clone()).collect::<Vec<_>>();
                 if mismatched_args.len() != 0 {
                     Err(mismatched_args)
@@ -742,8 +757,20 @@ fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, Vec<
     }
 }
 
+fn match_type_against_union(sup: Vec<LangType>, sub: LangType) -> bool {
+    sup.iter().find(|x| types_match(x, &sub)).is_some()
+}
+
 fn types_match(a: &LangType, b: &LangType) -> bool {
-    true
+    use LangType::*;
+    match (a, b) {
+        (Int, Int) => true,
+        (Bool, Bool) => true,
+        (Str, Str) => true,
+        (Null, Null) => true,
+        (Union(sup), sub) | (sub, Union(sup)) => match_type_against_union(sup.clone(), sub.clone()),
+        _ => false,
+    }
 }
 
 fn execute(
@@ -858,6 +885,7 @@ fn main() {
             variables: Vec::new(),
             parent: None,
         }))),
+        return_type: vec!["null".to_string()],
     };
     let lang_input = ActiveFunction {
         args: Vec::new(),
@@ -872,6 +900,7 @@ fn main() {
             variables: Vec::new(),
             parent: None,
         }))),
+        return_type: vec!["string".to_string()],
     };
 
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
@@ -884,7 +913,15 @@ fn main() {
             Variable {
                 name: "print".to_string(),
                 value: RawData::ActiveFunc(lang_print),
-                data_type: LangType::Func(vec![LangType::Str], Box::new(LangType::Null)),
+                data_type: LangType::Func(
+                    vec![LangType::Union(vec![
+                        LangType::Str,
+                        LangType::Int,
+                        LangType::Bool,
+                        LangType::Null,
+                    ])],
+                    Box::new(LangType::Null),
+                ),
             },
             Variable {
                 name: "getInput".to_string(),
