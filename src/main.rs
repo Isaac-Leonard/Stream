@@ -557,12 +557,19 @@ fn get_exp_type(
     use LangType::*;
     match exp {
         Terminal(sym) => match sym {
-            Symbol::Data(RawData::Func(func)) => {
-                let arg_types: Result<Vec<TypeDescriptor>, Vec<String>> = func
-                    .args
+            Symbol::Data(RawData::Func(Function { args, body, call }))
+            | Symbol::Data(RawData::ActiveFunc(ActiveFunction {
+                args,
+                body,
+                stack: _,
+                call,
+            })) => {
+                let arg_types: Result<Vec<TypeDescriptor>, Vec<String>> = args
                     .iter()
                     .map(|x| {
-                        let shape = consolidate_type(&x.1, types);
+                        let shape = consolidate_type(&x.1, types).map_err(|x| {
+                            vec![format!("Attempted to use undeclared types {:?}", x)]
+                        });
                         if let Err(e) = shape {
                             return Err(e);
                         }
@@ -577,14 +584,18 @@ fn get_exp_type(
                     return Err(e);
                 };
                 let mut arg_types = arg_types.unwrap();
+                println!("arg_types: {:?}", arg_types);
                 let mut variables_with_args = variables.clone();
-                variables_with_args.append(&mut arg_types);
-                let final_errors = type_check(&func.body, &mut variables_with_args, types, false);
+                variables_with_args.append(&mut arg_types.clone());
+                let final_errors = type_check(body, &mut variables_with_args, types, false);
                 if final_errors.len() > 0 {
                     Err(final_errors)
                 } else {
                     // Replace this when we implement defined return types on functions
-                    Ok(LangType::Null)
+                    Ok(LangType::Func(
+                        arg_types.iter().map(|x| x.shape.clone()).collect(),
+                        Box::new(LangType::Null),
+                    ))
                 }
             }
             Symbol::Data(data) => get_type(data, types),
@@ -623,7 +634,7 @@ fn get_exp_type(
             get_exp_type(x, variables, types, global),
             get_exp_type(y, variables, types, global),
         ) {
-            (Ok(Int), Ok(Int)) => Ok(Int),
+            (Ok(Int), Ok(Int)) => Ok(Bool),
             // More cheeting here
             invalid => create_type_error("<' or '=>' or '>=' or '>", invalid),
         },
@@ -641,10 +652,12 @@ fn get_exp_type(
             let func_type = variables
                 .iter()
                 .find(|x| x.name == *name)
-                .map(|x| x.shape.clone())
-                .ok_or_else(|| panic!("Attempted to access undeclared variable '{}'", name));
-            if func_type.is_err() {
-                return func_type;
+                .map(|x| x.shape.clone());
+            if let None = func_type {
+                return Err(vec![format!(
+                    "Attempted to access undeclared variable '{}'",
+                    name
+                )]);
             }
             let func = func_type.unwrap();
             if let Func(expected_args, ret) = func {
@@ -766,38 +779,6 @@ fn execute(
     last_value
 }
 
-fn valid_exp(
-    exp: &Expression,
-    variables: &mut Vec<TypeDescriptor>,
-    types: &Vec<TypeDescriptor>,
-    top_level: bool,
-) {
-    use Expression::*;
-    match exp {
-        FuncCall(name, params) => {
-            params
-                .iter()
-                .for_each(|x| valid_exp(x, variables, types, top_level));
-            if top_level {
-                panic!("Cannot call function in the global scope")
-            }
-        }
-        Terminal(sym) => match sym {
-            _ => {}
-        },
-        Equal(_, _) => {}
-        LessThan(left, right)
-        | Addition(left, right)
-        | Subtraction(left, right)
-        | Multiplication(left, right)
-        | Division(left, right) => {
-            valid_exp(left, variables, types, top_level);
-            valid_exp(right, variables, types, top_level);
-        }
-        _ => {}
-    }
-}
-
 fn type_check_statement(
     stat: &Instr,
     variables: &mut Vec<TypeDescriptor>,
@@ -808,6 +789,7 @@ fn type_check_statement(
     return match stat {
         Assign(name, exp) => {
             let assigned_type = get_exp_type(exp, variables, types, global);
+            println!("Adding '{}'", name.clone());
             if let Ok(shape) = assigned_type {
                 variables.push(TypeDescriptor {
                     name: name.clone(),
@@ -834,8 +816,8 @@ fn type_check_statement(
                     return type_check(body, variables, types, global);
                 } else {
                     return vec![
-                        "The check expression in a while loop must result in a boolean value"
-                            .to_string(),
+			format!(                        "The check expression in a while loop must result in a boolean value, not {:?}"
+							 ,check_type.unwrap())
                     ];
                 }
             }
@@ -850,6 +832,9 @@ fn type_check(
     types: &mut Vec<TypeDescriptor>,
     global: bool,
 ) -> Vec<String> {
+    println!("");
+    variables.iter().for_each(|x| println!("{:?}", x));
+    println!("");
     let mut errors = Vec::new();
     for sym in ast {
         // typecheck each statement and unwrap the error result automatically so we can push it to the main list, otherwise do nothing
@@ -908,7 +893,7 @@ fn main() {
             },
         ],
     })));
-    let types = vec![
+    let mut types = vec![
         TypeDescriptor {
             name: "int".to_string(),
             shape: LangType::Int,
@@ -928,7 +913,7 @@ fn main() {
     match parsed {
         Ok(ast) => {
             println!("Parsing succeeded");
-            type_check(
+            let errors = type_check(
                 &ast,
                 &mut variables
                     .0
@@ -941,10 +926,14 @@ fn main() {
                         shape: x.data_type.clone(),
                     })
                     .collect(),
-                &mut Vec::new(),
+                &mut types,
                 true,
             );
-            execute(&ast, variables, &types, true);
+            if errors.len() > 0 {
+                errors.iter().for_each(|x| println!("{}", x))
+            } else {
+                execute(&ast, variables, &types, true);
+            }
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
     }
