@@ -1,6 +1,7 @@
 #[path = "shared.rs"]
 mod shared;
 pub mod parser {
+
     use crate::shared::*;
     use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
     fn parse_to_i32(x: String) -> i32 {
@@ -143,6 +144,32 @@ pub mod parser {
                 .padded()
         })
     }
+
+    pub fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
+        recursive(|bf: Recursive<char, CustomType, _>| {
+            ident()
+                .padded()
+                .map(String::from)
+                .chain(
+                    just('|')
+                        .ignore_then(ident().padded().map(String::from))
+                        .repeated(),
+                )
+                .map(|x| CustomType::Union(x))
+                .or(bf
+                    .clone()
+                    .chain(just(',').ignore_then(bf.clone()).repeated())
+                    .or_not()
+                    .flatten()
+                    .delimited_by('(', ')')
+                    .then_ignore(just(':'))
+                    .then(bf.clone())
+                    .map(|x: (Vec<CustomType>, CustomType)| {
+                        CustomType::Callible(x.0, Box::new(x.1))
+                    }))
+        })
+    }
+
     pub fn parser() -> impl Parser<char, Vec<Instr>, Error = Cheap<char>> {
         use Instr::*;
         recursive(|bf: Recursive<char, Vec<Instr>, _>| {
@@ -166,6 +193,11 @@ pub mod parser {
                             .then(bf.clone().delimited_by('{', '}')),
                     )
                     .map(|x| IfElse(x.0, x.1 .0, x.1 .1)))
+                .or(seq("type".chars())
+                    .ignore_then(ident().padded().map(String::from))
+                    .then_ignore(just('=').padded())
+                    .then(type_parser())
+                    .map(|x| TypeDeclaration(x.0, x.1)))
                 .or(exp.map(LoneExpression).padded())
                 .recover_with(nested_delimiters('{', '}', [], |_| {
                     Invalid("Syntax error".to_string())
