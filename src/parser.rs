@@ -157,6 +157,16 @@ pub mod parser {
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
                     .map(|x| Loop(x.0, x.1)))
+                .or(seq("if".chars())
+                    .ignore_then(exp.clone())
+                    .then(
+                        bf.clone()
+                            .delimited_by('{', '}')
+                            .then_ignore(seq("else".chars()))
+                            .padded()
+                            .then(bf.clone().delimited_by('{', '}')),
+                    )
+                    .map(|x| IfElse(x.0, x.1 .0, x.1 .1)))
                 .or(exp.map(LoneExpression))
                 .recover_with(nested_delimiters('{', '}', [], |_| {
                     Invalid("Syntax error".to_string())
