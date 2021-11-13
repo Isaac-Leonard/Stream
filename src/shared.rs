@@ -44,6 +44,7 @@ pub enum Instr {
     Assign(String, Expression),
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
+    IfElse(Expression, Vec<Instr>, Vec<Instr>),
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeDescriptor {
@@ -84,6 +85,7 @@ pub struct Scope {
     pub types: Vec<TypeDescriptor>,
     pub parent: Option<Rc<RefCell<Scope>>>,
 }
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScopeRef(pub Rc<RefCell<Scope>>);
 impl ScopeRef {
@@ -156,6 +158,7 @@ impl ScopeRef {
         }
     }
 }
+
 #[derive(Clone)]
 pub struct ActiveFunction {
     pub args: Vec<(String, Vec<String>)>,

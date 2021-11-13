@@ -217,6 +217,22 @@ pub fn type_check_statement(
             Err(e) => return e,
             _ => return Vec::new(),
         },
+        IfElse(exp, yes, no) => {
+            if global {
+                vec!["Cannot use if expressions outside of a function".to_string()]
+            } else {
+                let check_type = get_exp_type(exp, variables, types, global);
+                if let Err(e) = check_type {
+                    e
+                } else if check_type.unwrap() != LangType::Bool {
+                    vec!["The check expression in an if block must be a bool".to_string()]
+                } else {
+                    let mut errors = type_check(yes, variables, types, global);
+                    errors.append(&mut type_check(no, variables, types, false));
+                    errors
+                }
+            }
+        }
         Loop(check, body) => {
             if global {
                 vec!["Cannot use loops outside of a function".to_string()]

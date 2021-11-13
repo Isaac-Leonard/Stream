@@ -116,6 +116,13 @@ pub mod evaluater {
                         types,
                     )
                 }
+                IfElse(exp, yes, no) => {
+                    if bool_or_panic(eval_exp(exp, variables.get_copy(), types)) {
+                        last_value = execute(yes, variables.get_copy(), types, global)
+                    } else {
+                        last_value = execute(no, variables.get_copy(), types, global)
+                    }
+                }
                 Loop(exp, ast) => {
                     while bool_or_panic(eval_exp(exp, variables.get_copy(), types)) {
                         last_value = execute(ast, variables.get_copy(), types, false)
