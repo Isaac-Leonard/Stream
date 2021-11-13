@@ -244,7 +244,7 @@ fn type_check_statement(
                 Vec::new()
             }
         }
-        Assign(name, var_type, exp) => {
+        Assign(mutible, name, var_type, exp) => {
             let var_type = var_type.as_ref().map(|x| consolidate_type(&x, types));
             let exp_type = get_exp_type(exp, variables, types, global);
             let variable = variables.iter().find(|x| x.name == *name);
