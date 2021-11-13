@@ -45,7 +45,16 @@ pub enum Instr {
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
     IfElse(Expression, Vec<Instr>, Vec<Instr>),
+    TypeDeclaration(String, CustomType),
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CustomType {
+    Callible(Vec<Self>, Box<Self>),
+    // Only have union, can map singular types / aliases to a union then flaten them later
+    Union(Vec<String>),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeDescriptor {
     pub name: String,

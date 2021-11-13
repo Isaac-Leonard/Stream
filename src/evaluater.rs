@@ -108,6 +108,7 @@ pub mod evaluater {
         for symbol in ast {
             match symbol {
                 Invalid(_) => unreachable!(),
+                TypeDeclaration(_, _) => {}
                 LoneExpression(exp) => last_value = eval_exp(exp, variables.get_copy(), types),
                 Assign(name, exp) => {
                     last_value = variables.set_variable(

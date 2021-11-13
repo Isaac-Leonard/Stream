@@ -1,5 +1,6 @@
 #[path = "shared.rs"]
 pub mod shared;
+
 use crate::shared::*;
 
 pub fn create_type_error(
@@ -193,7 +194,34 @@ pub fn types_match(a: &LangType, b: &LangType) -> bool {
     }
 }
 
-pub fn type_check_statement(
+fn create_type(
+    custom: &CustomType,
+    types: &mut Vec<TypeDescriptor>,
+) -> Result<LangType, Vec<String>> {
+    use CustomType::*;
+    match custom {
+        Union(sub_types) => consolidate_type(&sub_types, &types),
+        Callible(args, ret) => {
+            let arg_types = args
+                .iter()
+                .map(|x| create_type(x, types))
+                .collect::<Result<Vec<LangType>, _>>();
+            if let Err(e) = arg_types {
+                return Err(e);
+            }
+            let return_type = create_type(ret, types);
+            if let Err(e) = return_type {
+                return Err(e);
+            }
+            return Ok(LangType::Func(
+                arg_types.unwrap(),
+                Box::new(return_type.unwrap()),
+            ));
+        }
+    }
+}
+
+fn type_check_statement(
     stat: &Instr,
     variables: &mut Vec<TypeDescriptor>,
     types: &mut Vec<TypeDescriptor>,
@@ -201,6 +229,18 @@ pub fn type_check_statement(
 ) -> Vec<String> {
     use Instr::*;
     return match stat {
+        TypeDeclaration(name, custom) => {
+            let new_type = create_type(custom, types);
+            if let Err(e) = new_type {
+                e
+            } else {
+                types.push(TypeDescriptor {
+                    name: name.clone(),
+                    shape: new_type.unwrap(),
+                });
+                Vec::new()
+            }
+        }
         Assign(name, exp) => {
             let assigned_type = get_exp_type(exp, variables, types, global);
             if let Ok(shape) = assigned_type {
