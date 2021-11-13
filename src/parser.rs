@@ -168,3 +168,22 @@ pub mod parser {
         .then_ignore(end())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chumsky::Parser;
+
+    use super::parser::parser;
+    use crate::shared::*;
+    #[test]
+    fn add_expression() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("5+2").unwrap(),
+            vec![Instr::LoneExpression(Addition(
+                Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
+                Box::new(Terminal(Symbol::Data(RawData::Int(2))))
+            ))]
+        );
+    }
+}
