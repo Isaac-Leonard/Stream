@@ -1,11 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
     Data(RawData),
     Identifier(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RawData {
     Str(String),
     Bool(bool),
@@ -15,7 +15,7 @@ pub enum RawData {
     Null,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Addition(Box<Expression>, Box<Expression>),
     Subtraction(Box<Expression>, Box<Expression>),
@@ -27,7 +27,7 @@ pub enum Expression {
     FuncCall(String, Vec<Expression>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Function {
     pub args: Vec<(String, Vec<String>)>,
     pub body: Vec<Instr>,
@@ -38,19 +38,19 @@ impl std::fmt::Debug for Function {
         write!(f, "Function({:?})", self.args)
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Instr {
     Invalid(String),
     Assign(String, Expression),
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TypeDescriptor {
     pub name: String,
     pub shape: LangType,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LangType {
     Bool,
     Int,
@@ -78,13 +78,13 @@ impl LangType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Scope {
     pub variables: Vec<Variable>,
     pub types: Vec<TypeDescriptor>,
     pub parent: Option<Rc<RefCell<Scope>>>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScopeRef(pub Rc<RefCell<Scope>>);
 impl ScopeRef {
     pub fn new(variables: Vec<Variable>, parent: ScopeRef) -> ScopeRef {
@@ -151,6 +151,19 @@ pub struct ActiveFunction {
     pub stack: ScopeRef,
     pub return_type: Vec<String>,
 }
+impl PartialEq for ActiveFunction {
+    fn eq(&self, other: &Self) -> bool {
+        // Performs a rudimentary check to ensure return types and args have the same names
+        // TOdO: Must improve this to full checking later.
+        if self.return_type != other.return_type {
+            return false;
+        }
+        if self.args != other.args {
+            return false;
+        }
+        return true;
+    }
+}
 
 impl ActiveFunction {
     pub fn from_raw(func: Function, stack: ScopeRef) -> ActiveFunction {
@@ -205,7 +218,7 @@ impl std::fmt::Debug for ActiveFunction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Variable {
     pub name: String,
     pub data_type: LangType,
