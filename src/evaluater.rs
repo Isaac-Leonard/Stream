@@ -110,7 +110,7 @@ pub mod evaluater {
                 Invalid(_) => unreachable!(),
                 TypeDeclaration(_, _) => {}
                 LoneExpression(exp) => last_value = eval_exp(exp, variables.get_copy(), types),
-                Assign(name, exp) => {
+                Assign(name, _, exp) => {
                     last_value = variables.set_variable(
                         name,
                         eval_exp(exp, variables.get_copy(), types),

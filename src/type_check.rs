@@ -241,16 +241,35 @@ fn type_check_statement(
                 Vec::new()
             }
         }
-        Assign(name, exp) => {
-            let assigned_type = get_exp_type(exp, variables, types, global);
-            if let Ok(shape) = assigned_type {
+        Assign(name, var_type, exp) => {
+            let var_type = var_type.as_ref().map(|x| consolidate_type(&x, types));
+            let exp_type = get_exp_type(exp, variables, types, global);
+            let variable = variables.iter().find(|x| x.name == *name);
+            if let Err(e) = exp_type {
+                return e;
+            }
+
+            if let Some(var) = variable {
+                if let Some(_) = var_type {
+                    return vec![format!("Attempted to reassign type of variable '{}'", name)];
+                }
+                if !types_match(&exp_type.clone().unwrap(), &var.shape) {
+                    return vec![format!(
+                        "Cannot assign type '{:?}' to variable of type '{:?}'",
+                        exp_type.unwrap(),
+                        var.shape
+                    )];
+                }
+            } else {
                 variables.push(TypeDescriptor {
                     name: name.clone(),
-                    shape: shape.clone(),
+                    shape: match var_type {
+                        Some(x) => x.unwrap(),
+                        None => exp_type.unwrap(),
+                    },
                 });
-            } else if let Err(e) = assigned_type {
-                return e;
-            };
+            }
+
             return Vec::new();
         }
         LoneExpression(exp) => match get_exp_type(exp, variables, types, global) {

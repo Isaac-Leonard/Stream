@@ -179,7 +179,7 @@ pub mod parser {
                 .then(type_specifyer().or_not())
                 .then_ignore(just('='))
                 .then(exp.clone())
-                .map(|x| Assign(x.0 .0, x.1))
+                .map(|x| Assign(x.0 .0, x.0 .1, x.1))
                 .or(seq("while".chars())
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
