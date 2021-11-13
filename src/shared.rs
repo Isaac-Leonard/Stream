@@ -236,6 +236,7 @@ pub fn consolidate_type(
         Result::Ok(LangType::Union(res.iter().map(|x| x.clone().unwrap()).collect()).flatten())
     }
 }
+
 pub fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, Vec<String>> {
     use LangType::*;
     match val {
