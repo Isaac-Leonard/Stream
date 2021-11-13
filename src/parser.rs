@@ -69,7 +69,7 @@ pub mod parser {
                 .or_not()
                 .flatten()
                 .delimited_by('(', ')')
-                .then(type_specifyer().padded())
+                .then(type_specifyer().padded().or_not())
                 .then_ignore(seq(['=', '>']))
                 .then(
                     main_parser
@@ -81,7 +81,7 @@ pub mod parser {
                     Symbol::Data(RawData::Func(Function {
                         args,
                         body,
-                        return_type: ret,
+                        return_type: ret.unwrap_or_else(|| vec!["null".to_string()]),
                     }))
                 });
 
