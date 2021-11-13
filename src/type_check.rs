@@ -104,6 +104,9 @@ pub fn get_exp_type(
             (Ok(x), Ok(y)) => match (x, y) {
                 (Int, Int) => Ok(Int),
                 (Str, Str) | (Str, Int) | (Int, Str) | (Null, Null) => Ok(Str),
+                (Union(x), Int) | (Union(x), Str) | (Int, Union(x)) | (Str, Union(x)) => {
+                    Ok(Union(x))
+                }
                 // Let the rest go to the error manager
                 (x, y) => create_type_error("+", (Ok(x), Ok(y))),
             },
