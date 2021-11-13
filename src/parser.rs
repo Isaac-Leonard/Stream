@@ -186,4 +186,22 @@ mod tests {
             ))]
         );
     }
+
+    #[test]
+    fn add_mult_add_expression() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("5+2*4+8").unwrap(),
+            vec![Instr::LoneExpression(Addition(
+                Box::new(Addition(
+                    Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
+                    Box::new(Multiplication(
+                        Box::new(Terminal(Symbol::Data(RawData::Int(2)))),
+                        Box::new(Terminal(Symbol::Data(RawData::Int(4))))
+                    ))
+                )),
+                Box::new(Terminal(Symbol::Data(RawData::Int(8))))
+            ))]
+        );
+    }
 }
