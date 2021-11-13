@@ -3,7 +3,6 @@ mod shared;
 
 pub mod evaluater {
     use crate::shared::*;
-    use std::rc::Rc;
     fn eval_exp(exp: &Expression, variables: ScopeRef, types: &Vec<TypeDescriptor>) -> RawData {
         use Expression::*;
         match exp {
@@ -98,31 +97,6 @@ pub mod evaluater {
                 .clone(),
         }
     }
-    fn set_variable(
-        stack: ScopeRef,
-        name: &String,
-        exp: &Expression,
-        types: &Vec<TypeDescriptor>,
-    ) -> RawData {
-        let value = &eval_exp(exp, ScopeRef(Rc::clone(&stack.0)), &types);
-        let data_type = &get_type(value, types).unwrap();
-        let location = stack.get_copy().get_variable_location(name);
-        match location {
-            Some((scope, index)) => {
-                let variables = &mut scope.0.as_ref().borrow_mut().variables;
-                variables[index.clone()].value = value.clone();
-            }
-            None => {
-                stack.0.as_ref().borrow_mut().variables.push(Variable {
-                    name: name.clone(),
-                    value: value.clone(),
-                    data_type: data_type.clone(),
-                });
-            }
-        }
-
-        return value.clone();
-    }
     pub fn execute(
         ast: &[Instr],
         variables: ScopeRef,
@@ -136,7 +110,11 @@ pub mod evaluater {
                 Invalid(_) => unreachable!(),
                 LoneExpression(exp) => last_value = eval_exp(exp, variables.get_copy(), types),
                 Assign(name, exp) => {
-                    last_value = set_variable(variables.get_copy(), name, exp, types)
+                    last_value = variables.set_variable(
+                        name,
+                        eval_exp(exp, variables.get_copy(), types),
+                        types,
+                    )
                 }
                 Loop(exp, ast) => {
                     while bool_or_panic(eval_exp(exp, variables.get_copy(), types)) {

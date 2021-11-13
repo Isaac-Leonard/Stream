@@ -99,6 +99,31 @@ impl ScopeRef {
         ScopeRef(Rc::clone(&self.0))
     }
 
+    pub fn set_variable(
+        &self,
+        name: &String,
+        value: RawData,
+        types: &Vec<TypeDescriptor>,
+    ) -> RawData {
+        let data_type = &get_type(&value, types).unwrap();
+        let location = self.get_variable_location(name);
+        match location {
+            Some((scope, index)) => {
+                let variables = &mut scope.0.as_ref().borrow_mut().variables;
+                variables[index].value = value.clone();
+            }
+            None => {
+                self.0.as_ref().borrow_mut().variables.push(Variable {
+                    name: name.clone(),
+                    value: value.clone(),
+                    data_type: data_type.clone(),
+                });
+            }
+        }
+
+        return value.clone();
+    }
+
     pub fn get_index_local(&self, name: &String) -> Option<usize> {
         Rc::clone(&self.0)
             .as_ref()
