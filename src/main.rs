@@ -1,16 +1,16 @@
-mod shared;
-mod parser;
 mod evaluater;
+mod parser;
+mod shared;
 use chumsky::Parser;
+use evaluater::evaluater::execute;
 use parser::parser::*;
+use shared::*;
 use std::{
     cell::RefCell,
     env, fs,
     io::{self, BufRead},
     rc::Rc,
 };
-use shared::*;
-use evaluater::evaluater::execute;
 fn create_type_error(
     op_name: &str,
     touple: (Result<LangType, Vec<String>>, Result<LangType, Vec<String>>),
@@ -47,7 +47,6 @@ fn get_exp_type(
             Symbol::Data(RawData::Func(Function {
                 args,
                 body,
-                call: _,
                 return_type,
             }))
             | Symbol::Data(RawData::ActiveFunc(ActiveFunction {
@@ -187,7 +186,6 @@ fn get_exp_type(
     }
 }
 
-
 fn match_type_against_union(sup: Vec<LangType>, sub: LangType) -> bool {
     sup.iter().find(|x| types_match(x, &sub)).is_some()
 }
@@ -271,7 +269,7 @@ fn main() {
     let lang_print = ActiveFunction {
         args: vec![("str".into(), vec!["string".into()])],
         body: Vec::new(),
-        call: |args, params, _, _, _| {
+        call: |args, params, _, _, _, _| {
             if args.len() != params.len() {
                 panic!("Function called with invalid parameters {:?}", params)
             }
@@ -288,7 +286,7 @@ fn main() {
     let lang_input = ActiveFunction {
         args: Vec::new(),
         body: Vec::new(),
-        call: |args, params, _, _, _| {
+        call: |args, params, _, _, _, _| {
             if args.len() != params.len() {
                 panic!("Function called with invalid parameters {:?}", params)
             }
@@ -375,4 +373,3 @@ fn main() {
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
     }
 }
- 

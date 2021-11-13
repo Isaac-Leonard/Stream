@@ -30,13 +30,6 @@ pub enum Expression {
 #[derive(Clone)]
 pub struct Function {
     pub args: Vec<(String, Vec<String>)>,
-    pub call: fn(
-        args: Vec<(String, Vec<String>)>,
-        params: Vec<RawData>,
-        body: &Vec<Instr>,
-        stack: ScopeRef,
-        types: &Vec<TypeDescriptor>,
-    ) -> RawData,
     pub body: Vec<Instr>,
     pub return_type: Vec<String>,
 }
@@ -147,6 +140,12 @@ pub struct ActiveFunction {
         body: &Vec<Instr>,
         stack: ScopeRef,
         types: &Vec<TypeDescriptor>,
+        run: fn(
+            ast: &[Instr],
+            variables: ScopeRef,
+            types: &Vec<TypeDescriptor>,
+            global: bool,
+        ) -> RawData,
     ) -> RawData,
     pub body: Vec<Instr>,
     pub stack: ScopeRef,
@@ -157,19 +156,46 @@ impl ActiveFunction {
     pub fn from_raw(func: Function, stack: ScopeRef) -> ActiveFunction {
         ActiveFunction {
             args: func.args,
-            call: func.call,
+            call: |args, params, body, stack, itypes, run| {
+                if args.len() != params.len() {
+                    panic!("Called custom function with the wrong number of arguments")
+                }
+                let local_variables = args
+                    .iter()
+                    .zip(params)
+                    .map(|(arg, param)| Variable {
+                        name: arg.0.clone(),
+                        value: param,
+                        data_type: consolidate_type(&arg.1, itypes).unwrap(),
+                    })
+                    .collect::<Vec<_>>();
+                let local_stack = ScopeRef::new(local_variables, stack);
+                let res = run(&body, local_stack, itypes, false);
+                return res;
+            },
             body: func.body,
             stack,
             return_type: func.return_type,
         }
     }
-    pub fn execute(&self, params: Vec<RawData>, types: &Vec<TypeDescriptor>) -> RawData {
+    pub fn execute(
+        &self,
+        params: Vec<RawData>,
+        types: &Vec<TypeDescriptor>,
+        run: fn(
+            ast: &[Instr],
+            variables: ScopeRef,
+            types: &Vec<TypeDescriptor>,
+            global: bool,
+        ) -> RawData,
+    ) -> RawData {
         (self.call)(
             self.args.clone(),
             params,
             &self.body,
             self.stack.get_copy(),
             types,
+            run,
         )
     }
 }

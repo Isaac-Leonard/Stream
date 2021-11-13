@@ -55,6 +55,7 @@ pub mod evaluater {
                             .map(|exp| eval_exp(exp, variables.get_copy(), types))
                             .collect::<Vec<_>>(),
                         types,
+                        execute,
                     )
                 } else {
                     panic!(
@@ -147,7 +148,7 @@ pub mod evaluater {
         if global {
             let main_index = variables.get_variable(&"main".to_string()).unwrap();
             if let RawData::ActiveFunc(func) = main_index.clone().value.clone() {
-                func.execute(Vec::new(), types);
+                func.execute(Vec::new(), types, execute);
             } else {
                 panic!(
                     "Main must be a function, not a {:?}",

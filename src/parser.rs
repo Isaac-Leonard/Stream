@@ -1,9 +1,6 @@
-#[path = "evaluater.rs"]
-mod evaluater;
 #[path = "shared.rs"]
 mod shared;
 pub mod parser {
-    use crate::evaluater::evaluater::execute;
     use crate::shared::*;
     use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
     fn parse_to_i32(x: String) -> i32 {
@@ -83,23 +80,6 @@ pub mod parser {
                     Symbol::Data(RawData::Func(Function {
                         args,
                         body,
-                        call: |args, params, body, stack, itypes| {
-                            if args.len() != params.len() {
-                                panic!("Called custom function with the wrong number of arguments")
-                            }
-                            let local_variables = args
-                                .iter()
-                                .zip(params)
-                                .map(|(arg, param)| Variable {
-                                    name: arg.0.clone(),
-                                    value: param,
-                                    data_type: consolidate_type(&arg.1, itypes).unwrap(),
-                                })
-                                .collect::<Vec<_>>();
-                            let local_stack = ScopeRef::new(local_variables, stack);
-                            let res = execute(&body, local_stack, itypes, false);
-                            return res;
-                        },
                         return_type: ret,
                     }))
                 });
