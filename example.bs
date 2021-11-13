@@ -8,7 +8,7 @@ doesComplexStuff=(x:int,y:int,z:int):int=>{
 	n
 }
 
-main=():null=>{
+main=()=>{
 	while 0<x {
 		print(square(x))
 		if x<5 {
