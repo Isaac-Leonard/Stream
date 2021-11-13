@@ -9,6 +9,11 @@ doesComplexStuff=(x:int,y:int,z:int):int=>{
 main=():null=>{
 	while 0<x {
 		print(square(x))
+		if x<5 {
+			print("5 or less")
+		} else {
+			print(">5")
+		}
 		x=x-1
 	}
 	print(doesComplexStuff(4,2,7))
