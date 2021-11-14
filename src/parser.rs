@@ -174,12 +174,20 @@ pub mod parser {
         use Instr::*;
         recursive(|bf: Recursive<char, Vec<Instr>, _>| {
             let exp = exp_parser(bf.clone()).boxed();
-            ident()
+            seq("let".chars())
+                .padded()
+                .ignore_then(ident())
                 .map(String::from)
                 .then(type_specifyer().or_not())
                 .then_ignore(just('='))
                 .then(exp.clone())
-                .map(|x| Assign(true, x.0 .0, x.0 .1, x.1))
+                .map(|x| InitAssign(true, x.0 .0, x.0 .1, x.1))
+                .or(ident()
+                    .map(String::from)
+                    .then(type_specifyer().or_not())
+                    .then_ignore(just('='))
+                    .then(exp.clone())
+                    .map(|x| Assign(x.0 .0, x.1)))
                 .or(seq("while".chars())
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))

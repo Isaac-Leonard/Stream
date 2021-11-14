@@ -244,34 +244,57 @@ fn type_check_statement(
                 Vec::new()
             }
         }
-        Assign(mutible, name, var_type, exp) => {
-            let var_type = var_type.as_ref().map(|x| consolidate_type(&x, types));
+        Assign(name, exp) => {
             let exp_type = get_exp_type(exp, variables, types, global);
-            let variable = variables.iter().find(|x| x.name == *name);
             if let Err(e) = exp_type {
                 return e;
             }
 
+            let variable = variables.iter().find(|x| x.name == *name);
             if let Some(var) = variable {
-                if let Some(_) = var_type {
-                    return vec![format!("Attempted to reassign type of variable '{}'", name)];
-                }
                 if !types_match(&exp_type.clone().unwrap(), &var.shape) {
                     return vec![format!(
                         "Cannot assign type '{:?}' to variable of type '{:?}'",
                         exp_type.unwrap(),
                         var.shape
                     )];
-                }
+                };
+                return Vec::new();
             } else {
-                variables.push(TypeDescriptor {
-                    name: name.clone(),
-                    shape: match var_type {
-                        Some(x) => x.unwrap(),
-                        None => exp_type.unwrap(),
-                    },
-                });
+                return vec![format!("Cannot assign to undeclared variable '{}'", name)];
             }
+        }
+        InitAssign(mutible, name, var_type, exp) => {
+            if variables.iter().find(|x| x.name == *name).is_some() {
+                return vec![format!("Attempted to redeclare variable '{}'", name)];
+            }
+            let exp_type = get_exp_type(exp, variables, types, global);
+            if let Err(e) = exp_type {
+                return e;
+            }
+            let exp_type = exp_type.unwrap();
+            let final_type: LangType;
+            let mut var_type = var_type.as_ref().map(|x| consolidate_type(&x, types));
+            if let Some(vtype) = var_type.clone() {
+                if let Err(e) = vtype {
+                    return e;
+                }
+                if !types_match(&exp_type, &vtype.clone().unwrap()) {
+                    return vec![format!(
+                        "Cannot assign type '{:?}' to variable '{}' with type '{:?}'",
+                        exp_type,
+                        name,
+                        var_type.clone().unwrap()
+                    )];
+                }
+                final_type = vtype.clone().unwrap();
+            } else {
+                final_type = exp_type;
+            }
+            variables.push(TypeDescriptor {
+                name: name.clone(),
+                shape: final_type,
+            });
 
             return Vec::new();
         }

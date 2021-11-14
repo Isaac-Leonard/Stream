@@ -1,14 +1,14 @@
 type adderFn = (int):int
-getAdder=(x:int):adderFn=>(y:int):int=>x+y
-x:int=(2+3)*6+2
-square=(x:int):int=>x*x
-doesComplexStuff=(x:int,y:int,z:int):int=>{
-	n=square(x)+square(y)+square(z)
+let getAdder=(x:int):adderFn=>(y:int):int=>x+y
+let x=(2+3)*6+2
+let square=(x:int):int=>x*x
+let doesComplexStuff=(x:int,y:int,z:int):int=>{
+	let n=square(x)+square(y)+square(z)
 	print(n)
 	n
 }
 
-main=()=>{
+let main=()=>{
 	while 0<x {
 		print(square(x))
 		if x<5 {
@@ -19,22 +19,22 @@ main=()=>{
 		x=x-1
 	}
 	print(doesComplexStuff(4,2,7))
-	y=4+3
+	let y=4+3
 	print(y)
 	print("hello"+" "+"world")
-	str="yes"
-	str2="no"
+	let str="yes"
+	let str2="no"
 	print(str)
 	print(4+" apples")
 	print("Please enter your first name")
-	firstName=getInput()
+	let firstName=getInput()
 	print("Please enter your last name")
-	lastName=getInput()
+	let lastName=getInput()
 	print("Hello "+firstName+" "+lastName)
-	union:int|string=5
+	let union:int|string=5
 	print("union="+union)
 	union="yo"
 	print("union="+union)
-	myAdder=getAdder(9)
+	let myAdder=getAdder(9)
 	print("myAdder(4)="+myAdder(4))
 }

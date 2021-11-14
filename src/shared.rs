@@ -41,7 +41,8 @@ impl std::fmt::Debug for Function {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Instr {
     Invalid(String),
-    Assign(bool, String, Option<Vec<String>>, Expression),
+    Assign(String, Expression),
+    InitAssign(bool, String, Option<Vec<String>>, Expression),
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
     IfElse(Expression, Vec<Instr>, Vec<Instr>),
