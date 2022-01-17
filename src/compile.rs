@@ -11,7 +11,7 @@ pub mod compile {
     use inkwell::targets::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
     };
-    use inkwell::types::BasicMetadataTypeEnum;
+    use inkwell::types::{BasicMetadataTypeEnum, FunctionType, IntType, VoidType};
     use inkwell::values::{BasicMetadataValueEnum, IntValue, PointerValue};
     /// Some parts of this file have been directly taken from the collider scope example from inkwell
     use inkwell::values::{BasicValue, FunctionValue};
@@ -153,6 +153,23 @@ pub mod compile {
         }
     }
 
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    enum ReturnType<'ctx> {
+        Int(IntType<'ctx>),
+        Void(VoidType<'ctx>),
+    }
+    impl<'ctx> ReturnType<'ctx> {
+        pub fn fn_type(
+            self,
+            param_types: &[BasicMetadataTypeEnum<'ctx>],
+            is_var_args: bool,
+        ) -> FunctionType<'ctx> {
+            match self {
+                Self::Void(void) => void.fn_type(param_types, is_var_args),
+                Self::Int(int) => int.fn_type(param_types, is_var_args),
+            }
+        }
+    }
     pub fn compile(ast: &Vec<Instr>) {
         let ctx = Context::create();
         let module = ctx.create_module("repl");
@@ -183,9 +200,15 @@ pub mod compile {
             match stat {
                 Instr::InitAssign(_, name, _, exp) => match exp {
                     Expression::Terminal(Symbol::Data(RawData::Func(fun))) => {
-                        let ret = ctx.i32_type();
+                        let return_type = fun.return_type[0].clone();
+                        let i32_type = ctx.i32_type();
+                        let ret = match return_type.as_str() {
+                            "int" | "null" => ReturnType::Int(i32_type),
+                            "void" => ReturnType::Void(ctx.void_type()),
+                            x => panic!("Cannot process return type of '{}' at this time", x),
+                        };
                         let args = ret.fn_type(
-                            std::iter::repeat(ret)
+                            std::iter::repeat(i32_type)
                                 .take(fun.args.len())
                                 .map(|f| f.into())
                                 .collect::<Vec<BasicMetadataTypeEnum>>()
@@ -235,8 +258,12 @@ pub mod compile {
                                 &function,
                             ))
                         }
-
-                        builder.build_return(Some(&last_body.unwrap()));
+                        let final_value: &dyn BasicValue = &last_body.unwrap();
+                        let ret_value: Option<&dyn BasicValue> = match ret {
+                            ReturnType::Int(_) => Some(final_value),
+                            ReturnType::Void(_) => None,
+                        };
+                        builder.build_return(ret_value);
 
                         // return the whole thing after verification and optimization
                         if function.verify(true) {
