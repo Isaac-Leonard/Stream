@@ -7,13 +7,19 @@ pub mod compile {
     use inkwell::execution_engine::ExecutionEngine;
     use inkwell::module::Module;
     use inkwell::passes::PassManager;
+    use inkwell::targets;
+    use inkwell::targets::{
+        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+    };
     use inkwell::types::BasicMetadataTypeEnum;
     use inkwell::values::{BasicMetadataValueEnum, IntValue, PointerValue};
     /// Some parts of this file have been directly taken from the collider scope example from inkwell
     use inkwell::values::{BasicValue, FunctionValue};
+    use inkwell::OptimizationLevel;
     use std::collections::HashMap;
     use std::io;
     use std::io::Write;
+    use std::path::Path;
     // macro used to print & flush without printing a new line
     macro_rules! print_flush {
     ( $( $x:expr ),* ) => {
@@ -242,6 +248,27 @@ pub mod compile {
                 }
             }
         }
+        Target::initialize_x86(&InitializationConfig::default());
+        let opt = OptimizationLevel::Default;
+        let reloc = RelocMode::Default;
+        let model = CodeModel::Default;
+        let path = Path::new("./example-compile.o");
+        let target = Target::from_name("x86-64").unwrap();
+        let target_machine = target
+            .create_target_machine(
+                &TargetTriple::create("x86_64-apple-darwin"),
+                "x86-64",
+                "+avx2",
+                opt,
+                reloc,
+                model,
+            )
+            .unwrap();
+
+        target_machine
+            .write_to_file(&module, FileType::Object, &path)
+            .unwrap();
+
         let ee = module
             .create_jit_execution_engine(inkwell::OptimizationLevel::None)
             .unwrap();
