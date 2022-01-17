@@ -1,3 +1,4 @@
+mod compile;
 mod evaluater;
 mod parser;
 mod shared;
@@ -116,6 +117,7 @@ fn main() {
                 errors.iter().for_each(|x| println!("{}", x))
             } else {
                 execute(&ast, variables, &types, true);
+                compile::compile::compile(&ast);
             }
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
