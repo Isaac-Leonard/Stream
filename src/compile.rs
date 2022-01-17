@@ -5,7 +5,7 @@ pub mod compile {
     use inkwell::builder::Builder;
     use inkwell::context::Context;
     use inkwell::execution_engine::ExecutionEngine;
-    use inkwell::module::Module;
+    use inkwell::module::{Linkage, Module};
     use inkwell::passes::PassManager;
     use inkwell::targets;
     use inkwell::targets::{
@@ -173,6 +173,12 @@ pub mod compile {
         fpm.initialize();
         // make module
         let module = ctx.create_module("module");
+        let ret = ctx.i32_type();
+        module.add_function(
+            "putchar",
+            ret.fn_type(&[BasicMetadataTypeEnum::IntType(ret)], false),
+            Some(Linkage::AvailableExternally),
+        );
         for stat in ast {
             match stat {
                 Instr::InitAssign(_, name, _, exp) => match exp {
