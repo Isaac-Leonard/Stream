@@ -1,8 +1,19 @@
 let add=(x:int, y:int):int=>{x+y}
+let sayHello=()=>{
+putchar(64+8)
+putchar(64+5)
+putchar(64+12)
+putchar(64+12)
+putchar(64+15)
+putchar(10)
+putchar(13)
+
+}
 let main=()=>{let
 y=4*3+7
 putchar(65)
 putchar(10)
 putchar(13)
+sayHello()
 add(y, 12)
 }
