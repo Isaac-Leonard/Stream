@@ -1,5 +1,8 @@
 let add=(x:int, y:int):int=>{x+y}
 let main=()=>{let
 y=4*3+7
+putchar(65)
+putchar(10)
+putchar(13)
 add(y, 12)
 }
