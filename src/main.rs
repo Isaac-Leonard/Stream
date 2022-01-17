@@ -113,10 +113,7 @@ fn main() {
                 &mut types,
                 true,
             );
-            if errors.len() > 0 {
-                errors.iter().for_each(|x| println!("{}", x))
-            } else {
-                execute(&ast, variables, &types, true);
+            {
                 compile::compile::compile(&ast);
             }
         }
