@@ -12,7 +12,9 @@ pub mod compile {
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
     };
     use inkwell::types::{BasicMetadataTypeEnum, FunctionType, IntType, VoidType};
-    use inkwell::values::{BasicMetadataValueEnum, IntValue, PointerValue};
+    use inkwell::values::{
+        BasicMetadataValueEnum, BasicValueEnum, FloatValue, IntValue, PointerValue,
+    };
     /// Some parts of this file have been directly taken from the collider scope example from inkwell
     use inkwell::values::{BasicValue, FunctionValue};
     use inkwell::OptimizationLevel;
@@ -48,18 +50,25 @@ pub mod compile {
         module: &'a Module<'ctx>,
         variables: &mut HashMap<String, PointerValue<'ctx>>,
         function: &FunctionValue<'ctx>,
-    ) -> IntValue<'ctx> {
+    ) -> BasicValueEnum<'ctx> {
         match statement {
-            Instr::LoneExpression(exp) => compile_expression(exp, ctx, builder, module, variables),
+            Instr::LoneExpression(exp) => {
+                BasicValueEnum::IntValue(compile_expression(exp, ctx, builder, module, variables))
+            }
             Instr::Assign(name, exp) => {
                 let val = compile_expression(exp, ctx, builder, module, variables);
                 let var = variables.get(name.as_str()).expect("Undefined variable.");
 
                 builder.build_store(*var, val);
-                val
+                BasicValueEnum::IntValue(val)
             }
-            Instr::InitAssign(_, name, _, exp) => {
+            Instr::InitAssign(_, name, data_type, exp) => {
                 let val = compile_expression(exp, ctx, builder, module, variables);
+                if data_type.as_ref().unwrap_or(&vec!["int".to_string()])
+                    != &vec!["int".to_string()]
+                {
+                    panic!("variables can only be ints at this time, '{}'", name)
+                }
                 let builder2 = ctx.create_builder();
 
                 let entry = function.get_first_basic_block().unwrap();
@@ -73,7 +82,7 @@ pub mod compile {
                 builder.build_store(alloca, val);
 
                 variables.insert(name.to_string(), alloca);
-                val
+                BasicValueEnum::IntValue(val)
             }
             Instr::Loop(_, _) => {
                 panic!("Looping not supported when compiling")
@@ -258,7 +267,8 @@ pub mod compile {
                                 &function,
                             ))
                         }
-                        let final_value: &dyn BasicValue = &last_body.unwrap();
+                        let final_value: &dyn BasicValue =
+                            &last_body.unwrap().as_basic_value_enum();
                         let ret_value: Option<&dyn BasicValue> = match ret {
                             ReturnType::Int(_) => Some(final_value),
                             ReturnType::Void(_) => None,
