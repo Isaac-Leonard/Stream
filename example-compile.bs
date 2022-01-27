@@ -1,4 +1,4 @@
-let add=(x:int, y:int):int=>{x+y}
+let add=(x:Int, y:Int):Int=>{x+y}
 let sayHello=()=>{
 putchar(64+8)
 putchar(64+5)
@@ -9,11 +9,18 @@ putchar(10)
 putchar(13)
 
 }
-let main=()=>{let
-y=4*3+7
+
+let main=():Int=>{
+let y=4*3+7
+y=y+2
 putchar(65)
 putchar(10)
 putchar(13)
 sayHello()
-add(y, 12)
+putchar(10)
+putchar(13)
+putchar(add(y, 50))
+putchar(10)
+putchar(13)
+1
 }
