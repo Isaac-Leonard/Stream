@@ -175,13 +175,14 @@ pub mod parser {
         recursive(|bf: Recursive<char, Vec<Instr>, _>| {
             let exp = exp_parser(bf.clone()).boxed();
             seq("let".chars())
+                .map(|_| false)
+                .or(seq("const".chars()).map(|_| true))
                 .padded()
-                .ignore_then(ident())
-                .map(String::from)
+                .then(ident().map(String::from))
                 .then(type_specifyer().or_not())
                 .then_ignore(just('='))
                 .then(exp.clone())
-                .map(|x| InitAssign(true, x.0 .0, x.0 .1, x.1))
+                .map(|x| InitAssign(x.0 .0 .0, x.0 .0 .1, x.0 .1, x.1))
                 .or(ident()
                     .map(String::from)
                     .then(type_specifyer().or_not())
