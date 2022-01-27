@@ -64,8 +64,8 @@ pub mod compile {
             }
             Instr::InitAssign(_, name, data_type, exp) => {
                 let val = compile_expression(exp, ctx, builder, module, variables);
-                if data_type.as_ref().unwrap_or(&vec!["int".to_string()])
-                    != &vec!["int".to_string()]
+                if data_type.as_ref().unwrap_or(&vec!["Int".to_string()])
+                    != &vec!["Int".to_string()]
                 {
                     panic!("variables can only be ints at this time, '{}'", name)
                 }
@@ -212,7 +212,7 @@ pub mod compile {
                         let return_type = fun.return_type[0].clone();
                         let i32_type = ctx.i32_type();
                         let ret = match return_type.as_str() {
-                            "int" | "null" => ReturnType::Int(i32_type),
+                            "Int" | "Null" => ReturnType::Int(i32_type),
                             "void" => ReturnType::Void(ctx.void_type()),
                             x => panic!("Cannot process return type of '{}' at this time", x),
                         };
