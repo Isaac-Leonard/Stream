@@ -9,6 +9,7 @@ use parser::parser::*;
 use shared::*;
 use std::{
     cell::RefCell,
+    collections::{hash_map, HashMap},
     env, fs,
     io::{self, BufRead},
     rc::Rc,
@@ -91,31 +92,28 @@ fn main() {
             shape: LangType::Null,
         },
     ];
-
+    let mut types = HashMap::new();
+    types.insert("Int".to_string(), CompType::Int);
+    types.insert("Null".to_string(), CompType::Null);
+    let mut variables = HashMap::new();
+    variables.insert(
+        "putchar".to_string(),
+        CompVariable {
+            name: "putchar".to_string(),
+            constant: true,
+            typing: CompType::Callible(vec![CompType::Int], Box::new(CompType::Int)),
+        },
+    );
+    let global_scope = CompScope {
+        variables,
+        types,
+        parent: None,
+    };
     let parsed = parser().parse(src.trim());
-    println!("{:?}", parsed);
     match parsed {
         Ok(ast) => {
-            println!("Parsing succeeded");
-            let errors = type_check(
-                &ast,
-                &mut variables
-                    .0
-                    .as_ref()
-                    .borrow()
-                    .variables
-                    .iter()
-                    .map(|x| TypeDescriptor {
-                        name: x.name.clone(),
-                        shape: x.data_type.clone(),
-                    })
-                    .collect(),
-                &mut types,
-                true,
-            );
-            {
-                compile::compile::compile(&ast);
-            }
+            create_program(&ast, &global_scope);
+            compile::compile::compile(&ast);
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
     }
