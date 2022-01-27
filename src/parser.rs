@@ -81,7 +81,7 @@ pub mod parser {
                     Symbol::Data(RawData::Func(Function {
                         args,
                         body,
-                        return_type: ret.unwrap_or_else(|| vec!["null".to_string()]),
+                        return_type: ret.unwrap_or_else(|| vec!["Null".to_string()]),
                     }))
                 });
 
