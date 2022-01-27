@@ -68,7 +68,6 @@ pub fn get_exp_type(
                     return Err(e);
                 };
                 let arg_types = arg_types.unwrap();
-                println!("arg_types: {:?}", arg_types);
                 let mut variables_with_args = variables.clone();
                 variables_with_args.append(&mut arg_types.clone());
                 let ret = consolidate_type(return_type, types);
@@ -346,9 +345,6 @@ pub fn type_check(
     types: &mut Vec<TypeDescriptor>,
     global: bool,
 ) -> Vec<String> {
-    println!("");
-    variables.iter().for_each(|x| println!("{:?}", x));
-    println!("");
     let mut errors = Vec::new();
     for sym in ast {
         // typecheck each statement and unwrap the error result automatically so we can push it to the main list, otherwise do nothing
