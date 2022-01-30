@@ -1,5 +1,11 @@
 type Putchar=(Int):Int
 extern let putchar:Putchar=(x:Int):Int=>;
+type Getchar=():Int
+extern let getchar:Getchar=():Int=>;
+
+type Sin=(Float):Float
+extern let sin:Sin=(x:Float):Float=>;
+
 let add=(x:Int, y:Int):Int=>{x+y}
 let sayHello=()=>{
 putchar(64+8)
@@ -10,6 +16,10 @@ putchar(64+15)
 putchar(10)
 putchar(13)
 
+}
+let newLine=()=>{
+putchar(10)
+putchar(13)
 }
 
 let main=():Int=>{
@@ -22,7 +32,10 @@ sayHello()
 putchar(10)
 putchar(13)
 putchar(add(y, 50))
-putchar(10)
-putchar(13)
-1
+newLine()
+let c=getchar()
+newLine()
+putchar(c)
+newLine()
+2
 }
