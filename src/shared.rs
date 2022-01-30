@@ -1,4 +1,10 @@
 use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
+
+use inkwell::{
+    context::Context,
+    types::{BasicType, BasicTypeEnum},
+    values::{BasicValue, BasicValueEnum, IntMathValue, IntValue},
+};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
     Data(RawData),
@@ -342,6 +348,26 @@ pub fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, 
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct NewVariable {
+    pub name: String,
+    pub typing: Option<CompType>,
+    pub constant: bool,
+    pub initialised: bool,
+}
+impl NewVariable {
+    fn get_final(&self) -> CompVariable {
+        if self.typing == None || !self.initialised {
+            panic!("Cannot use uninitialised variable '{}'", self.name)
+        } else {
+            CompVariable {
+                name: self.name.clone(),
+                typing: self.typing.clone().unwrap(),
+                constant: self.constant,
+            }
+        }
+    }
+}
+#[derive(Debug, PartialEq, Clone)]
 pub struct CompVariable {
     pub name: String,
     pub typing: CompType,
@@ -350,15 +376,19 @@ pub struct CompVariable {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FunctionAst {
-    arguments: Vec<CompType>,
-    return_type: CompType,
-    body: Option<Box<Program>>,
+    pub arguments: Vec<CompVariable>,
+    pub return_type: CompType,
+    pub body: Option<Box<Program>>,
 }
 impl FunctionAst {
     pub fn as_type(&self) -> CompType {
-        CompType::Callible(self.arguments.clone(), Box::new(self.return_type.clone()))
+        CompType::Callible(
+            self.arguments.iter().map(|x| x.typing.clone()).collect(),
+            Box::new(self.return_type.clone()),
+        )
     }
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Op {
     Add,
@@ -480,15 +510,27 @@ pub fn transform_type(
             CompType::Callible(args, Box::new(ret))
         }
     }
+    .flatten()
 }
 
-fn bin_exp(op: Op, left: &Expression, right: &Expression, scope: &CompScope) -> CompExpression {
-    let left = transform_exp(&left, scope);
-    let right = transform_exp(&right, scope);
-    CompExpression::BinOp(op, Box::new(left), Box::new(right))
+fn bin_exp(
+    op: Op,
+    left: &Expression,
+    right: &Expression,
+    scope: &TempScope,
+) -> Result<CompExpression, String> {
+    let left = match transform_exp(&left, scope) {
+        Ok(exp) => exp,
+        Err(msg) => return Err(msg),
+    };
+    let right = match transform_exp(&right, scope) {
+        Ok(exp) => exp,
+        Err(msg) => return Err(msg),
+    };
+    Ok(CompExpression::BinOp(op, Box::new(left), Box::new(right)))
 }
 
-fn transform_exp(exp: &Expression, scope: &CompScope) -> CompExpression {
+fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, String> {
     match exp {
         Expression::LessThan(l, r) => bin_exp(Op::Le, l, r, scope),
         Expression::Addition(l, r) => bin_exp(Op::Add, l, r, scope),
@@ -496,13 +538,26 @@ fn transform_exp(exp: &Expression, scope: &CompScope) -> CompExpression {
         Expression::Subtraction(l, r) => bin_exp(Op::Sub, l, r, scope),
         Expression::Division(l, r) => bin_exp(Op::Div, l, r, scope),
         Expression::Equal(l, r) => bin_exp(Op::Eq, l, r, scope),
-        Expression::FuncCall(name, args) => CompExpression::Call(
-            scope.get_variable(name),
-            args.iter().map(|x| transform_exp(x, scope)).collect(),
-        ),
+        Expression::FuncCall(name, args) => {
+            let args = args
+                .iter()
+                .map(|x| transform_exp(x, scope))
+                .collect::<Result<Vec<CompExpression>, String>>();
+            let func = match scope.get_variable(name) {
+                Ok(var) => var,
+                Err(msg) => return Err(msg),
+            };
+            match args {
+                Ok(args) => Ok(CompExpression::Call(func, args)),
+                Err(message) => Err(message),
+            }
+        }
         Expression::Terminal(sym) => match sym {
-            Symbol::Identifier(name) => CompExpression::Read(scope.get_variable(name)),
-            Symbol::Data(data) => CompExpression::Value(match data.clone() {
+            Symbol::Identifier(name) => match scope.get_variable(name) {
+                Ok(var) => Ok(CompExpression::Read(var)),
+                Err(msg) => Err(msg),
+            },
+            Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
                 RawData::Str(val) => CompData::Str(val.clone()),
                 RawData::Bool(val) => CompData::Bool(val),
@@ -514,30 +569,34 @@ fn transform_exp(exp: &Expression, scope: &CompScope) -> CompExpression {
                         name: x.0.clone(),
                         typing: transform_type(
                             &CustomType::Union(x.1.clone()),
-                            scope,
+                            &scope.to_comp_scope_so_far(),
                             &HashMap::new(),
                         ),
                     });
-                    let arguments = temp_variables.clone().map(|x| x.typing).collect::<Vec<_>>();
+                    let arguments = temp_variables.clone().collect::<Vec<_>>();
                     let mut local_variables = HashMap::new();
                     for var in temp_variables {
                         local_variables.insert(var.name.clone(), var);
                     }
                     let return_type = transform_type(
                         &CustomType::Union(func.return_type).clone(),
-                        scope,
+                        &scope.to_comp_scope_so_far(),
                         &HashMap::new(),
                     );
-                    let local_scope =
-                        resolve_scope(&func.body, scope, &mut local_variables, &mut HashMap::new());
-                    let body = transform_ast(&func.body, &local_scope);
+                    let mut local_scope = resolve_scope(
+                        &func.body,
+                        &scope.to_comp_scope_so_far(),
+                        &mut local_variables,
+                        &mut HashMap::new(),
+                    );
+                    let body = transform_ast(&func.body, &mut local_scope);
                     CompData::Func(FunctionAst {
                         arguments,
                         return_type,
                         body: Some(Box::new(body)),
                     })
                 }
-            }),
+            })),
         },
     }
 }
@@ -545,9 +604,10 @@ fn transform_exp(exp: &Expression, scope: &CompScope) -> CompExpression {
 fn resolve_scope(
     ast: &Vec<Instr>,
     scope: &CompScope,
-    variables: &mut HashMap<String, CompVariable>,
+    preset_variables: &mut HashMap<String, CompVariable>,
     types: &mut HashMap<String, CompType>,
-) -> CompScope {
+) -> TempScope {
+    let mut variables: HashMap<String, NewVariable> = HashMap::new();
     for stat in ast {
         match stat.clone() {
             Instr::TypeDeclaration(name, declared_type) => {
@@ -558,21 +618,17 @@ fn resolve_scope(
                 }
             }
             Instr::InitAssign(constant, name, declared_type, exp) => {
-                println!("{}", name);
                 if variables.values().any(|x| x.name == name) {
                     panic!("Cannot re-declare variable in the same scope '{}'", name)
                 }
-                println!("{}", name);
                 variables.insert(
                     name.clone(),
-                    CompVariable {
+                    NewVariable {
                         constant,
                         name,
-                        typing: transform_type(
-                            &CustomType::Union(declared_type.unwrap_or(Vec::new())),
-                            scope,
-                            &HashMap::new(),
-                        ),
+                        typing: declared_type
+                            .map(|x| transform_type(&CustomType::Union(x), scope, &HashMap::new())),
+                        initialised: false,
                     },
                 );
             }
@@ -591,45 +647,126 @@ fn resolve_scope(
             x => {}
         };
     }
-    CompScope {
+    TempScope {
+        preset_variables: preset_variables.clone(),
         variables: variables.clone(),
         types: types.clone(),
         parent: Some(Box::new(scope.clone())),
     }
 }
 
-pub fn transform_ast(ast: &Vec<Instr>, scope: &CompScope) -> Program {
-    let mut expressions = Vec::new();
+pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
+    let mut expressions: Vec<CompExpression> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
     for stat in ast {
-        expressions.push(match stat {
-            Instr::TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
-            Instr::InitAssign(_, name, _, exp) | Instr::Assign(name, exp) => {
+        match stat {
+            Instr::TypeDeclaration(_, _) => {}
+            Instr::InitAssign(_, name, _, exp) => {
+                if scope.variable_initialised(name) {
+                    errors.push(format!(
+                        "Cannot re-initialise already declared variable '{}'",
+                        name
+                    ));
+                } else {
+                    let exp = transform_exp(&exp, scope);
+                    let exp = match exp {
+                        Ok(exp) => exp,
+                        Err(msg) => {
+                            errors.push(msg);
+                            continue;
+                        }
+                    };
+                    if !scope.variable_has_type(name) {
+                        let ty = get_type_from_exp(&exp);
+                        if let Err(msg) = ty {
+                            errors.push(msg);
+                            continue;
+                        } else if let Ok(ty) = ty {
+                            scope = scope.set_variable_type(name, &ty);
+                        }
+                    }
+                    scope.set_variable_initialised(name);
+                    let var = scope.get_variable(&name);
+                    if let Ok(var) = var {
+                        let assign = CompExpression::Assign(var, Box::new(exp));
+                        match get_type_from_exp(&assign) {
+                            Ok(_) => expressions.push(assign),
+                            Err(msg) => errors.push(msg),
+                        };
+                    } else if let Err(msg) = var {
+                        errors.push(msg);
+                    }
+                }
+            }
+            Instr::Assign(name, exp) => {
                 let exp = transform_exp(&exp, scope);
-                CompExpression::Assign(scope.get_variable(&name), Box::new(exp))
+                let exp = match exp {
+                    Ok(exp) => exp,
+                    Err(msg) => {
+                        errors.push(msg);
+                        continue;
+                    }
+                };
+                let var = scope.get_variable(name);
+                let assign = match var {
+                    Err(msg) => {
+                        errors.push(msg);
+                        continue;
+                    }
+                    Ok(var) => CompExpression::Assign(var, Box::new(exp)),
+                };
+                match get_type_from_exp(&assign) {
+                    Ok(exp) => expressions.push(assign),
+                    Err(msg) => errors.push(msg),
+                };
             }
             Instr::Loop(exp, body) => {
                 let cond = transform_exp(&exp, scope);
-                let body = create_program(&body, scope);
-                CompExpression::WhileLoop {
+                let cond = match cond {
+                    Ok(cond) => cond,
+                    Err(msg) => {
+                        errors.push(msg);
+                        continue;
+                    }
+                };
+                let body = transform_ast(&body, scope);
+                expressions.push(CompExpression::WhileLoop {
                     cond: Box::new(cond),
                     body: Box::new(CompExpression::Prog(Box::new(body))),
-                }
+                });
             }
             Instr::IfElse(cond, left, right) => {
                 let cond = transform_exp(&cond, scope);
-                let then = create_program(&left, scope);
-                let alt = create_program(&right, scope);
-                CompExpression::IfElse {
+                let cond = match cond {
+                    Ok(cond) => cond,
+                    Err(msg) => {
+                        errors.push(msg);
+                        continue;
+                    }
+                };
+                let then = transform_ast(&left, scope);
+                let alt = transform_ast(&right, scope);
+                expressions.push(CompExpression::IfElse {
                     cond: Box::new(cond),
                     then: Box::new(CompExpression::Prog(Box::new(then))),
                     otherwise: Box::new(CompExpression::Prog(Box::new(alt))),
-                }
+                });
             }
-            Instr::LoneExpression(exp) => transform_exp(&exp, scope),
-            Instr::Invalid(x) => panic!("invalid '{}'", x),
+            Instr::LoneExpression(exp) => {
+                let exp = transform_exp(&exp, scope);
+                let exp = match exp {
+                    Ok(exp) => expressions.push(exp),
+                    Err(msg) => errors.push(msg),
+                };
+            }
+            Instr::Invalid(x) => {
+                errors.push(format!("invalid '{}'", x));
+            }
             x => panic!("not implimented for '''"),
-        });
+        };
     }
+    let expressions = expressions;
+    let scope = scope.to_comp_scope();
     Program {
         scope: scope.clone(),
         body: CompExpression::List(expressions),
@@ -665,8 +802,10 @@ pub enum CompSymbol {
 }
 
 pub fn create_program(ast: &Vec<Instr>, scope: &CompScope) -> Program {
-    let local_scope = resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new());
-    transform_ast(ast, &local_scope)
+    let mut local_scope = resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new());
+    let prog = transform_ast(ast, &mut local_scope);
+    get_type_from_exp(&prog.body);
+    prog
 }
 
 pub fn flatten_action(action: CompExpression) -> Option<CompExpression> {
@@ -712,6 +851,19 @@ pub enum CompType {
     Str,
 }
 impl CompType {
+    pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
+        use CompType::*;
+        println!("{}", self.get_str());
+        match self.clone() {
+            Int => context.i32_type().as_basic_type_enum(),
+            Float => context.f32_type().as_basic_type_enum(),
+            Null => context.custom_width_int_type(1).as_basic_type_enum(),
+            _ => panic!(
+                "get_compiler_type not implemented for type '{}'",
+                self.get_str()
+            ),
+        }
+    }
     fn super_of(&self, ty: &CompType) -> bool {
         if self == ty {
             true
@@ -734,7 +886,7 @@ impl CompType {
             _ => false,
         }
     }
-    fn get_str(&self) -> String {
+    pub fn get_str(&self) -> String {
         use CompType::*;
         match self {
             Int => "Int".to_string(),
@@ -745,14 +897,37 @@ impl CompType {
             Union(types) => types
                 .iter()
                 .map(CompType::get_str)
-                .fold(String::new(), |a, b| a + &" | " + b.as_str())
-                .clone(),
-            Callible(args, ret) => {
+                .reduce(|a, b| format!("{} | {}", a, b))
+                .unwrap(),
+            Callible(args, ret) => format!(
+                "({}): {}",
                 args.iter()
                     .map(CompType::get_str)
-                    .fold(String::new(), |a, b| a + &", " + b.as_str())
-                    + &": ".to_string()
-                    + &ret.get_str()
+                    .reduce(|a, b| format!("{}, {}", a, b))
+                    .unwrap_or_else(String::new),
+                ret.get_str()
+            ),
+        }
+    }
+    pub fn flatten(&self) -> CompType {
+        use CompType::*;
+        match self {
+            Int => Int,
+            Float => Float,
+            Str => Str,
+            Bool => Bool,
+            Null => Null,
+            Callible(args, ret) => Callible(
+                args.iter().map(|x| x.flatten()).collect(),
+                Box::new(ret.flatten()),
+            ),
+            Union(types) => {
+                let types = types.iter().map(|x| x.flatten()).collect::<Vec<_>>();
+                match types.len() {
+                    0 => Null,
+                    1 => types[0].clone(),
+                    _ => Union(types),
+                }
             }
         }
     }
@@ -772,8 +947,8 @@ impl CompType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
-    scope: CompScope,
-    body: CompExpression,
+    pub scope: CompScope,
+    pub body: CompExpression,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -834,6 +1009,126 @@ impl CompScope {
             parent: Some(Box::new(self.clone())),
         }
     }
+    pub fn is_global(&self) -> bool {
+        self.parent.is_none()
+    }
+}
+
+pub struct TempScope {
+    pub types: HashMap<String, CompType>,
+    pub variables: HashMap<String, NewVariable>,
+    preset_variables: HashMap<String, CompVariable>,
+    pub parent: Option<Box<CompScope>>,
+}
+impl TempScope {
+    fn set_variable_initialised(&mut self, name: &String) {
+        self.variables.get_mut(name).map(|v| v.initialised = true);
+    }
+
+    fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut TempScope {
+        self.variables
+            .get_mut(name)
+            .map(|v| v.typing = Some(ty.clone()));
+        self
+    }
+
+    fn to_comp_scope(&self) -> CompScope {
+        let variables = self
+            .variables
+            .iter()
+            .map(|v| (v.0.clone(), v.1.get_final()))
+            .chain(self.preset_variables.clone().into_iter())
+            .collect::<HashMap<String, CompVariable>>();
+        CompScope {
+            variables,
+            types: self.types.clone(),
+            parent: self.parent.clone(),
+        }
+    }
+
+    fn to_comp_scope_so_far(&self) -> CompScope {
+        let variables = self
+            .variables
+            .iter()
+            .filter(|v| v.1.initialised)
+            .map(|v| (v.0.clone(), v.1.get_final()))
+            .chain(self.preset_variables.clone().into_iter())
+            .collect::<HashMap<String, CompVariable>>();
+
+        CompScope {
+            variables,
+            types: self.types.clone(),
+            parent: self.parent.clone(),
+        }
+    }
+
+    fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
+        if let Some(var) = self.variables.get(name) {
+            Ok(var.get_final())
+        } else if let Some(var) = self.preset_variables.get(name) {
+            Ok(var.clone())
+        } else {
+            match &self.parent {
+                Some(parent) => Ok((*parent).get_variable(name)),
+                None => panic!("Cannot find variable '{}'", name),
+            }
+        }
+    }
+
+    fn get_type(&self, name: &String) -> CompType {
+        if let Some(ty) = self.types.get(name) {
+            ty.clone()
+        } else {
+            match &self.parent {
+                Some(parent) => (*parent).get_type(name),
+                None => panic!("Cannot find type '{}'", name),
+            }
+        }
+    }
+
+    fn variable_exists(&self, name: &String) -> bool {
+        if self.variables.contains_key(name) {
+            true
+        } else {
+            match &self.parent {
+                Some(parent) => (*parent).variable_exists(name),
+                None => false,
+            }
+        }
+    }
+
+    fn constant_exists(&self, name: &String) -> bool {
+        if let Some(var) = self.variables.get(name) {
+            var.constant
+        } else {
+            match &self.parent {
+                Some(parent) => (*parent).constant_exists(name),
+                None => false,
+            }
+        }
+    }
+
+    fn variable_initialised(&self, name: &String) -> bool {
+        if let Some(var) = self.variables.get(name) {
+            var.initialised
+        } else {
+            match &self.parent {
+                Some(parent) => (*parent).constant_exists(name),
+                None => false,
+            }
+        }
+    }
+    fn variable_has_type(&self, name: &String) -> bool {
+        if let Some(var) = self.variables.get(name) {
+            var.typing != None
+        } else {
+            match &self.parent {
+                Some(parent) => (*parent).constant_exists(name),
+                None => false,
+            }
+        }
+    }
+
     pub fn is_global(&self) -> bool {
         self.parent.is_none()
     }
@@ -915,6 +1210,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, String> {
         Assign(var, exp) => {
             let exp = get_type_from_exp(exp);
             if let Ok(ty) = exp {
+                let ty = ty.flatten();
                 if var.typing.super_of(&ty) {
                     Ok(var.typing.clone())
                 } else {
@@ -950,6 +1246,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, String> {
                 return msg;
             }
             let arg_types = arg_types.map(|x| x.unwrap());
+            println!("{}", var.typing.get_str());
             if let CompType::Callible(args, ret) = var.typing {
                 let mismatched_args = args
                     .iter()

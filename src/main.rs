@@ -112,8 +112,8 @@ fn main() {
     let parsed = parser().parse(src.trim());
     match parsed {
         Ok(ast) => {
-            create_program(&ast, &global_scope);
-            compile::compile::compile(&ast);
+            let prog = create_program(&ast, &global_scope);
+            compile::compile::compile(&prog);
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
     }
