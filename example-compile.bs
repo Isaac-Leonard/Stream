@@ -1,3 +1,5 @@
+type Putchar=(Int):Int
+extern let putchar:Putchar=(x:Int):Int=>;
 let add=(x:Int, y:Int):Int=>{x+y}
 let sayHello=()=>{
 putchar(64+8)

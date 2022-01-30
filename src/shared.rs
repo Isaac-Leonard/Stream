@@ -17,7 +17,6 @@ pub enum RawData {
     Bool(bool),
     Int(i32),
     Func(Function),
-    ActiveFunc(ActiveFunction),
     Null,
 }
 
@@ -36,7 +35,7 @@ pub enum Expression {
 #[derive(Clone, PartialEq)]
 pub struct Function {
     pub args: Vec<(String, Vec<String>)>,
-    pub body: Vec<Instr>,
+    pub body: Option<Vec<Instr>>,
     pub return_type: Vec<String>,
 }
 impl std::fmt::Debug for Function {
@@ -48,7 +47,7 @@ impl std::fmt::Debug for Function {
 pub enum Instr {
     Invalid(String),
     Assign(String, Expression),
-    InitAssign(bool, String, Option<Vec<String>>, Expression),
+    InitAssign(bool, bool, String, Option<Vec<String>>, Expression),
     LoneExpression(Expression),
     Loop(Expression, Vec<Self>),
     IfElse(Expression, Vec<Instr>, Vec<Instr>),
@@ -176,93 +175,6 @@ impl ScopeRef {
     }
 }
 
-#[derive(Clone)]
-pub struct ActiveFunction {
-    pub args: Vec<(String, Vec<String>)>,
-    pub call: fn(
-        args: Vec<(String, Vec<String>)>,
-        params: Vec<RawData>,
-        body: &Vec<Instr>,
-        stack: ScopeRef,
-        types: &Vec<TypeDescriptor>,
-        run: fn(
-            ast: &[Instr],
-            variables: ScopeRef,
-            types: &Vec<TypeDescriptor>,
-            global: bool,
-        ) -> RawData,
-    ) -> RawData,
-    pub body: Vec<Instr>,
-    pub stack: ScopeRef,
-    pub return_type: Vec<String>,
-}
-impl PartialEq for ActiveFunction {
-    fn eq(&self, other: &Self) -> bool {
-        // Performs a rudimentary check to ensure return types and args have the same names
-        // TOdO: Must improve this to full checking later.
-        if self.return_type != other.return_type {
-            return false;
-        }
-        if self.args != other.args {
-            return false;
-        }
-        return true;
-    }
-}
-
-impl ActiveFunction {
-    pub fn from_raw(func: Function, stack: ScopeRef) -> ActiveFunction {
-        ActiveFunction {
-            args: func.args,
-            call: |args, params, body, stack, itypes, run| {
-                if args.len() != params.len() {
-                    panic!("Called custom function with the wrong number of arguments")
-                }
-                let local_variables = args
-                    .iter()
-                    .zip(params)
-                    .map(|(arg, param)| Variable {
-                        name: arg.0.clone(),
-                        value: param,
-                        data_type: consolidate_type(&arg.1, itypes).unwrap(),
-                    })
-                    .collect::<Vec<_>>();
-                let local_stack = ScopeRef::new(local_variables, stack);
-                let res = run(&body, local_stack, itypes, false);
-                return res;
-            },
-            body: func.body,
-            stack,
-            return_type: func.return_type,
-        }
-    }
-    pub fn execute(
-        &self,
-        params: Vec<RawData>,
-        types: &Vec<TypeDescriptor>,
-        run: fn(
-            ast: &[Instr],
-            variables: ScopeRef,
-            types: &Vec<TypeDescriptor>,
-            global: bool,
-        ) -> RawData,
-    ) -> RawData {
-        (self.call)(
-            self.args.clone(),
-            params,
-            &self.body,
-            self.stack.get_copy(),
-            types,
-            run,
-        )
-    }
-}
-impl std::fmt::Debug for ActiveFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Function({:?})", self.args)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Variable {
     pub name: String,
@@ -302,27 +214,6 @@ pub fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, 
         RawData::Bool(_) => Ok(Bool),
         RawData::Null => Ok(Null),
         RawData::Str(_) => Ok(Str),
-        RawData::ActiveFunc(func) => {
-            let arg_types = func
-                .args
-                .iter()
-                .map(|x| consolidate_type(&x.1, &types))
-                .collect::<Vec<_>>();
-            let errors = arg_types
-                .iter()
-                .filter_map(|x| x.clone().err())
-                .flatten()
-                .collect::<Vec<_>>();
-            if errors.len() > 0 {
-                Err(errors)
-            } else {
-                let arg_types_flattened = arg_types
-                    .iter()
-                    .map(|x| x.clone().unwrap())
-                    .collect::<Vec<_>>();
-                Ok(Func(arg_types_flattened, Box::new(LangType::Null)))
-            }
-        }
         RawData::Func(func) => {
             let arg_types = func
                 .args
@@ -353,6 +244,7 @@ pub struct NewVariable {
     pub typing: Option<CompType>,
     pub constant: bool,
     pub initialised: bool,
+    pub external: bool,
 }
 impl NewVariable {
     fn get_final(&self) -> CompVariable {
@@ -363,6 +255,7 @@ impl NewVariable {
                 name: self.name.clone(),
                 typing: self.typing.clone().unwrap(),
                 constant: self.constant,
+                external: self.external,
             }
         }
     }
@@ -372,6 +265,7 @@ pub struct CompVariable {
     pub name: String,
     pub typing: CompType,
     pub constant: bool,
+    pub external: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -562,7 +456,6 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
                 RawData::Str(val) => CompData::Str(val.clone()),
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
-                RawData::ActiveFunc(_) => panic!("ActiveFunc should not be used"),
                 RawData::Func(func) => {
                     let temp_variables = func.args.iter().map(|x| CompVariable {
                         constant: true,
@@ -572,6 +465,7 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
                             &scope.to_comp_scope_so_far(),
                             &HashMap::new(),
                         ),
+                        external: false,
                     });
                     let arguments = temp_variables.clone().collect::<Vec<_>>();
                     let mut local_variables = HashMap::new();
@@ -583,18 +477,27 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
                         &scope.to_comp_scope_so_far(),
                         &HashMap::new(),
                     );
-                    let mut local_scope = resolve_scope(
-                        &func.body,
-                        &scope.to_comp_scope_so_far(),
-                        &mut local_variables,
-                        &mut HashMap::new(),
-                    );
-                    let body = transform_ast(&func.body, &mut local_scope);
-                    CompData::Func(FunctionAst {
-                        arguments,
-                        return_type,
-                        body: Some(Box::new(body)),
-                    })
+                    match func.body {
+                        Some(body) => {
+                            let mut local_scope = resolve_scope(
+                                &body,
+                                &scope.to_comp_scope_so_far(),
+                                &mut local_variables,
+                                &mut HashMap::new(),
+                            );
+                            let body = transform_ast(&body, &mut local_scope);
+                            CompData::Func(FunctionAst {
+                                arguments,
+                                return_type,
+                                body: Some(Box::new(body)),
+                            })
+                        }
+                        None => CompData::Func(FunctionAst {
+                            arguments,
+                            return_type,
+                            body: None,
+                        }),
+                    }
                 }
             })),
         },
@@ -617,9 +520,12 @@ fn resolve_scope(
                     panic!("Type '{}' is already defined", name)
                 }
             }
-            Instr::InitAssign(constant, name, declared_type, exp) => {
+            Instr::InitAssign(external, constant, name, declared_type, exp) => {
                 if variables.values().any(|x| x.name == name) {
                     panic!("Cannot re-declare variable in the same scope '{}'", name)
+                }
+                if external && declared_type == None {
+                    panic!("External variable '{}' must be declared with a type", name)
                 }
                 variables.insert(
                     name.clone(),
@@ -627,14 +533,18 @@ fn resolve_scope(
                         constant,
                         name,
                         typing: declared_type
-                            .map(|x| transform_type(&CustomType::Union(x), scope, &HashMap::new())),
+                            .map(|x| transform_type(&CustomType::Union(x), scope, types)),
                         initialised: false,
+                        external,
                     },
                 );
             }
             Instr::Assign(name, _) => {
                 if scope.is_global() {
-                    panic!("Cannot reassign after declaration in the global scope")
+                    panic!(
+                        "Cannot reassign after declaration in the global scope '{}'",
+                        name
+                    )
                 }
 
                 if !scope.variable_exists(&name) && !variables.contains_key(&name) {
@@ -661,7 +571,7 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
     for stat in ast {
         match stat {
             Instr::TypeDeclaration(_, _) => {}
-            Instr::InitAssign(_, name, _, exp) => {
+            Instr::InitAssign(_, _, name, _, exp) => {
                 if scope.variable_initialised(name) {
                     errors.push(format!(
                         "Cannot re-initialise already declared variable '{}'",

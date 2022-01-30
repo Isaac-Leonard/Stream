@@ -75,8 +75,10 @@ pub mod parser {
                     main_parser
                         .clone()
                         .delimited_by('{', '}')
-                        .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x])),
+                        .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x]))
+                        .or_not(),
                 )
+                .then_ignore(seq([';']).or_not())
                 .map(|((args, ret), body)| {
                     Symbol::Data(RawData::Func(Function {
                         args,
@@ -174,21 +176,25 @@ pub mod parser {
         use Instr::*;
         recursive(|bf: Recursive<char, Vec<Instr>, _>| {
             let exp = exp_parser(bf.clone()).boxed();
-            seq("let".chars())
-                .map(|_| false)
-                .or(seq("const".chars()).map(|_| true))
-                .padded()
+            seq("extern".chars())
+                .or_not()
+                .map(|x| x.is_some())
+                .then(
+                    seq("let".chars())
+                        .map(|_| false)
+                        .or(seq("const".chars()).map(|_| true))
+                        .padded(),
+                )
                 .then(ident().map(String::from))
                 .then(type_specifyer().or_not())
                 .then_ignore(just('='))
                 .then(exp.clone())
-                .map(|x| InitAssign(x.0 .0 .0, x.0 .0 .1, x.0 .1, x.1))
+                .map(|x| InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1))
                 .or(ident()
                     .map(String::from)
-                    .then(type_specifyer().or_not())
                     .then_ignore(just('='))
                     .then(exp.clone())
-                    .map(|x| Assign(x.0 .0, x.1)))
+                    .map(|x| Assign(x.0, x.1)))
                 .or(seq("while".chars())
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
