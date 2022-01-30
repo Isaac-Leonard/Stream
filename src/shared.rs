@@ -3,7 +3,7 @@ use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::Deref, rc
 use inkwell::{
     context::Context,
     types::{BasicType, BasicTypeEnum},
-    values::{BasicValue, BasicValueEnum, IntMathValue, IntValue},
+    values::{BasicValue, BasicValueEnum, FloatMathValue, IntMathValue, IntValue},
 };
 #[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
@@ -16,6 +16,7 @@ pub enum RawData {
     Str(String),
     Bool(bool),
     Int(i32),
+    Float(f32),
     Func(Function),
     Null,
 }
@@ -59,183 +60,6 @@ pub enum CustomType {
     Callible(Vec<Self>, Box<Self>),
     // Only have union, can map singular types / aliases to a union then flaten them later
     Union(Vec<String>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypeDescriptor {
-    pub name: String,
-    pub shape: LangType,
-}
-#[derive(Clone, Debug, PartialEq)]
-pub enum LangType {
-    Bool,
-    Int,
-    Str,
-    Func(Vec<LangType>, Box<LangType>),
-    Union(Vec<LangType>),
-    Null,
-}
-impl LangType {
-    pub fn flatten(&self) -> LangType {
-        match self {
-            LangType::Union(types) => {
-                if types.len() == 1 {
-                    return types[0].clone();
-                } else {
-                    return self.clone();
-                }
-            }
-            LangType::Func(args, ret) => LangType::Func(
-                args.iter().map(|x| x.flatten()).collect(),
-                Box::new(ret.flatten()),
-            ),
-            _ => self.clone(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Scope {
-    pub variables: Vec<Variable>,
-    pub types: Vec<TypeDescriptor>,
-    pub parent: Option<Rc<RefCell<Scope>>>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ScopeRef(pub Rc<RefCell<Scope>>);
-impl ScopeRef {
-    pub fn new(variables: Vec<Variable>, parent: ScopeRef) -> ScopeRef {
-        ScopeRef(Rc::new(RefCell::new(Scope {
-            parent: Some(parent.0),
-            variables,
-            types: Vec::new(),
-        })))
-    }
-
-    pub fn get_copy(&self) -> ScopeRef {
-        ScopeRef(Rc::clone(&self.0))
-    }
-
-    pub fn set_variable(
-        &self,
-        name: &String,
-        value: RawData,
-        types: &Vec<TypeDescriptor>,
-    ) -> RawData {
-        let data_type = &get_type(&value, types).unwrap();
-        let location = self.get_variable_location(name);
-        match location {
-            Some((scope, index)) => {
-                let variables = &mut scope.0.as_ref().borrow_mut().variables;
-                variables[index].value = value.clone();
-            }
-            None => {
-                self.0.as_ref().borrow_mut().variables.push(Variable {
-                    name: name.clone(),
-                    value: value.clone(),
-                    data_type: data_type.clone(),
-                });
-            }
-        }
-
-        return value.clone();
-    }
-
-    pub fn get_index_local(&self, name: &String) -> Option<usize> {
-        Rc::clone(&self.0)
-            .as_ref()
-            .borrow()
-            .variables
-            .iter()
-            .position(|x| x.name == *name)
-    }
-
-    pub fn get_variable_location(&self, name: &String) -> Option<(ScopeRef, usize)> {
-        let index = self.get_index_local(name);
-        match index {
-            Some(i) => Some((self.get_copy(), i)),
-            None => self
-                .0
-                .deref()
-                .borrow_mut()
-                .parent
-                .as_ref()
-                .map(|x| ScopeRef(Rc::clone(&x)).get_variable_location(name))
-                .flatten(),
-        }
-    }
-
-    pub fn get_variable(&self, name: &String) -> Option<Variable> {
-        let location = self.get_variable_location(name);
-        match location {
-            Some((scope, index)) => Some(scope.0.as_ref().borrow().variables[index].clone()),
-
-            None => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Variable {
-    pub name: String,
-    pub data_type: LangType,
-    pub value: RawData,
-}
-pub fn consolidate_type(
-    names: &Vec<String>,
-    defined_types: &Vec<TypeDescriptor>,
-) -> Result<LangType, Vec<String>> {
-    let res = names
-        .iter()
-        .map(|name| {
-            defined_types
-                .iter()
-                .find(|x| x.name == *name)
-                .ok_or(name.clone())
-                .map(|x| x.shape.clone())
-        })
-        .collect::<Vec<Result<LangType, String>>>();
-    let errors = res
-        .iter()
-        .filter_map::<String, _>(|x| x.clone().err())
-        .collect::<Vec<_>>();
-    if errors.len() > 0 {
-        Result::Err(errors)
-    } else {
-        // Flatten the union to simplify the type if its only got one member
-        Result::Ok(LangType::Union(res.iter().map(|x| x.clone().unwrap()).collect()).flatten())
-    }
-}
-
-pub fn get_type(val: &RawData, types: &Vec<TypeDescriptor>) -> Result<LangType, Vec<String>> {
-    use LangType::*;
-    match val {
-        RawData::Int(_) => Ok(Int),
-        RawData::Bool(_) => Ok(Bool),
-        RawData::Null => Ok(Null),
-        RawData::Str(_) => Ok(Str),
-        RawData::Func(func) => {
-            let arg_types = func
-                .args
-                .iter()
-                .map(|x| consolidate_type(&x.1, &types))
-                .collect::<Vec<_>>();
-            let errors = arg_types
-                .iter()
-                .filter_map(|x| x.clone().err())
-                .flatten()
-                .collect::<Vec<_>>();
-            if errors.len() > 0 {
-                Err(errors)
-            } else {
-                let arg_types_flattened = arg_types
-                    .iter()
-                    .map(|x| x.clone().unwrap())
-                    .collect::<Vec<_>>();
-                Ok(Func(arg_types_flattened, Box::new(LangType::Null)))
-            }
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -453,6 +277,7 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
             },
             Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
+                RawData::Float(val) => CompData::Float(val),
                 RawData::Str(val) => CompData::Str(val.clone()),
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,

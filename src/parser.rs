@@ -7,6 +7,11 @@ pub mod parser {
     fn parse_to_i32(x: String) -> i32 {
         return x.parse::<i32>().unwrap();
     }
+
+    fn parse_to_f32(x: String) -> f32 {
+        return x.parse::<f32>().unwrap();
+    }
+
     fn type_specifyer() -> impl Parser<char, Vec<String>, Error = Cheap<char>> {
         just(':')
             .ignore_then(
@@ -25,6 +30,21 @@ pub mod parser {
             .at_least(1)
             .collect::<String>()
             .map(parse_to_i32)
+    }
+    fn float() -> impl Parser<char, f32, Error = Cheap<char>> {
+        (filter::<_, _, Cheap<char>>(char::is_ascii_digit)
+            .repeated()
+            .at_least(1)
+            .collect::<String>()
+            .then_ignore(just('.'))
+            .then(
+                filter::<_, _, Cheap<char>>(char::is_ascii_digit)
+                    .repeated()
+                    .at_least(1)
+                    .collect::<String>(),
+            ))
+        .map(|x| format!("{}.{}", x.0, x.1))
+        .map(parse_to_f32)
     }
 
     fn string() -> impl Parser<char, String, Error = Cheap<char>> {
@@ -51,6 +71,7 @@ pub mod parser {
             .map(Symbol::Identifier)
             .or(string().map(RawData::Str).map(Symbol::Data))
             .or(integer().map(RawData::Int).map(Symbol::Data))
+            .or(float().map(RawData::Float).map(Symbol::Data))
     }
     fn exp_parser<'a>(
         main_parser: Recursive<'a, char, Vec<Instr>, Cheap<char>>,

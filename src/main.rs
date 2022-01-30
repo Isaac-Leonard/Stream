@@ -18,6 +18,7 @@ fn main() {
     // let src = "[!]+";
     let mut types = HashMap::new();
     types.insert("Int".to_string(), CompType::Int);
+    types.insert("Float".to_string(), CompType::Float);
     types.insert("Null".to_string(), CompType::Null);
     let mut variables = HashMap::new();
     let global_scope = CompScope {
