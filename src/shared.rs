@@ -593,6 +593,7 @@ impl CompType {
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
+            Str => context.i8_type().array_type(5).as_basic_type_enum(),
             _ => panic!(
                 "get_compiler_type not implemented for type '{}'",
                 self.get_str()

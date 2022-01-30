@@ -55,6 +55,14 @@ pub mod compile {
                 .custom_width_int_type(1)
                 .const_int(0, false)
                 .as_basic_value_enum(),
+            CompData::Str(str) => ctx
+                .i8_type()
+                .const_array(
+                    &str.chars()
+                        .map(|x| ctx.i8_type().const_int(x as u64, false))
+                        .collect::<Vec<_>>(),
+                )
+                .as_basic_value_enum(),
             CompData::Func(_) => panic!("Functions should be retrieved seperately"),
             _ => panic!(
                 "Only integer, float and null types are currently supported, not '{:?}'",
