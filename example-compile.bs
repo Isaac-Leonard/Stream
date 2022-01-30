@@ -37,5 +37,6 @@ let c=getchar()
 newLine()
 putchar(c)
 newLine()
+let someStr="Hello"
 2
 }
