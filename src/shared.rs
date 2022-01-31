@@ -150,7 +150,7 @@ impl Op {
             Sub | Div | Mult => {
                 if a == b {
                     match a {
-                        Str | Bool | Null => Err(self.invalid_comparison_msg(a, b)),
+                        Str(_) | Bool | Null => Err(self.invalid_comparison_msg(a, b)),
                         x => Ok(x.clone()),
                     }
                 } else {
@@ -525,7 +525,7 @@ impl CompData {
             Bool(_) => CompType::Bool,
             Int(_) => CompType::Int,
             Float(_) => CompType::Float,
-            Str(_) => CompType::Str,
+            Str(content) => CompType::Str(content.len() as u32),
             Func(ast) => ast.as_type(),
         }
     }
@@ -583,7 +583,7 @@ pub enum CompType {
     Bool,
     Int,
     Float,
-    Str,
+    Str(u32),
 }
 impl CompType {
     pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
@@ -593,7 +593,7 @@ impl CompType {
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
-            Str => context.i8_type().array_type(5).as_basic_type_enum(),
+            Str(len) => context.i8_type().array_type(len).as_basic_type_enum(),
             _ => panic!(
                 "get_compiler_type not implemented for type '{}'",
                 self.get_str()
@@ -614,7 +614,10 @@ impl CompType {
         self == &CompType::Null
     }
     fn is_str(&self) -> bool {
-        self == &CompType::Str
+        match self {
+            CompType::Str(_) => true,
+            _ => false,
+        }
     }
     pub fn is_callable(&self) -> bool {
         match self {
@@ -627,7 +630,7 @@ impl CompType {
         match self {
             Int => "Int".to_string(),
             Null => "Null".to_string(),
-            Str => "Str".to_string(),
+            Str(len) => format!("Str<{}>", len),
             Bool => "Bool".to_string(),
             Float => "Float".to_string(),
             Union(types) => types
@@ -650,7 +653,7 @@ impl CompType {
         match self {
             Int => Int,
             Float => Float,
-            Str => Str,
+            Str(len) => Str(*len),
             Bool => Bool,
             Null => Null,
             Callible(args, ret) => Callible(
@@ -674,7 +677,7 @@ impl CompType {
             Bool => 1,
             Int => 2,
             Float => 3,
-            Str => 4,
+            Str(_) => 4,
             Callible(_, _) => 5,
             Union(_) => 7,
         }
