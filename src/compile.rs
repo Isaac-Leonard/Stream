@@ -37,31 +37,31 @@ pub mod compile {
     /// Calling this is innately `unsafe` because there's no guarantee it doesn't
     /// do `unsafe` operations internally.
 
-    fn get_value<'ctx>(val: &CompData, ctx: &'ctx Context) -> BasicValueEnum<'ctx> {
+    fn get_value<'a, 'ctx>(val: &CompData, compiler: &Compiler<'a, 'ctx>) -> BasicValueEnum<'ctx> {
         match val {
-            CompData::Int(int) => ctx
+            CompData::Int(int) => compiler
+                .context
                 .i32_type()
                 .const_int(*int as u64, false)
                 .as_basic_value_enum(),
-            CompData::Bool(bool) => ctx
+            CompData::Bool(bool) => compiler
+                .context
                 .bool_type()
                 .const_int(*bool as u64, false)
                 .as_basic_value_enum(),
-            CompData::Float(float) => ctx
+            CompData::Float(float) => compiler
+                .context
                 .f32_type()
                 .const_float(*float as f64)
                 .as_basic_value_enum(),
-            CompData::Null => ctx
+            CompData::Null => compiler
+                .context
                 .custom_width_int_type(1)
                 .const_int(0, false)
                 .as_basic_value_enum(),
-            CompData::Str(str) => ctx
-                .i8_type()
-                .const_array(
-                    &str.chars()
-                        .map(|x| ctx.i8_type().const_int(x as u64, false))
-                        .collect::<Vec<_>>(),
-                )
+            CompData::Str(str) => compiler
+                .builder
+                .build_global_string_ptr(&str, "String")
                 .as_basic_value_enum(),
             CompData::Func(_) => panic!("Functions should be retrieved seperately"),
             _ => panic!(
@@ -164,7 +164,16 @@ pub mod compile {
                     let func = self.module.get_function(&var.name).unwrap();
                     let compiled_args = args
                         .iter()
-                        .map(|arg| self.compile_expression(arg, variables).into())
+                        .map(|arg| {
+                            let val = self.compile_expression(arg, variables);
+                            match val {
+                                BasicValueEnum::PointerValue(x) => {
+                                    println!("Pointer value found");
+                                    val
+                                }
+                                x => x,
+                            }
+                        })
                         .collect::<Vec<BasicValueEnum>>();
                     let argv = compiled_args
                         .iter()
@@ -210,7 +219,7 @@ pub mod compile {
                         val
                     }
                 },
-                CompExpression::Value(val) => get_value(val, self.context),
+                CompExpression::Value(val) => get_value(val, self),
                 CompExpression::List(expressions) => expressions
                     .iter()
                     .map(|x| self.compile_expression(x, variables))
@@ -251,11 +260,6 @@ pub mod compile {
                 variables.insert(arg_name.to_string(), alloca);
             }
             let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
-            println!(
-                "variables: {:?}",
-                func.body.clone().unwrap().scope.variables
-            );
-            println!("Args: {:?}", arg_names);
             func.body
                 .clone()
                 .unwrap()
@@ -264,7 +268,6 @@ pub mod compile {
                 .iter()
                 .filter(|x| !arg_names.contains(x.0))
                 .for_each(|x| {
-                    println!("{}", x.0);
                     variables.insert(
                         x.0.to_string(),
                         self.add_variable_to_block(
@@ -274,7 +277,6 @@ pub mod compile {
                         ),
                     );
                 });
-            println!("variables: {:?}", variables);
             // compile body
             let body = self.compile_expression(&func.body.clone().unwrap().body, &variables);
             match func.return_type {
@@ -326,7 +328,6 @@ pub mod compile {
                     .get_compiler_type(self.context)
                     .fn_type(args_types, false)
             } else {
-                println!("{}", func.get_str());
                 panic!("Must be a function, not '{}'", func.get_str())
             }
         }
@@ -358,15 +359,8 @@ pub mod compile {
             fpm: &fpm,
             module: &module,
         };
-        let ret = ctx.i32_type();
-        compiler.module.add_function(
-            "putchar",
-            ret.fn_type(&[BasicMetadataTypeEnum::IntType(ret)], false),
-            Some(Linkage::AvailableExternally),
-        );
         compiler.compile_expression(&ast.body, &HashMap::new());
         compiler.module.print_to_stderr();
-        println!("Before segfault");
 
         Target::initialize_x86(&InitializationConfig::default());
         let opt = OptimizationLevel::Default;

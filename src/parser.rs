@@ -56,7 +56,8 @@ pub mod parser {
                 .or(just('f').to('\x0C'))
                 .or(just('n').to('\n'))
                 .or(just('r').to('\r'))
-                .or(just('t').to('\t')),
+                .or(just('t').to('\t'))
+                .or(just('0').to('\0')),
         );
 
         just('"')

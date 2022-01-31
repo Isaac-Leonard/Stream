@@ -138,7 +138,9 @@ impl Op {
                 _ => Err(self.invalid_comparison_msg(a, b)),
             },
             Add => {
-                if a == b {
+                if let (Str(a), Str(b)) = (a, b) {
+                    Ok(Str(*a + *b))
+                } else if a == b {
                     match a {
                         Bool | Null => Err(self.invalid_comparison_msg(a, b)),
                         x => Ok(x.clone()),
@@ -584,6 +586,7 @@ pub enum CompType {
     Int,
     Float,
     Str(u32),
+    Ptr,
 }
 impl CompType {
     pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
@@ -593,7 +596,14 @@ impl CompType {
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
-            Str(len) => context.i8_type().array_type(len).as_basic_type_enum(),
+            Str(len) => context
+                .i8_type()
+                .ptr_type(inkwell::AddressSpace::Global)
+                .as_basic_type_enum(),
+            Ptr => context
+                .i8_type()
+                .ptr_type(inkwell::AddressSpace::Generic)
+                .as_basic_type_enum(),
             _ => panic!(
                 "get_compiler_type not implemented for type '{}'",
                 self.get_str()
@@ -628,6 +638,7 @@ impl CompType {
     pub fn get_str(&self) -> String {
         use CompType::*;
         match self {
+            Ptr => "Ptr".to_string(),
             Int => "Int".to_string(),
             Null => "Null".to_string(),
             Str(len) => format!("Str<{}>", len),
@@ -651,6 +662,7 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Ptr => Ptr,
             Int => Int,
             Float => Float,
             Str(len) => Str(*len),
@@ -673,6 +685,7 @@ impl CompType {
     fn get_discriminant(&self) -> i8 {
         use CompType::*;
         match self {
+            Ptr => 8,
             Null => 0,
             Bool => 1,
             Int => 2,
