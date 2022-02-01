@@ -651,6 +651,8 @@ impl CompType {
     fn super_of(&self, ty: &CompType) -> bool {
         if self == ty {
             true
+        } else if self == &CompType::Ptr && ty.is_str() {
+            true
         } else {
             false
         }
