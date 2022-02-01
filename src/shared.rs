@@ -1,9 +1,8 @@
-use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, ops::Deref, rc::Rc};
+use std::collections::HashMap;
 
 use inkwell::{
     context::Context,
     types::{BasicType, BasicTypeEnum},
-    values::{BasicValue, BasicValueEnum, FloatMathValue, IntMathValue, IntValue},
 };
 #[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
@@ -71,16 +70,16 @@ pub struct NewVariable {
     pub external: bool,
 }
 impl NewVariable {
-    fn get_final(&self) -> CompVariable {
+    fn get_final(&self) -> Result<CompVariable, String> {
         if self.typing == None || !self.initialised {
-            panic!("Cannot use uninitialised variable '{}'", self.name)
+            Err(format!("Cannot use uninitialised variable '{}'", self.name))
         } else {
-            CompVariable {
+            Ok(CompVariable {
                 name: self.name.clone(),
                 typing: self.typing.clone().unwrap(),
                 constant: self.constant,
                 external: self.external,
-            }
+            })
         }
     }
 }
@@ -238,7 +237,7 @@ fn bin_exp(
     left: &Expression,
     right: &Expression,
     scope: &TempScope,
-) -> Result<CompExpression, String> {
+) -> Result<CompExpression, Vec<String>> {
     let left = match transform_exp(&left, scope) {
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
@@ -250,7 +249,7 @@ fn bin_exp(
     Ok(CompExpression::BinOp(op, Box::new(left), Box::new(right)))
 }
 
-fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, String> {
+fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, Vec<String>> {
     match exp {
         Expression::LessThan(l, r) => bin_exp(Op::Le, l, r, scope),
         Expression::Addition(l, r) => bin_exp(Op::Add, l, r, scope),
@@ -262,10 +261,10 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
             let args = args
                 .iter()
                 .map(|x| transform_exp(x, scope))
-                .collect::<Result<Vec<CompExpression>, String>>();
+                .collect::<Result<Vec<CompExpression>, Vec<String>>>();
             let func = match scope.get_variable(name) {
                 Ok(var) => var,
-                Err(msg) => return Err(msg),
+                Err(msg) => return Err(vec![msg]),
             };
             match args {
                 Ok(args) => Ok(CompExpression::Call(func, args)),
@@ -275,7 +274,7 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
         Expression::Terminal(sym) => match sym {
             Symbol::Identifier(name) => match scope.get_variable(name) {
                 Ok(var) => Ok(CompExpression::Read(var)),
-                Err(msg) => Err(msg),
+                Err(msg) => Err(vec![msg]),
             },
             Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
@@ -313,6 +312,10 @@ fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, 
                                 &mut HashMap::new(),
                             );
                             let body = transform_ast(&body, &mut local_scope);
+                            let body = match body {
+                                Err(messages) => return Err(messages),
+                                Ok(x) => x,
+                            };
                             CompData::Func(FunctionAst {
                                 arguments,
                                 return_type,
@@ -392,7 +395,7 @@ fn resolve_scope(
     }
 }
 
-pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
+pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Result<Program, Vec<String>> {
     let mut expressions: Vec<CompExpression> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
     for stat in ast {
@@ -409,7 +412,7 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
                     let exp = match exp {
                         Ok(exp) => exp,
                         Err(msg) => {
-                            errors.push(msg);
+                            errors.append(&mut msg.clone());
                             continue;
                         }
                     };
@@ -440,7 +443,7 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
                 let exp = match exp {
                     Ok(exp) => exp,
                     Err(msg) => {
-                        errors.push(msg);
+                        errors.append(&mut msg.clone());
                         continue;
                     }
                 };
@@ -462,27 +465,44 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
                 let cond = match cond {
                     Ok(cond) => cond,
                     Err(msg) => {
-                        errors.push(msg);
+                        errors.append(&mut msg.clone());
                         continue;
                     }
                 };
                 let body = transform_ast(&body, scope);
-                expressions.push(CompExpression::WhileLoop {
-                    cond: Box::new(cond),
-                    body: Box::new(CompExpression::Prog(Box::new(body))),
-                });
+                match body {
+                    Err(messages) => errors.append(&mut messages.clone()),
+                    Ok(body) => expressions.push(CompExpression::WhileLoop {
+                        cond: Box::new(cond),
+                        body: Box::new(CompExpression::Prog(Box::new(body))),
+                    }),
+                };
             }
             Instr::IfElse(cond, left, right) => {
                 let cond = transform_exp(&cond, scope);
                 let cond = match cond {
                     Ok(cond) => cond,
                     Err(msg) => {
-                        errors.push(msg);
+                        errors.append(&mut msg.clone());
                         continue;
                     }
                 };
                 let then = transform_ast(&left, scope);
+                let then = match then {
+                    Err(messages) => {
+                        errors.append(&mut messages.clone());
+                        continue;
+                    }
+                    Ok(x) => x,
+                };
                 let alt = transform_ast(&right, scope);
+                let alt = match alt {
+                    Err(messages) => {
+                        errors.append(&mut messages.clone());
+                        continue;
+                    }
+                    Ok(x) => x,
+                };
                 expressions.push(CompExpression::IfElse {
                     cond: Box::new(cond),
                     then: Box::new(CompExpression::Prog(Box::new(then))),
@@ -493,7 +513,7 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
                 let exp = transform_exp(&exp, scope);
                 let exp = match exp {
                     Ok(exp) => expressions.push(exp),
-                    Err(msg) => errors.push(msg),
+                    Err(msg) => errors.append(&mut msg.clone()),
                 };
             }
             Instr::Invalid(x) => {
@@ -504,9 +524,21 @@ pub fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Program {
     }
     let expressions = expressions;
     let scope = scope.to_comp_scope();
-    Program {
-        scope: scope.clone(),
-        body: CompExpression::List(expressions),
+    match scope {
+        Ok(scope) => {
+            if errors.is_empty() {
+                Ok(Program {
+                    scope: scope.clone(),
+                    body: CompExpression::List(expressions),
+                })
+            } else {
+                Err(errors)
+            }
+        }
+        Err(messages) => {
+            errors.append(&mut messages.clone());
+            Err(errors)
+        }
     }
 }
 
@@ -538,11 +570,17 @@ pub enum CompSymbol {
     Identifier(String),
 }
 
-pub fn create_program(ast: &Vec<Instr>, scope: &CompScope) -> Program {
+pub fn create_program(ast: &Vec<Instr>, scope: &CompScope) -> Result<Program, Vec<String>> {
     let mut local_scope = resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new());
     let prog = transform_ast(ast, &mut local_scope);
-    get_type_from_exp(&prog.body);
-    prog
+    if prog.is_err() {
+        return prog;
+    }
+    let prog = prog.unwrap();
+    match get_type_from_exp(&prog.body) {
+        Err(messages) => Err(vec![messages]),
+        _ => Ok(prog),
+    }
 }
 
 pub fn flatten_action(action: CompExpression) -> Option<CompExpression> {
@@ -784,17 +822,23 @@ impl TempScope {
         self
     }
 
-    fn to_comp_scope(&self) -> CompScope {
-        let variables = self
+    fn to_comp_scope(&self) -> Result<CompScope, Vec<String>> {
+        let mut variables = self
             .variables
             .iter()
-            .map(|v| (v.0.clone(), v.1.get_final()))
-            .chain(self.preset_variables.clone().into_iter())
-            .collect::<HashMap<String, CompVariable>>();
-        CompScope {
-            variables,
-            types: self.types.clone(),
-            parent: self.parent.clone(),
+            .map(|v| v.1.get_final())
+            .chain(self.preset_variables.values().map(|x| Ok(x.clone())));
+        if variables.any(|x| x.is_err()) {
+            Err(variables.filter_map(|x| x.err()).collect())
+        } else {
+            Ok(CompScope {
+                variables: variables
+                    .map(|x| x.map(|x| (x.name.clone(), x)))
+                    .collect::<Result<HashMap<_, _>, _>>()
+                    .expect("Something went wrong"),
+                types: self.types.clone(),
+                parent: self.parent.clone(),
+            })
         }
     }
 
@@ -803,7 +847,7 @@ impl TempScope {
             .variables
             .iter()
             .filter(|v| v.1.initialised)
-            .map(|v| (v.0.clone(), v.1.get_final()))
+            .map(|v| (v.0.clone(), v.1.get_final().unwrap()))
             .chain(self.preset_variables.clone().into_iter())
             .collect::<HashMap<String, CompVariable>>();
 
@@ -816,7 +860,7 @@ impl TempScope {
 
     fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
         if let Some(var) = self.variables.get(name) {
-            Ok(var.get_final())
+            var.get_final()
         } else if let Some(var) = self.preset_variables.get(name) {
             Ok(var.clone())
         } else {

@@ -31,7 +31,10 @@ fn main() {
     match parsed {
         Ok(ast) => {
             let prog = create_program(&ast, &global_scope);
-            compile::compile::compile(&prog);
+            match prog {
+                Ok(prog) => compile::compile::compile(&prog),
+                Err(messages) => messages.into_iter().for_each(|e| println!("{}", e)),
+            };
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
     }
