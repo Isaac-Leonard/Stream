@@ -158,6 +158,7 @@ pub mod compile {
             &self,
             exp: &CompExpression,
             variables: &HashMap<String, PointerValue<'ctx>>,
+            parent: Option<&FunctionValue>,
         ) -> BasicValueEnum<'ctx> {
             match exp {
                 CompExpression::Call(var, args) => {
@@ -165,7 +166,7 @@ pub mod compile {
                     let compiled_args = args
                         .iter()
                         .map(|arg| {
-                            let val = self.compile_expression(arg, variables);
+                            let val = self.compile_expression(arg, variables, parent);
                             match val {
                                 BasicValueEnum::PointerValue(x) => {
                                     println!("Pointer value found");
@@ -191,8 +192,8 @@ pub mod compile {
                 }
                 CompExpression::BinOp(op, left, right) => {
                     use BasicValueEnum::*;
-                    let lhs = self.compile_expression(left, variables);
-                    let rhs = self.compile_expression(right, variables);
+                    let lhs = self.compile_expression(left, variables, parent);
+                    let rhs = self.compile_expression(right, variables, parent);
                     match (lhs, rhs) {
                         (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, &self.builder),
                         (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, self.builder),
@@ -213,19 +214,63 @@ pub mod compile {
                             .as_basic_value_enum()
                     }
                     exp => {
-                        let val = self.compile_expression(exp, variables);
+                        let val = self.compile_expression(exp, variables, parent);
                         let var = *variables.get(&var.name).unwrap();
                         let ptr = self.builder.build_store(var, val);
                         val
                     }
                 },
                 CompExpression::Value(val) => get_value(val, self),
+                CompExpression::IfElse {
+                    cond,
+                    then,
+                    otherwise,
+                } => {
+                    let cond = self
+                        .compile_expression(cond, variables, parent)
+                        .into_int_value();
+
+                    let then_bb = self.context.append_basic_block(*parent.unwrap(), "then");
+                    let else_bb = self.context.append_basic_block(*parent.unwrap(), "else");
+                    let cont_bb = self.context.append_basic_block(*parent.unwrap(), "ifcont");
+
+                    self.builder
+                        .build_conditional_branch(cond, then_bb, else_bb);
+
+                    // build then block
+                    self.builder.position_at_end(then_bb);
+                    let then_val = self.compile_expression(then, variables, parent);
+                    self.builder.build_unconditional_branch(cont_bb);
+
+                    let then_bb = self.builder.get_insert_block().unwrap();
+
+                    // build else block
+                    self.builder.position_at_end(else_bb);
+                    let else_val = self.compile_expression(otherwise, variables, parent);
+                    self.builder.build_unconditional_branch(cont_bb);
+
+                    let else_bb = self.builder.get_insert_block().unwrap();
+
+                    // emit merge block
+                    self.builder.position_at_end(cont_bb);
+
+                    let phi = self
+                        .builder
+                        .build_phi(self.context.custom_width_int_type(32), "iftmp");
+
+                    phi.add_incoming(&[(&then_val, then_bb), (&else_val, else_bb)]);
+
+                    phi.as_basic_value()
+                }
                 CompExpression::List(expressions) => expressions
                     .iter()
-                    .map(|x| self.compile_expression(x, variables))
+                    .map(|x| self.compile_expression(x, variables, parent))
                     .last()
                     .unwrap(),
-                _ => panic!("Not implemented"),
+                CompExpression::Prog(prog) => {
+                    self.compile_expression(&prog.body, variables, parent)
+                }
+                other => panic!("Not implemented '{:?}'", other),
             }
         }
         fn get_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
@@ -278,7 +323,11 @@ pub mod compile {
                     );
                 });
             // compile body
-            let body = self.compile_expression(&func.body.clone().unwrap().body, &variables);
+            let body = self.compile_expression(
+                &func.body.clone().unwrap().body,
+                &variables,
+                Some(&fn_val),
+            );
             match func.return_type {
                 CompType::Null => self.builder.build_return(Some(
                     &self
@@ -359,7 +408,7 @@ pub mod compile {
             fpm: &fpm,
             module: &module,
         };
-        compiler.compile_expression(&ast.body, &HashMap::new());
+        compiler.compile_expression(&ast.body, &HashMap::new(), None);
         compiler.module.print_to_stderr();
 
         Target::initialize_x86(&InitializationConfig::default());
