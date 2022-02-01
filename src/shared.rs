@@ -830,7 +830,7 @@ impl TempScope {
             .iter()
             .map(|v| v.1.get_final())
             .chain(self.preset_variables.values().map(|x| Ok(x.clone())));
-        if variables.any(|x| x.is_err()) {
+        if variables.clone().any(|x| x.is_err()) {
             Err(variables.filter_map(|x| x.err()).collect())
         } else {
             Ok(CompScope {
