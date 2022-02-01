@@ -28,6 +28,7 @@ extern let puts:Puts=(str:Str):Int=>;
 let main=():Int=>{
 let hello:Str="Hello"
 let world:Str="World"
+puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
 if getchar()==65{
 puts(hello)
 }else{
