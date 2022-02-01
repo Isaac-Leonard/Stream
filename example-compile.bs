@@ -26,16 +26,13 @@ putchar(13)
 type Puts=(Str):Int
 extern let puts:Puts=(str:Str):Int=>;
 let main=():Int=>{
-let hello:Str="Hel\n\0"
-let hello2=hello
-let y=hello2
-hello=y
-let x=0
-x=x+4
-x=x/2
-x=x/2
-puts("Hello")
-putchar(x)
+let hello:Str="Hello"
+let world:Str="World"
+if getchar()==65{
+puts(hello)
+}else{
+puts(world)
+}
 newLine()
 0
 }
