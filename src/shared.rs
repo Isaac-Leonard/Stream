@@ -6,6 +6,26 @@ pub mod shared {
         types::{BasicType, BasicTypeEnum},
     };
 
+    fn collect_ok_or_err<T, E>(
+        iter: impl IntoIterator<Item = Result<T, E>>,
+    ) -> Option<Result<Vec<T>, Vec<E>>> {
+        let mut errors = Vec::new();
+        let mut successes = Vec::new();
+        for v in iter {
+            match v {
+                Ok(success) => successes.push(success),
+                Err(error) => errors.push(error),
+            }
+        }
+        if errors.is_empty() && successes.is_empty() {
+            None
+        } else if errors.is_empty() {
+            Some(Ok(successes))
+        } else {
+            Some(Err(errors))
+        }
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub enum Symbol {
         Data(RawData),
@@ -214,24 +234,31 @@ pub mod shared {
         ty: &CustomType,
         scope: &CompScope,
         types: &HashMap<String, CompType>,
-    ) -> CompType {
+    ) -> Result<CompType, Vec<String>> {
         match ty {
-            CustomType::Union(sub_types) => CompType::Union(
-                sub_types
-                    .iter()
-                    .map(|x| types.get(x).cloned().unwrap_or_else(|| scope.get_type(x)))
-                    .collect(),
-            ),
+            CustomType::Union(sub_types) => {
+                collect_ok_or_err(sub_types.iter().map(|x| match types.get(x) {
+                    None => scope.get_type(x),
+                    Some(ty) => Ok(ty.flatten()),
+                }))
+                .unwrap_or_else(|| Err(vec!["Cannot have empty types".to_string()]))
+                .map(CompType::Union)
+            }
+
             CustomType::Callible(args, ret) => {
-                let args = args
-                    .iter()
-                    .map(|x| transform_type(x, scope, types))
-                    .collect::<Vec<_>>();
+                let args = collect_ok_or_err(args.iter().map(|x| transform_type(x, scope, types)))
+                    .unwrap_or(Ok(Vec::new()));
                 let ret = transform_type(ret, scope, types);
-                CompType::Callible(args, Box::new(ret))
+                match (args, ret) {
+                    (Err(args), Err(ret)) => {
+                        Err(args.iter().flatten().chain(ret.iter()).cloned().collect())
+                    }
+                    (Err(args), _) => Err(args.iter().flatten().cloned().collect()),
+                    (_, Err(ret)) => Err(ret),
+                    (Ok(args), Ok(ret)) => Ok(CompType::Callible(args, Box::new(ret))),
+                }
             }
         }
-        .flatten()
     }
 
     fn bin_exp(
@@ -285,34 +312,56 @@ pub mod shared {
                     RawData::Bool(val) => CompData::Bool(val),
                     RawData::Null => CompData::Null,
                     RawData::Func(func) => {
-                        let temp_variables = func.args.iter().map(|x| CompVariable {
-                            constant: true,
-                            name: x.0.clone(),
-                            typing: transform_type(
+                        let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
+                            match transform_type(
                                 &CustomType::Union(x.1.clone()),
                                 &scope.to_comp_scope_so_far(),
                                 &HashMap::new(),
-                            ),
-                            external: false,
-                        });
-                        let arguments = temp_variables.clone().collect::<Vec<_>>();
-                        let mut local_variables = HashMap::new();
-                        for var in temp_variables {
-                            local_variables.insert(var.name.clone(), var);
-                        }
+                            ) {
+                                Err(messages) => Err(messages),
+                                Ok(typing) => Ok(CompVariable {
+                                    constant: true,
+                                    name: x.0.clone(),
+                                    typing,
+                                    external: false,
+                                }),
+                            }
+                        }))
+                        .unwrap_or_else(|| Ok(Vec::new()));
                         let return_type = transform_type(
                             &CustomType::Union(func.return_type).clone(),
                             &scope.to_comp_scope_so_far(),
                             &HashMap::new(),
                         );
+                        let (temp_variables, return_type) = match (temp_variables, return_type) {
+                            (Ok(vars), Ok(ret)) => (vars, ret),
+                            (Err(vars), Err(ret)) => {
+                                return Err(vars
+                                    .iter()
+                                    .flatten()
+                                    .chain(ret.iter())
+                                    .cloned()
+                                    .collect())
+                            }
+                            (Err(vars), _) => return Err(vars.iter().flatten().cloned().collect()),
+                            (_, Err(ret)) => return Err(ret),
+                        };
+                        let arguments = temp_variables.clone();
+                        let mut local_variables = HashMap::new();
+                        for var in temp_variables {
+                            local_variables.insert(var.name.clone(), var);
+                        }
                         match func.body {
                             Some(body) => {
-                                let mut local_scope = resolve_scope(
+                                let mut local_scope = match resolve_scope(
                                     &body,
                                     &scope.to_comp_scope_so_far(),
                                     &mut local_variables,
                                     &mut HashMap::new(),
-                                );
+                                ) {
+                                    Err(messages) => return Err(messages),
+                                    Ok(scope) => scope,
+                                };
                                 let body = transform_ast(&body, &mut local_scope);
                                 let body = match body {
                                     Err(messages) => return Err(messages),
@@ -341,13 +390,19 @@ pub mod shared {
         scope: &CompScope,
         preset_variables: &mut HashMap<String, CompVariable>,
         types: &mut HashMap<String, CompType>,
-    ) -> TempScope {
+    ) -> Result<TempScope, Vec<String>> {
         let mut variables: HashMap<String, NewVariable> = HashMap::new();
+        let mut errors = Vec::new();
         for stat in ast {
             match stat.clone() {
                 Instr::TypeDeclaration(name, declared_type) => {
                     if !types.contains_key(&name) {
-                        types.insert(name, transform_type(&declared_type, scope, types));
+                        match transform_type(&declared_type, scope, types) {
+                            Ok(ty) => {
+                                types.insert(name, ty);
+                            }
+                            Err(messages) => errors.append(&mut messages.clone()),
+                        }
                     } else {
                         panic!("Type '{}' is already defined", name)
                     }
@@ -359,13 +414,23 @@ pub mod shared {
                     if external && declared_type == None {
                         panic!("External variable '{}' must be declared with a type", name)
                     }
+                    let typing = declared_type
+                        .map(
+                            |x| match transform_type(&CustomType::Union(x), scope, types) {
+                                Ok(x) => Some(x),
+                                Err(messages) => {
+                                    errors.append(&mut messages.clone());
+                                    None
+                                }
+                            },
+                        )
+                        .flatten();
                     variables.insert(
                         name.clone(),
                         NewVariable {
                             constant,
                             name,
-                            typing: declared_type
-                                .map(|x| transform_type(&CustomType::Union(x), scope, types)),
+                            typing,
                             initialised: false,
                             external,
                         },
@@ -389,11 +454,15 @@ pub mod shared {
                 _x => {}
             };
         }
-        TempScope {
-            preset_variables: preset_variables.clone(),
-            variables: variables.clone(),
-            types: types.clone(),
-            parent: Some(Box::new(scope.clone())),
+        if errors.is_empty() {
+            Ok(TempScope {
+                preset_variables: preset_variables.clone(),
+                variables: variables.clone(),
+                types: types.clone(),
+                parent: Some(Box::new(scope.clone())),
+            })
+        } else {
+            Err(errors)
         }
     }
 
@@ -571,7 +640,11 @@ pub mod shared {
     }
 
     pub fn create_program(ast: &Vec<Instr>, scope: &CompScope) -> Result<Program, Vec<String>> {
-        let mut local_scope = resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new());
+        let mut local_scope =
+            match resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new()) {
+                Err(messages) => return Err(messages),
+                Ok(scope) => scope,
+            };
         let prog = transform_ast(ast, &mut local_scope);
         if prog.is_err() {
             return prog;
@@ -750,24 +823,24 @@ pub mod shared {
         pub parent: Option<Box<CompScope>>,
     }
     impl CompScope {
-        fn get_variable(&self, name: &String) -> CompVariable {
+        fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
             if let Some(var) = self.variables.get(name) {
-                var.clone()
+                Ok(var.clone())
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_variable(name),
-                    None => panic!("Cannot find variable '{}'", name),
+                    None => Err(format!("Cannot find variable '{}'", name)),
                 }
             }
         }
 
-        fn get_type(&self, name: &String) -> CompType {
+        fn get_type(&self, name: &String) -> Result<CompType, String> {
             if let Some(ty) = self.types.get(name) {
-                ty.clone()
+                Ok(ty.clone())
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_type(name),
-                    None => panic!("Cannot find type '{}'", name),
+                    None => Err(format!("Cannot find type '{}'", name)),
                 }
             }
         }
@@ -860,19 +933,19 @@ pub mod shared {
                 Ok(var.clone())
             } else {
                 match &self.parent {
-                    Some(parent) => Ok((*parent).get_variable(name)),
+                    Some(parent) => (*parent).get_variable(name),
                     None => panic!("Cannot find variable '{}'", name),
                 }
             }
         }
 
-        fn get_type(&self, name: &String) -> CompType {
+        fn get_type(&self, name: &String) -> Result<CompType, String> {
             if let Some(ty) = self.types.get(name) {
-                ty.clone()
+                Ok(ty.clone())
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_type(name),
-                    None => panic!("Cannot find type '{}'", name),
+                    None => Err(format!("Cannot find type '{}'", name)),
                 }
             }
         }
