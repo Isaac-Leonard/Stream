@@ -14,6 +14,7 @@ fn main() {
     types.insert("Int".to_string(), CompType::Int);
     types.insert("Float".to_string(), CompType::Float);
     types.insert("Str".to_string(), CompType::Ptr);
+    types.insert("Bool".to_string(), CompType::Bool);
     types.insert("Null".to_string(), CompType::Null);
     let variables = HashMap::new();
     let global_scope = CompScope {

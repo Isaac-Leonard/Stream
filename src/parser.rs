@@ -2,6 +2,7 @@ pub mod parser {
 
     use crate::shared::shared::*;
     use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
+
     fn parse_to_i32(x: String) -> i32 {
         return x.parse::<i32>().unwrap();
     }
@@ -65,12 +66,15 @@ pub mod parser {
     }
 
     fn symbol_parser() -> impl Parser<char, Symbol, Error = Cheap<char>> {
-        ident()
-            .map(String::from)
-            .map(Symbol::Identifier)
-            .or(string().map(RawData::Str).map(Symbol::Data))
-            .or(integer().map(RawData::Int).map(Symbol::Data))
-            .or(float().map(RawData::Float).map(Symbol::Data))
+        string()
+            .map(RawData::Str)
+            .or(integer().map(RawData::Int))
+            .or(float().map(RawData::Float))
+            .or(seq("null".chars()).to(RawData::Null))
+            .or(seq("true".chars()).to(RawData::Bool(true)))
+            .or(seq("false".chars()).to(RawData::Bool(false)))
+            .map(Symbol::Data)
+            .or(ident().map(String::from).map(Symbol::Identifier))
     }
     fn exp_parser<'a>(
         main_parser: Recursive<'a, char, Vec<Instr>, Cheap<char>>,

@@ -633,6 +633,7 @@ pub mod shared {
                 Int => context.i32_type().as_basic_type_enum(),
                 Float => context.f32_type().as_basic_type_enum(),
                 Null => context.custom_width_int_type(1).as_basic_type_enum(),
+                Bool => context.custom_width_int_type(1).as_basic_type_enum(),
                 Str(_len) => context
                     .i8_type()
                     .ptr_type(inkwell::AddressSpace::Generic)
