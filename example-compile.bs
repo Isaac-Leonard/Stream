@@ -24,16 +24,23 @@ putchar(13)
 
 
 type Puts=(Str):Int
-extern let puts:Puts=(str:Str):Int=>;
+let puts:Puts=(str:Str):Int=>;
+type Strcat=(Str,Str):Int
+extern const strcat:Strcat=(a:Str,b:Str):Int=>;
+extern const memcpy:Strcat=(a:Str,b:Str):Int=>;
+
 let main=():Int=>{
-let hello:Str="Hello"
-let world:Str="World"
-puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
-if getchar()==65{
-puts(hello)
-}else{
-puts(world)
-}
-newLine()
-0
+    let hello:Str="Hello"
+    let world:Str="World"
+    puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
+    let helloWorld="xxxxxxxxxxxx"
+    if getchar()==65{
+        puts(hello)
+    }else{
+        puts(world)
+    }
+    memcpy(hello, world)
+    puts		  (world)
+    newLine()	  
+    0
 }
