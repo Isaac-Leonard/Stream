@@ -242,7 +242,7 @@ pub mod shared {
                     Some(ty) => Ok(ty.flatten()),
                 }))
                 .unwrap_or_else(|| Err(vec!["Cannot have empty types".to_string()]))
-                .map(CompType::Union)
+                .map(|x| CompType::Union(x).flatten())
             }
 
             CustomType::Callible(args, ret) => {
@@ -736,6 +736,11 @@ pub mod shared {
         fn is_null(&self) -> bool {
             self == &CompType::Null
         }
+
+        fn is_int(&self) -> bool {
+            *self == CompType::Int
+        }
+
         fn is_str(&self) -> bool {
             match self {
                 CompType::Str(_) => true,
