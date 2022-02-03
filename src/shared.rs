@@ -636,7 +636,7 @@ impl CompType {
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
             Str(len) => context
                 .i8_type()
-                .ptr_type(inkwell::AddressSpace::Global)
+                .ptr_type(inkwell::AddressSpace::Generic)
                 .as_basic_type_enum(),
             Ptr => context
                 .i8_type()
