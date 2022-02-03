@@ -1,8 +1,6 @@
-#[path = "shared.rs"]
-mod shared;
 pub mod parser {
 
-    use crate::shared::*;
+    use crate::shared::shared::*;
     use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
     fn parse_to_i32(x: String) -> i32 {
         return x.parse::<i32>().unwrap();
@@ -252,7 +250,7 @@ mod tests {
     use chumsky::Parser;
 
     use super::parser::parser;
-    use crate::shared::*;
+    use crate::shared::shared::*;
     #[test]
     fn add_expression() {
         use Expression::*;

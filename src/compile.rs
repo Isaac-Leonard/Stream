@@ -1,41 +1,23 @@
-#[path = "shared.rs"]
-mod shared;
 pub mod compile {
-    use crate::shared::*;
+    use crate::shared::shared::*;
     use inkwell::builder::Builder;
-    use inkwell::context::{self, Context};
-    use inkwell::execution_engine::ExecutionEngine;
+    use inkwell::context::Context;
+
     use inkwell::module::{Linkage, Module};
     use inkwell::passes::PassManager;
-    use inkwell::targets;
+
     use inkwell::targets::{
-        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+        CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
     };
-    use inkwell::types::{BasicMetadataTypeEnum, BasicType, FunctionType, IntType, VoidType};
+    use inkwell::types::{BasicMetadataTypeEnum, BasicType, FunctionType};
     use inkwell::values::{
-        BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, FloatValue, IntMathValue, IntValue,
-        PointerValue,
+        BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, PointerValue,
     };
     /// Some parts of this file have been directly taken from the collider scope example from inkwell
     use inkwell::values::{BasicValue, FunctionValue};
     use inkwell::OptimizationLevel;
     use std::collections::HashMap;
-    use std::io;
-    use std::io::Write;
-    use std::ops::RangeBounds;
     use std::path::Path;
-    // macro used to print & flush without printing a new line
-    macro_rules! print_flush {
-    ( $( $x:expr ),* ) => {
-        print!( $($x, )* );
-
-        std::io::stdout().flush().expect("Could not flush to standard output.");
-    };
-}
-    /// Convenience type alias for the `sum` function.
-    ///
-    /// Calling this is innately `unsafe` because there's no guarantee it doesn't
-    /// do `unsafe` operations internally.
 
     fn get_value<'a, 'ctx>(val: &CompData, compiler: &Compiler<'a, 'ctx>) -> BasicValueEnum<'ctx> {
         match val {
@@ -64,10 +46,6 @@ pub mod compile {
                 .build_global_string_ptr(&str, "String")
                 .as_basic_value_enum(),
             CompData::Func(_) => panic!("Functions should be retrieved seperately"),
-            _ => panic!(
-                "Only integer, float and null types are currently supported, not '{:?}'",
-                val
-            ),
         }
     }
 
@@ -129,24 +107,6 @@ pub mod compile {
         }
     }
 
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    enum ReturnType<'ctx> {
-        Int(IntType<'ctx>),
-        Void(VoidType<'ctx>),
-    }
-    impl<'ctx> ReturnType<'ctx> {
-        pub fn fn_type(
-            self,
-            param_types: &[BasicMetadataTypeEnum<'ctx>],
-            is_var_args: bool,
-        ) -> FunctionType<'ctx> {
-            match self {
-                Self::Void(void) => void.fn_type(param_types, is_var_args),
-                Self::Int(int) => int.fn_type(param_types, is_var_args),
-            }
-        }
-    }
-
     pub struct Compiler<'a, 'ctx> {
         pub context: &'ctx Context,
         pub builder: &'a Builder<'ctx>,
@@ -168,7 +128,7 @@ pub mod compile {
                         .map(|arg| {
                             let val = self.compile_expression(arg, variables, parent);
                             match val {
-                                BasicValueEnum::PointerValue(x) => {
+                                BasicValueEnum::PointerValue(_x) => {
                                     println!("Pointer value found");
                                     val
                                 }
@@ -216,7 +176,7 @@ pub mod compile {
                     exp => {
                         let val = self.compile_expression(exp, variables, parent);
                         let var = *variables.get(&var.name).unwrap();
-                        let ptr = self.builder.build_store(var, val);
+                        let _ptr = self.builder.build_store(var, val);
                         val
                     }
                 },
@@ -273,10 +233,7 @@ pub mod compile {
                 other => panic!("Not implemented '{:?}'", other),
             }
         }
-        fn get_function(&self, name: &str) -> Option<FunctionValue<'ctx>> {
-            self.module.get_function(name)
-        }
-        pub fn create_function(&'a self, func: &FunctionAst, name: &String) -> FunctionValue<'ctx> {
+        fn create_function(&'a self, func: &FunctionAst, name: &String) -> FunctionValue<'ctx> {
             let fn_val = self.create_function_shape(&CompType::Callible(
                 func.arguments.iter().map(|x| x.typing.clone()).collect(),
                 Box::new(func.return_type.clone()),
@@ -409,7 +366,6 @@ pub mod compile {
             module: &module,
         };
         compiler.compile_expression(&ast.body, &HashMap::new(), None);
-        compiler.module.print_to_stderr();
 
         Target::initialize_x86(&InitializationConfig::default());
         let opt = OptimizationLevel::Default;
@@ -430,24 +386,5 @@ pub mod compile {
         target_machine
             .write_to_file(&compiler.module, FileType::Object, &path)
             .unwrap();
-    }
-
-    pub fn repl() {
-        loop {
-            println!();
-            print_flush!("?> ");
-
-            // Read input from stdin
-            let mut input = String::new();
-            io::stdin()
-                .read_line(&mut input)
-                .expect("Could not read from standard input.");
-
-            if input.starts_with("exit") || input.starts_with("quit") {
-                break;
-            } else if input.chars().all(char::is_whitespace) {
-                continue;
-            }
-        }
     }
 }

@@ -3,14 +3,8 @@ mod parser;
 mod shared;
 use chumsky::Parser;
 use parser::parser::*;
-use shared::*;
-use std::{
-    cell::RefCell,
-    collections::{hash_map, HashMap},
-    env, fs,
-    io::{self, BufRead},
-    rc::Rc,
-};
+use shared::shared::*;
+use std::{collections::HashMap, env, fs};
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
         .expect("Failed to read file");
@@ -21,7 +15,7 @@ fn main() {
     types.insert("Float".to_string(), CompType::Float);
     types.insert("Str".to_string(), CompType::Ptr);
     types.insert("Null".to_string(), CompType::Null);
-    let mut variables = HashMap::new();
+    let variables = HashMap::new();
     let global_scope = CompScope {
         variables,
         types,
