@@ -8,12 +8,14 @@ use std::{collections::HashMap, env, fs};
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
         .expect("Failed to read file");
-
+    let settings = Settings {
+        print_llvm: env::args().nth(2).is_some(),
+    };
     // let src = "[!]+";
     let mut types = HashMap::new();
     types.insert("Int".to_string(), CompType::Int);
     types.insert("Float".to_string(), CompType::Float);
-    types.insert("Str".to_string(), CompType::Ptr);
+    types.insert("Ptr".to_string(), CompType::Ptr);
     types.insert("Bool".to_string(), CompType::Bool);
     types.insert("Null".to_string(), CompType::Null);
     let variables = HashMap::new();
@@ -27,7 +29,7 @@ fn main() {
         Ok(ast) => {
             let prog = create_program(&ast, &global_scope);
             match prog {
-                Ok(prog) => compile::compile::compile(&prog),
+                Ok(prog) => compile::compile::compile(&prog, settings),
                 Err(messages) => messages.into_iter().for_each(|e| println!("{}", e)),
             };
         }

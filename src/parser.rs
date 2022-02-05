@@ -30,6 +30,7 @@ pub mod parser {
             .collect::<String>()
             .map(parse_to_i32)
     }
+
     fn float() -> impl Parser<char, f32, Error = Cheap<char>> {
         (filter::<_, _, Cheap<char>>(char::is_ascii_digit)
             .repeated()

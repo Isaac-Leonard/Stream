@@ -9,7 +9,7 @@ pub mod compile {
     use inkwell::targets::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
     };
-    use inkwell::types::{BasicMetadataTypeEnum, BasicType, FunctionType};
+    use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType};
     use inkwell::values::{
         BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, PointerValue,
     };
@@ -42,8 +42,15 @@ pub mod compile {
                 .const_int(0, false)
                 .as_basic_value_enum(),
             CompData::Str(str) => compiler
-                .builder
-                .build_global_string_ptr(&str, "String")
+                .context
+                .i8_type()
+                .const_array(
+                    &str.chars()
+                        .chain(['\0'])
+                        .map(|x| compiler.context.i8_type().const_int(x as u64, false))
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
                 .as_basic_value_enum(),
             CompData::Func(_) => panic!("Functions should be retrieved seperately"),
         }
@@ -107,6 +114,79 @@ pub mod compile {
         }
     }
 
+    fn comp_bin_op_str<'a, 'ctx>(
+        op: &Op,
+        lhs: PointerValue<'ctx>,
+        rhs: PointerValue<'ctx>,
+        compiler: &Compiler<'a, 'ctx>,
+        fn_val: &FunctionValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        use Op::*;
+        let (len_1, len_2) = match (
+            lhs.get_type().get_element_type(),
+            rhs.get_type().get_element_type(),
+        ) {
+            (AnyTypeEnum::ArrayType(a), AnyTypeEnum::ArrayType(b)) => (a.len(), b.len()),
+            _ => panic!("comp_bin_op_str called with wrong values"),
+        };
+
+        match op {
+            Add => {
+                let strcat = if let Some(strcat) = compiler.module.get_function("strcat") {
+                    strcat
+                } else {
+                    let fn_type = compiler.create_function_shape(&CompType::Callible(
+                        vec![CompType::Ptr, CompType::Ptr],
+                        Box::new(CompType::Int),
+                    ));
+                    compiler.module.add_function(
+                        "strcat",
+                        fn_type,
+                        Some(Linkage::AvailableExternally),
+                    )
+                };
+                let target_type = compiler
+                    .context
+                    .i8_type()
+                    .array_type(len_1 + len_2 - 1)
+                    .as_basic_type_enum();
+                let target = compiler.add_variable_to_block("strcat_cpy", target_type, fn_val);
+
+                let cast_type = compiler
+                    .context
+                    .i8_type()
+                    .ptr_type(inkwell::AddressSpace::Generic);
+                compiler
+                    .builder
+                    .build_store(target, target_type.const_zero());
+
+                let lhs_ptr = compiler.builder.build_bitcast(lhs, cast_type, "cast");
+                let rhs_ptr = compiler.builder.build_bitcast(rhs, cast_type, "cast");
+                let target_ptr = compiler.builder.build_bitcast(target, cast_type, "cast");
+
+                compiler.builder.build_call(
+                    strcat,
+                    &[
+                        BasicMetadataValueEnum::from(target_ptr),
+                        BasicMetadataValueEnum::from(lhs_ptr),
+                    ],
+                    "str_cpy",
+                );
+
+                compiler.builder.build_call(
+                    strcat,
+                    &[
+                        BasicMetadataValueEnum::from(target_ptr),
+                        BasicMetadataValueEnum::from(rhs_ptr),
+                    ],
+                    "str_cpy",
+                );
+                target.as_basic_value_enum()
+            }
+            x => panic!("Operator '{}' is not supported for strings", x.get_str()),
+        }
+    }
+
     pub struct Compiler<'a, 'ctx> {
         pub context: &'ctx Context,
         pub builder: &'a Builder<'ctx>,
@@ -118,7 +198,7 @@ pub mod compile {
             &self,
             exp: &CompExpression,
             variables: &HashMap<String, PointerValue<'ctx>>,
-            parent: Option<&FunctionValue>,
+            parent: Option<&FunctionValue<'ctx>>,
         ) -> BasicValueEnum<'ctx> {
             match exp {
                 CompExpression::Call(var, args) => {
@@ -128,9 +208,15 @@ pub mod compile {
                         .map(|arg| {
                             let val = self.compile_expression(arg, variables, parent);
                             match val {
-                                BasicValueEnum::PointerValue(_x) => {
+                                BasicValueEnum::PointerValue(x) => {
                                     println!("Pointer value found");
-                                    val
+                                    self.builder.build_bitcast(
+                                        x,
+                                        self.context
+                                            .i8_type()
+                                            .ptr_type(inkwell::AddressSpace::Generic),
+                                        "cast",
+                                    )
                                 }
                                 x => x,
                             }
@@ -157,14 +243,29 @@ pub mod compile {
                     match (lhs, rhs) {
                         (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, &self.builder),
                         (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, self.builder),
-                        _ => panic!(
-                            "binary operations for this type cannot be compiled at this time"
-                        ),
+                        (PointerValue(a), PointerValue(b)) => match (
+                            a.get_type().get_element_type(),
+                            b.get_type().get_element_type(),
+                        ) {
+                            (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {println!("Adding strings");
+										       let y=                                comp_bin_op_str(op, a, b, self,parent.unwrap());
+										       y
+                            }
+                            (a,b) =>{
+				panic!(
+                                    "inner binary operations for {:?} and {:?} type cannot be compiled at this time"
+				    ,a,b
+				)
+			    }
+			},
+                        (a,b) => panic!(
+                            "binary operations for {:?} and {:?} type cannot be compiled at this time"
+				,a,b                            )
                     }
                 }
-                CompExpression::Read(var) => self
-                    .builder
-                    .build_load(*variables.get(&var.name).unwrap(), &var.name),
+                CompExpression::Read(var) => {
+                    variables.get(&var.name).unwrap().as_basic_value_enum()
+                }
                 CompExpression::Assign(var, exp) => match exp.as_ref() {
                     CompExpression::Value(CompData::Func(func)) => {
                         self.create_function(func, &var.name);
@@ -175,8 +276,15 @@ pub mod compile {
                     }
                     exp => {
                         let val = self.compile_expression(exp, variables, parent);
-                        let var = *variables.get(&var.name).unwrap();
-                        let _ptr = self.builder.build_store(var, val);
+                        let var_ptr = *variables.get(&var.name).unwrap();
+                        match val {
+                            BasicValueEnum::PointerValue(ptr) => {
+                                print!("Loading");
+                                let val = self.builder.build_load(ptr, &var.name.to_string());
+                                self.builder.build_store(var_ptr, val)
+                            }
+                            _ => self.builder.build_store(var_ptr, val),
+                        };
                         val
                     }
                 },
@@ -298,7 +406,7 @@ pub mod compile {
 
             // return the whole thing after verification and optimization
             if !fn_val.verify(true) {
-                fn_val.print_to_stderr();
+                self.module.print_to_stderr();
                 panic!("Invalid generated function.")
             }
             self.fpm.run_on(&fn_val);
@@ -339,7 +447,7 @@ pub mod compile {
         }
     }
 
-    pub fn compile(ast: &Program) {
+    pub fn compile(ast: &Program, settings: Settings) {
         let ctx = Context::create();
         let module = ctx.create_module("repl");
         let builder = ctx.create_builder();
@@ -386,5 +494,8 @@ pub mod compile {
         target_machine
             .write_to_file(&compiler.module, FileType::Object, &path)
             .unwrap();
+        if settings.print_llvm {
+            module.print_to_stderr();
+        }
     }
 }

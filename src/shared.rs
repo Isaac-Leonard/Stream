@@ -138,7 +138,7 @@ pub mod shared {
         Le,
     }
     impl Op {
-        fn get_str(&self) -> &str {
+        pub fn get_str(&self) -> &str {
             use Op::*;
             match self {
                 Add => "+",
@@ -707,10 +707,7 @@ pub mod shared {
                 Float => context.f32_type().as_basic_type_enum(),
                 Null => context.custom_width_int_type(1).as_basic_type_enum(),
                 Bool => context.custom_width_int_type(1).as_basic_type_enum(),
-                Str(_len) => context
-                    .i8_type()
-                    .ptr_type(inkwell::AddressSpace::Generic)
-                    .as_basic_type_enum(),
+                Str(len) => context.i8_type().array_type(len + 1).as_basic_type_enum(),
                 Ptr => context
                     .i8_type()
                     .ptr_type(inkwell::AddressSpace::Generic)
@@ -1133,5 +1130,8 @@ pub mod shared {
                 }
             }
         }
+    }
+    pub struct Settings {
+        pub print_llvm: bool,
     }
 }
