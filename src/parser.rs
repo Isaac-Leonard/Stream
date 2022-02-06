@@ -96,7 +96,7 @@ pub mod parser {
                 .delimited_by('(', ')')
                 .then(type_specifyer().padded().or_not())
                 .then(
-                    (seq("=>".chars()).ignore_then(
+                    (seq("=>".chars()).padded().ignore_then(
                         main_parser
                             .clone()
                             .delimited_by('{', '}')
