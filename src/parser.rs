@@ -95,13 +95,14 @@ pub mod parser {
                 .flatten()
                 .delimited_by('(', ')')
                 .then(type_specifyer().padded().or_not())
-                .then_ignore(seq(['=', '>']))
                 .then(
-                    main_parser
-                        .clone()
-                        .delimited_by('{', '}')
-                        .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x]))
-                        .or_not(),
+                    (seq("=>".chars()).ignore_then(
+                        main_parser
+                            .clone()
+                            .delimited_by('{', '}')
+                            .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x])),
+                    ))
+                    .or_not(),
                 )
                 .then_ignore(seq([';']).or_not())
                 .map(|((args, ret), body)| {

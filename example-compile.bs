@@ -1,10 +1,10 @@
 type Putchar=(Int):Int
-extern let putchar:Putchar=(x:Int):Int=>;
+extern let putchar:Putchar=(x:Int):Int;
 type Getchar=():Int
-extern let getchar:Getchar=():Int=>;
+extern let getchar:Getchar=():Int;
 
 type Sin=(Float):Float
-extern let sin:Sin=(x:Float):Float=>;
+extern let sin:Sin=(x:Float):Float;
 
 let add=(x:Int, y:Int):Int=>{x+y}
 let sayHello=()=>{
@@ -24,10 +24,10 @@ putchar(13)
 
 
 type Puts=(Ptr):Int
-let puts:Puts=(str:Ptr):Int=>;
+let puts:Puts=(str:Ptr):Int;
 type Ptrcat=(Ptr,Ptr):Int
-extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int=>;
-extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int=>;
+extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int;
+extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int;
 
 let main=():Int=>{
 let x=0
