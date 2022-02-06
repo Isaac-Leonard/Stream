@@ -404,51 +404,61 @@ pub mod shared {
                             Err(messages) => errors.append(&mut messages.clone()),
                         }
                     } else {
-                        panic!("Type '{}' is already defined", name)
+                        errors.push(format!("Type '{}' is already defined", name));
                     }
                 }
                 Instr::InitAssign(external, constant, name, declared_type, _exp) => {
                     if variables.values().any(|x| x.name == name) {
-                        panic!("Cannot re-declare variable in the same scope '{}'", name)
-                    }
-                    if external && declared_type == None {
-                        panic!("External variable '{}' must be declared with a type", name)
-                    }
-                    let typing = declared_type
-                        .map(
-                            |x| match transform_type(&CustomType::Union(x), scope, types) {
-                                Ok(x) => Some(x),
-                                Err(messages) => {
-                                    errors.append(&mut messages.clone());
-                                    None
-                                }
+                        errors.push(format!(
+                            "Cannot re-declare variable in the same scope '{}'",
+                            name
+                        ));
+                    } else if external && declared_type == None {
+                        errors.push(format!(
+                            "External variable '{}' must be declared with a type",
+                            name
+                        ));
+                    } else {
+                        let typing = declared_type
+                            .map(
+                                |x| match transform_type(&CustomType::Union(x), scope, types) {
+                                    Ok(x) => Some(x),
+                                    Err(messages) => {
+                                        errors.append(&mut messages.clone());
+                                        None
+                                    }
+                                },
+                            )
+                            .flatten();
+                        variables.insert(
+                            name.clone(),
+                            NewVariable {
+                                constant,
+                                name,
+                                typing,
+                                initialised: false,
+                                external,
                             },
-                        )
-                        .flatten();
-                    variables.insert(
-                        name.clone(),
-                        NewVariable {
-                            constant,
-                            name,
-                            typing,
-                            initialised: false,
-                            external,
-                        },
-                    );
+                        );
+                    }
                 }
                 Instr::Assign(name, _) => {
                     if scope.is_global() {
-                        panic!(
+                        errors.push(format!(
                             "Cannot reassign after declaration in the global scope '{}'",
                             name
-                        )
-                    }
-
-                    if !scope.variable_exists(&name) && !variables.contains_key(&name) {
-                        panic!("Attempted to assign to undeclared variable '{}'", name)
-                    }
-                    if scope.constant_exists(&name) || variables.values().any(|x| x.constant) {
-                        panic!("Attempted to reassign to constant variable '{}'", name)
+                        ));
+                    } else if !scope.variable_exists(&name) && !variables.contains_key(&name) {
+                        errors.push(format!(
+                            "Attempted to assign to undeclared variable '{}'",
+                            name
+                        ));
+                    } else if scope.constant_exists(&name) || variables.values().any(|x| x.constant)
+                    {
+                        errors.push(format!(
+                            "Attempted to reassign to constant variable '{}'",
+                            name
+                        ));
                     }
                 }
                 _x => {}
@@ -936,7 +946,7 @@ pub mod shared {
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_variable(name),
-                    None => panic!("Cannot find variable '{}'", name),
+                    None => Err(format!("Cannot find variable '{}'", name)),
                 }
             }
         }
