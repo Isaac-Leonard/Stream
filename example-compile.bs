@@ -23,15 +23,15 @@ putchar(13)
 }
 
 
-type Puts=(Str):Int
-let puts:Puts=(str:Str):Int=>;
-type Strcat=(Str,Str):Int
-extern const strcat:Strcat=(a:Str,b:Str):Int=>;
-extern const memcpy:Strcat=(a:Str,b:Str):Int=>;
+type Puts=(Ptr):Int
+let puts:Puts=(str:Ptr):Int=>;
+type Ptrcat=(Ptr,Ptr):Int
+extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int=>;
+extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int=>;
 
 let main=():Int=>{
-    let hello:Str="Hello"
-    let world:Str="World"
+    let hello="Hello"
+    let world="World"
     puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
     let helloWorld="xxxxxxxxxxxx"
     if getchar()==65{
@@ -39,8 +39,9 @@ let main=():Int=>{
     }else{
         puts(world)
     }
-    memcpy(hello, world)
+    hello=world	
     puts		  (world)
+    puts(hello+" galaxy")
     newLine()	  
     0
 }
