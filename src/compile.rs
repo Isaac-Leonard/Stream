@@ -19,7 +19,11 @@ pub mod compile {
     use std::collections::HashMap;
     use std::path::Path;
 
-    fn get_value<'a, 'ctx>(val: &CompData, compiler: &Compiler<'a, 'ctx>) -> BasicValueEnum<'ctx> {
+    fn get_value<'a, 'ctx>(
+        val: &CompData,
+        compiler: &Compiler<'a, 'ctx>,
+        fn_val: Option<&FunctionValue<'ctx>>,
+    ) -> BasicValueEnum<'ctx> {
         match val {
             CompData::Int(int) => compiler
                 .context
@@ -41,18 +45,57 @@ pub mod compile {
                 .custom_width_int_type(1)
                 .const_int(0, false)
                 .as_basic_value_enum(),
-            CompData::Str(str) => compiler
-                .context
-                .i8_type()
-                .const_array(
-                    &str.chars()
-                        .chain(['\0'])
-                        .map(|x| compiler.context.i8_type().const_int(x as u64, false))
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                )
-                .as_basic_value_enum(),
+            CompData::Str(str) => {
+                let var = compiler.add_variable_to_block(
+                    &"string".to_string(),
+                    val.get_type().get_compiler_type(compiler.context),
+                    fn_val.unwrap(),
+                );
+                let string = compiler
+                    .context
+                    .i8_type()
+                    .const_array(
+                        &str.chars()
+                            .chain(['\0'])
+                            .map(|x| compiler.context.i8_type().const_int(x as u64, false))
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .as_basic_value_enum();
+                compiler.builder.build_store(var, string);
+                var.as_basic_value_enum()
+            }
             CompData::Func(_) => panic!("Functions should be retrieved seperately"),
+        }
+    }
+
+    fn comp_bin_op<'a, 'ctx>(
+        op: &Op,
+        lhs: BasicValueEnum<'ctx>,
+        rhs: BasicValueEnum<'ctx>,
+        compiler: &Compiler<'a, 'ctx>,
+        fn_val: Option<&FunctionValue<'ctx>>,
+    ) -> BasicValueEnum<'ctx> {
+        use BasicValueEnum::*;
+        match (lhs, rhs) {
+            (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, &compiler.builder),
+            (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, compiler.builder),
+            (PointerValue(a), PointerValue(b)) => match (
+                a.get_type().get_element_type(),
+                b.get_type().get_element_type(),
+            ) {
+                (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {
+                    comp_bin_op_str(op, a, b, compiler, fn_val.unwrap())
+                }
+                _ => panic!(
+                    "Binary operations for {:?} and {:?} type cannot be compiled at this time",
+                    a, b
+                ),
+            },
+            (a, b) => panic!(
+                "Binary operations for {:?} and {:?} type cannot be compiled at this time",
+                a, b
+            ),
         }
     }
 
@@ -208,16 +251,13 @@ pub mod compile {
                         .map(|arg| {
                             let val = self.compile_expression(arg, variables, parent);
                             match val {
-                                BasicValueEnum::PointerValue(x) => {
-                                    println!("Pointer value found");
-                                    self.builder.build_bitcast(
-                                        x,
-                                        self.context
-                                            .i8_type()
-                                            .ptr_type(inkwell::AddressSpace::Generic),
-                                        "cast",
-                                    )
-                                }
+                                BasicValueEnum::PointerValue(x) => self.builder.build_bitcast(
+                                    x,
+                                    self.context
+                                        .i8_type()
+                                        .ptr_type(inkwell::AddressSpace::Generic),
+                                    "cast",
+                                ),
                                 x => x,
                             }
                         })
@@ -237,34 +277,13 @@ pub mod compile {
                     }
                 }
                 CompExpression::BinOp(op, left, right) => {
-                    use BasicValueEnum::*;
                     let lhs = self.compile_expression(left, variables, parent);
                     let rhs = self.compile_expression(right, variables, parent);
-                    match (lhs, rhs) {
-                        (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, &self.builder),
-                        (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, self.builder),
-                        (PointerValue(a), PointerValue(b)) => match (
-                            a.get_type().get_element_type(),
-                            b.get_type().get_element_type(),
-                        ) {
-                            (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {println!("Adding strings");
-										       let y=                                comp_bin_op_str(op, a, b, self,parent.unwrap());
-										       y
-                            }
-                            (a,b) =>{
-				panic!(
-                                    "inner binary operations for {:?} and {:?} type cannot be compiled at this time"
-				    ,a,b
-				)
-			    }
-			},
-                        (a,b) => panic!(
-                            "binary operations for {:?} and {:?} type cannot be compiled at this time"
-				,a,b                            )
-                    }
+                    comp_bin_op(op, lhs, rhs, self, parent)
                 }
                 CompExpression::Read(var) => {
-                    variables.get(&var.name).unwrap().as_basic_value_enum()
+                    let var = variables.get(&var.name).unwrap();
+                    self.builder.build_load(*var, "load").as_basic_value_enum()
                 }
                 CompExpression::Assign(var, exp) => match exp.as_ref() {
                     CompExpression::Value(CompData::Func(func)) => {
@@ -277,18 +296,11 @@ pub mod compile {
                     exp => {
                         let val = self.compile_expression(exp, variables, parent);
                         let var_ptr = *variables.get(&var.name).unwrap();
-                        match val {
-                            BasicValueEnum::PointerValue(ptr) => {
-                                print!("Loading");
-                                let val = self.builder.build_load(ptr, &var.name.to_string());
-                                self.builder.build_store(var_ptr, val)
-                            }
-                            _ => self.builder.build_store(var_ptr, val),
-                        };
+                        self.builder.build_store(var_ptr, val);
                         val
                     }
                 },
-                CompExpression::Value(val) => get_value(val, self),
+                CompExpression::Value(val) => get_value(val, self, parent),
                 CompExpression::IfElse {
                     cond,
                     then,
@@ -363,13 +375,12 @@ pub mod compile {
             for (i, arg) in fn_val.get_param_iter().enumerate() {
                 let arg_name = func.arguments[i].name.as_str();
                 let ty = func.arguments[i].typing.get_compiler_type(self.context);
-                let alloca = self.add_variable_to_block(arg_name, ty, &fn_val);
-
-                self.builder.build_store(alloca, arg);
-
-                variables.insert(arg_name.to_string(), alloca);
+                let var = self.add_variable_to_block(arg_name, ty, &fn_val);
+                self.builder.build_store(var, arg);
+                variables.insert(arg_name.to_string(), var);
             }
             let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
+            let str_name = &"string".to_string();
             func.body
                 .clone()
                 .unwrap()
@@ -378,14 +389,19 @@ pub mod compile {
                 .iter()
                 .filter(|x| !arg_names.contains(x.0))
                 .for_each(|x| {
-                    variables.insert(
-                        x.0.to_string(),
-                        self.add_variable_to_block(
-                            &x.0.to_string(),
-                            x.1.typing.get_compiler_type(self.context),
-                            &fn_val,
-                        ),
-                    );
+                    let ty = x.1.typing.clone();
+                    let comp_type = ty.get_compiler_type(self.context);
+                    let name = x.0.to_string();
+                    if ty.is_str() {
+                        let string = self.add_variable_to_block(str_name, comp_type, &fn_val);
+                        let ptr_ty = comp_type.ptr_type(inkwell::AddressSpace::Generic);
+                        let var = self.add_variable_to_block(&name, ptr_ty, &fn_val);
+                        self.builder.build_store(var, string);
+                        variables.insert(name, var);
+                    } else {
+                        let var = self.add_variable_to_block(&name, comp_type, &fn_val);
+                        variables.insert(name, var);
+                    }
                 });
             // compile body
             let body = self.compile_expression(
@@ -434,7 +450,15 @@ pub mod compile {
             if let CompType::Callible(arguments, return_type) = func {
                 let args_types = arguments
                     .iter()
-                    .map(|x| x.get_compiler_type(self.context).into())
+                    .map(|x| {
+                        match x.get_compiler_type(self.context) {
+                            inkwell::types::BasicTypeEnum::ArrayType(x) => x
+                                .ptr_type(inkwell::AddressSpace::Generic)
+                                .as_basic_type_enum(),
+                            x => x,
+                        }
+                        .into()
+                    })
                     .collect::<Vec<BasicMetadataTypeEnum>>();
                 let args_types = args_types.as_slice();
 

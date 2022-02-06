@@ -738,7 +738,7 @@ pub mod shared {
             *self == CompType::Int
         }
 
-        fn is_str(&self) -> bool {
+        pub fn is_str(&self) -> bool {
             match self {
                 CompType::Str(_) => true,
                 _ => false,
