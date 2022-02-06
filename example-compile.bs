@@ -29,8 +29,7 @@ type Ptrcat=(Ptr,Ptr):Int
 extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int;
 extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int;
 
-let main=():Int=>{
-let x=0
+let main=():Int => {
     let hello="Hello"
     let world="World"
     puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
@@ -40,6 +39,9 @@ let x=0
     }else{
         puts(world)
     }
+    1+1
+    let y=3    
+    let x=0
     hello=world	
     puts		  (world)
     puts(hello+" galaxy")

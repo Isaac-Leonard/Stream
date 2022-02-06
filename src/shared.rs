@@ -94,6 +94,7 @@ pub mod shared {
     impl NewVariable {
         fn get_final(&self) -> Result<CompVariable, String> {
             if self.typing == None || !self.initialised {
+                println!("{:?}", self);
                 Err(format!("Cannot use uninitialised variable '{}'", self.name))
             } else {
                 Ok(CompVariable {
@@ -480,6 +481,7 @@ pub mod shared {
         let mut expressions: Vec<CompExpression> = Vec::new();
         let mut errors: Vec<String> = Vec::new();
         for stat in ast {
+            println!("{:?}", stat);
             match stat {
                 Instr::TypeDeclaration(_, _) => {}
                 Instr::InitAssign(_, _, name, _, exp) => {
@@ -607,22 +609,14 @@ pub mod shared {
             };
         }
         let expressions = expressions;
-        let scope = scope.to_comp_scope();
-        match scope {
-            Ok(scope) => {
-                if errors.is_empty() {
-                    Ok(Program {
-                        scope: scope.clone(),
-                        body: CompExpression::List(expressions),
-                    })
-                } else {
-                    Err(errors)
-                }
-            }
-            Err(messages) => {
-                errors.append(&mut messages.clone());
-                Err(errors)
-            }
+        let scope = scope.to_comp_scope_so_far();
+        if errors.is_empty() {
+            Ok(Program {
+                scope: scope.clone(),
+                body: CompExpression::List(expressions),
+            })
+        } else {
+            Err(errors)
         }
     }
 
