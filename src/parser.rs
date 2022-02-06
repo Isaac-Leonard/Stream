@@ -238,7 +238,7 @@ pub mod parser {
                     .ignore_then(ident().padded().map(String::from))
                     .then_ignore(just('=').padded())
                     .then(type_parser())
-                    .map(|x| TypeDeclaration(x.0, x.1)))
+                    .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r)))
                 .or(exp.map(LoneExpression).padded())
                 .recover_with(nested_delimiters('{', '}', [], |_| {
                     Invalid("Syntax error".to_string())

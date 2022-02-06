@@ -1,5 +1,5 @@
 pub mod shared {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, ops::Range};
 
     use inkwell::{
         context::Context,
@@ -73,7 +73,7 @@ pub mod shared {
         LoneExpression(Expression),
         Loop(Expression, Vec<Self>),
         IfElse(Expression, Vec<Instr>, Vec<Instr>),
-        TypeDeclaration(String, CustomType),
+        TypeDeclaration(String, CustomType, Range<usize>),
     }
 
     #[derive(Debug, Clone, PartialEq)]
@@ -396,7 +396,7 @@ pub mod shared {
         let mut errors = Vec::new();
         for stat in ast {
             match stat.clone() {
-                Instr::TypeDeclaration(name, declared_type) => {
+                Instr::TypeDeclaration(name, declared_type, _) => {
                     if !types.contains_key(&name) {
                         match transform_type(&declared_type, scope, types) {
                             Ok(ty) => {
@@ -483,7 +483,7 @@ pub mod shared {
         for stat in ast {
             println!("{:?}", stat);
             match stat {
-                Instr::TypeDeclaration(_, _) => {}
+                Instr::TypeDeclaration(_, _, _) => {}
                 Instr::InitAssign(_, _, name, _, exp) => {
                     if scope.variable_initialised(name) {
                         errors.push(format!(
