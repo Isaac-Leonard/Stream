@@ -68,11 +68,11 @@ pub mod shared {
     #[derive(Clone, Debug, PartialEq)]
     pub enum Instr {
         Invalid(String),
-        Assign(String, Expression),
+        Assign(String, Expression, Range<usize>),
         InitAssign(bool, bool, String, Option<Vec<String>>, Expression),
         LoneExpression(Expression),
         Loop(Expression, Vec<Self>),
-        IfElse(Expression, Vec<Instr>, Vec<Instr>),
+        IfElse(Expression, Vec<Instr>, Vec<Instr>, Range<usize>),
         TypeDeclaration(String, CustomType, Range<usize>),
     }
 
@@ -443,11 +443,11 @@ pub mod shared {
                         );
                     }
                 }
-                Instr::Assign(name, _) => {
+                Instr::Assign(name, _, loc) => {
                     if scope.is_global() {
                         errors.push(format!(
-                            "Cannot reassign after declaration in the global scope '{}'",
-                            name
+                            "Cannot reassign after declaration in the global scope '{}' at {}",
+                            name, loc.start
                         ));
                     } else if !scope.variable_exists(&name) && !variables.contains_key(&name) {
                         errors.push(format!(
@@ -521,7 +521,7 @@ pub mod shared {
                         }
                     }
                 }
-                Instr::Assign(name, exp) => {
+                Instr::Assign(name, exp, loc) => {
                     let exp = transform_exp(&exp, scope);
                     let exp = match exp {
                         Ok(exp) => exp,
@@ -531,13 +531,16 @@ pub mod shared {
                         }
                     };
                     if scope.constant_exists(name) {
-                        errors.push(format!("Cannot reassign to constant variable '{}' ", name));
+                        errors.push(format!(
+                            "Cannot reassign to constant variable '{}' at {}",
+                            name, loc.start
+                        ));
                         continue;
                     }
                     let var = scope.get_variable(name);
                     let assign = match var {
                         Err(msg) => {
-                            errors.push(msg);
+                            errors.push(format!("{} at {}", msg, loc.start));
                             continue;
                         }
                         Ok(var) => CompExpression::Assign(var, Box::new(exp)),
@@ -565,7 +568,7 @@ pub mod shared {
                         }),
                     };
                 }
-                Instr::IfElse(cond, left, right) => {
+                Instr::IfElse(cond, left, right, loc) => {
                     let cond = transform_exp(&cond, scope);
                     let cond = match cond {
                         Ok(cond) => cond,
@@ -590,11 +593,17 @@ pub mod shared {
                         }
                         Ok(x) => x,
                     };
-                    expressions.push(CompExpression::IfElse {
+                    let exp = CompExpression::IfElse {
                         cond: Box::new(cond),
                         then: Box::new(CompExpression::Prog(Box::new(then))),
                         otherwise: Box::new(CompExpression::Prog(Box::new(alt))),
-                    });
+                    };
+                    match get_type_from_exp(&exp) {
+                        Ok(_) => expressions.push(exp),
+                        Err(msg) => {
+                            errors.push(format!("{} from {} to {}", msg, loc.start, loc.end))
+                        }
+                    };
                 }
                 Instr::LoneExpression(exp) => {
                     let exp = transform_exp(&exp, scope);
@@ -1032,7 +1041,10 @@ pub mod shared {
                         } else if other_ty.is_err() {
                             other_ty
                         } else {
-                            Ok(CompType::Union(vec![then_ty.unwrap(), other_ty.unwrap()]))
+                            Ok(
+                                CompType::Union(vec![then_ty.unwrap(), other_ty.unwrap()])
+                                    .flatten(),
+                            )
                         }
                     } else {
                         Err(

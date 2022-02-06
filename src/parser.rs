@@ -220,7 +220,7 @@ pub mod parser {
                     .map(String::from)
                     .then_ignore(just('='))
                     .then(exp.clone())
-                    .map(|x| Assign(x.0, x.1)))
+                    .map_with_span(|x, r| Assign(x.0, x.1, r)))
                 .or(seq("while".chars())
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
@@ -233,7 +233,7 @@ pub mod parser {
                             .then_ignore(seq("else".chars()).padded())
                             .then(bf.clone().delimited_by('{', '}')),
                     )
-                    .map(|x| IfElse(x.0, x.1 .0, x.1 .1)))
+                    .map_with_span(|x, r| IfElse(x.0, x.1 .0, x.1 .1, r)))
                 .or(seq("type".chars())
                     .ignore_then(ident().padded().map(String::from))
                     .then_ignore(just('=').padded())
