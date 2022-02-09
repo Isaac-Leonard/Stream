@@ -1,4 +1,6 @@
 pub mod ast {
+    use std::fmt::{self, Display, Formatter};
+
     use std::{collections::HashMap, ops::Range};
 
     use inkwell::{
@@ -119,16 +121,8 @@ pub mod ast {
         Le,
     }
     impl Op {
-        pub fn get_str(&self) -> &str {
-            use Op::*;
-            match self {
-                Add => "+",
-                Sub => "-",
-                Mult => "*",
-                Div => "/",
-                Eq => "==",
-                Le => "<",
-            }
+        pub fn get_str(&self) -> String {
+            format!("{}", self)
         }
         pub fn resulting_type(&self, a: &CompType, b: &CompType) -> Result<CompType, String> {
             use CompType::*;
@@ -172,7 +166,22 @@ pub mod ast {
             )
         }
     }
-
+    impl Display for Op {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "{}",
+                match self {
+                    Add => "+",
+                    Sub => "-",
+                    Mult => "*",
+                    Div => "/",
+                    Eq => "==",
+                    Le => "<",
+                }
+            )
+        }
+    }
     #[derive(Debug, PartialEq, Clone)]
     pub enum Prefix {
         Neg,
@@ -298,7 +307,7 @@ pub mod ast {
     pub struct TempScope {
         pub types: HashMap<String, CompType>,
         pub variables: HashMap<String, NewVariable>,
-        preset_variables: HashMap<String, CompVariable>,
+        pub preset_variables: HashMap<String, CompVariable>,
         pub parent: Option<Box<CompScope>>,
     }
     impl TempScope {
@@ -421,6 +430,9 @@ pub mod ast {
         Ptr,
     }
     impl CompType {
+        pub fn get_str(&self) -> String {
+            format!("{}", self)
+        }
         pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
             use CompType::*;
             match self.clone() {
@@ -471,30 +483,6 @@ pub mod ast {
                 _ => false,
             }
         }
-        pub fn get_str(&self) -> String {
-            use CompType::*;
-            match self {
-                Ptr => "Ptr".to_string(),
-                Int => "Int".to_string(),
-                Null => "Null".to_string(),
-                Str(len) => format!("Str<{}>", len),
-                Bool => "Bool".to_string(),
-                Float => "Float".to_string(),
-                Union(types) => types
-                    .iter()
-                    .map(CompType::get_str)
-                    .reduce(|a, b| format!("{} | {}", a, b))
-                    .unwrap(),
-                Callible(args, ret) => format!(
-                    "({}): {}",
-                    args.iter()
-                        .map(CompType::get_str)
-                        .reduce(|a, b| format!("{}, {}", a, b))
-                        .unwrap_or_else(String::new),
-                    ret.get_str()
-                ),
-            }
-        }
         pub fn flatten(&self) -> CompType {
             use CompType::*;
             match self {
@@ -529,6 +517,38 @@ pub mod ast {
                 Str(_) => 4,
                 Callible(_, _) => 5,
                 Union(_) => 7,
+            }
+        }
+    }
+
+    impl Display for CompType {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            use CompType::*;
+            match self {
+                Ptr => write!(f, "Ptr"),
+                Int => write!(f, "Int"),
+                Null => write!(f, "Null"),
+                Str(len) => write!(f, "Str<{}>", len),
+                Bool => write!(f, "Bool"),
+                Float => write!(f, "Float"),
+                Union(types) => write!(
+                    f,
+                    "{}",
+                    types
+                        .iter()
+                        .map(CompType::get_str)
+                        .reduce(|a, b| format!("{} | {}", a, b))
+                        .unwrap()
+                ),
+                Callible(args, ret) => write!(
+                    f,
+                    "({}): {}",
+                    args.iter()
+                        .map(CompType::get_str)
+                        .reduce(|a, b| format!("{}, {}", a, b))
+                        .unwrap_or_else(String::new),
+                    ret.get_str()
+                ),
             }
         }
     }

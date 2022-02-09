@@ -75,7 +75,7 @@ pub mod errors {
         ),
         (
             4,
-            InvalidComparison(op:BinOp, l:CompType, r:CompType),
+            InvalidComparison(op:Op, l:CompType, r:CompType),
             "Invalid operation '{}' for types '{}' and '{}' "
         ),
         (5, EmptyType, "Cannot have empty types"),
