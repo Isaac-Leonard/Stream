@@ -52,8 +52,8 @@ pub mod ast {
         Invalid(String),
         Assign(String, Expression, Range<usize>),
         InitAssign(bool, bool, String, Option<Vec<String>>, Expression),
-        LoneExpression(Expression),
-        Loop(Expression, Vec<Self>),
+        LoneExpression(Expression, Range<usize>),
+        Loop(Expression, Vec<Self>, Range<usize>),
         IfElse(Expression, Vec<Instr>, Vec<Instr>, Range<usize>),
         TypeDeclaration(String, CustomType, Range<usize>),
     }

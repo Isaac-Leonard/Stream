@@ -97,10 +97,10 @@ pub mod parser {
                 .then(type_specifyer().padded().or_not())
                 .then(
                     (seq("=>".chars()).padded().ignore_then(
-                        main_parser
+                        main_parser.clone().delimited_by('{', '}').or(exp
                             .clone()
-                            .delimited_by('{', '}')
-                            .or(exp.clone().map(Instr::LoneExpression).map(|x| vec![x])),
+                            .map_with_span(Instr::LoneExpression)
+                            .map(|x| vec![x])),
                     ))
                     .or_not(),
                 )
@@ -224,7 +224,7 @@ pub mod parser {
                 .or(seq("while".chars())
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
-                    .map(|x| Loop(x.0, x.1)))
+                    .map_with_span(|x, span| Loop(x.0, x.1, span)))
                 .or(seq("if".chars())
                     .ignore_then(exp.clone())
                     .then(
@@ -239,7 +239,7 @@ pub mod parser {
                     .then_ignore(just('=').padded())
                     .then(type_parser())
                     .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r)))
-                .or(exp.map(LoneExpression).padded())
+                .or(exp.map_with_span(LoneExpression).padded())
                 .recover_with(nested_delimiters('{', '}', [], |_| {
                     Invalid("Syntax error".to_string())
                 }))
@@ -253,19 +253,24 @@ pub mod parser {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Range;
+
     use chumsky::Parser;
 
     use super::parser::parser;
-    use crate::shared::shared::*;
+    use crate::ast::ast::*;
     #[test]
     fn add_expression() {
         use Expression::*;
         assert_eq!(
             parser().parse("5+2").unwrap(),
-            vec![Instr::LoneExpression(Addition(
-                Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
-                Box::new(Terminal(Symbol::Data(RawData::Int(2))))
-            ))]
+            vec![Instr::LoneExpression(
+                Addition(
+                    Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
+                    Box::new(Terminal(Symbol::Data(RawData::Int(2))))
+                ),
+                Range { start: 0, end: 3 }
+            )]
         );
     }
 
@@ -274,16 +279,19 @@ mod tests {
         use Expression::*;
         assert_eq!(
             parser().parse("5+2*4+8").unwrap(),
-            vec![Instr::LoneExpression(Addition(
-                Box::new(Addition(
-                    Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
-                    Box::new(Multiplication(
-                        Box::new(Terminal(Symbol::Data(RawData::Int(2)))),
-                        Box::new(Terminal(Symbol::Data(RawData::Int(4))))
-                    ))
-                )),
-                Box::new(Terminal(Symbol::Data(RawData::Int(8))))
-            ))]
+            vec![Instr::LoneExpression(
+                Addition(
+                    Box::new(Addition(
+                        Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
+                        Box::new(Multiplication(
+                            Box::new(Terminal(Symbol::Data(RawData::Int(2)))),
+                            Box::new(Terminal(Symbol::Data(RawData::Int(4))))
+                        ))
+                    )),
+                    Box::new(Terminal(Symbol::Data(RawData::Int(8))))
+                ),
+                Range { start: 0, end: 7 }
+            )]
         );
     }
 }

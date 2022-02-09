@@ -342,7 +342,7 @@ pub mod shared {
                         Err(msg) => errors.push(msg),
                     };
                 }
-                Instr::Loop(exp, body) => {
+                Instr::Loop(exp, body, _) => {
                     let cond = transform_exp(&exp, scope);
                     let cond = match cond {
                         Ok(cond) => cond,
@@ -397,7 +397,7 @@ pub mod shared {
                         }
                     };
                 }
-                Instr::LoneExpression(exp) => {
+                Instr::LoneExpression(exp, _) => {
                     let exp = transform_exp(&exp, scope);
                     let _exp = match exp {
                         Ok(exp) => expressions.push(exp),
