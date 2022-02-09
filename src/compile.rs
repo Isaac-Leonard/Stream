@@ -1,5 +1,6 @@
 pub mod compile {
-    use crate::shared::shared::*;
+    use crate::ast::ast::*;
+    use crate::settings::settings::Settings;
     use inkwell::builder::Builder;
     use inkwell::context::Context;
 

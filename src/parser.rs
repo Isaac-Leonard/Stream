@@ -1,6 +1,6 @@
 pub mod parser {
 
-    use crate::shared::shared::*;
+    use crate::ast::ast::*;
     use chumsky::{error::Cheap, prelude::*, recursive::Recursive, text::ident};
 
     fn parse_to_i32(x: String) -> i32 {

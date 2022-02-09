@@ -1,4 +1,5 @@
 pub mod errors {
+    use crate::ast::ast::*;
     use std::fmt::{Display, Formatter, Result};
     use std::ops::Range;
 

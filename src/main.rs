@@ -1,13 +1,25 @@
+mod ast;
 mod compile;
+mod errors;
 mod parser;
+mod settings;
 mod shared;
+use ast::ast::*;
 use chumsky::Parser;
 use parser::parser::*;
+use settings::settings::Settings;
 use shared::shared::*;
 use std::{collections::HashMap, env, fs};
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
         .expect("Failed to read file");
+    let newlines_positions = src.split("\n").map(|x| x.len());
+    let mut positions = Vec::new();
+    let mut last = 0;
+    for pos in newlines_positions {
+        last += pos;
+        positions.push(last);
+    }
     let settings = Settings {
         print_llvm: env::args().nth(2).is_some(),
     };
