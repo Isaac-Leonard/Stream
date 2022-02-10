@@ -182,6 +182,7 @@ pub mod ast {
     }
     impl Display for Op {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            use Op::*;
             write!(
                 f,
                 "{}",
