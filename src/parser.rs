@@ -128,7 +128,7 @@ pub mod parser {
             let primary_exp = func_call
                 .or(symbol_parser().map_with_span(Expression::Terminal))
                 .or(func_declaration.map_with_span(Expression::Terminal))
-                .or(exp.delimited_by('(', ')'))
+                .or(exp.clone().delimited_by('(', ')'))
                 .boxed();
 
             let multiply_parser = primary_exp
@@ -161,8 +161,7 @@ pub mod parser {
                 .then_ignore(seq(['=', '=']))
                 .then(comparison_parser.clone().or(multiply_parser.clone()))
                 .map_with_span(|x, span| Expression::Equal(Box::new(x.0), Box::new(x.1), span));
-            let single = comparison_parser
-                .or(equal_parser)
+            let addition_parser = comparison_parser
                 .or(multiply_parser
                     .clone()
                     .then(one_of(['+', '-']).then(multiply_parser).repeated())
@@ -185,7 +184,18 @@ pub mod parser {
                 .then_ignore(just(';').or_not())
                 .padded()
                 .boxed();
-            single.clone().or(single
+            let if_parser = seq("if".chars())
+                .ignore_then(exp.clone().map(Box::new))
+                .then(
+                    main_parser
+                        .clone()
+                        .delimited_by('{', '}')
+                        .then_ignore(seq("else".chars()).padded())
+                        .then(main_parser.clone().delimited_by('{', '}')),
+                )
+                .map_with_span(|x, span| IfElse(x.0, x.1 .0, x.1 .1, span));
+            let expression = if_parser.or(equal_parser).or(addition_parser);
+            expression.clone().or(expression
                 .repeated()
                 .delimited_by('{', '}')
                 .map_with_span(Expression::Block))
@@ -244,15 +254,6 @@ pub mod parser {
                     .ignore_then(exp.clone())
                     .then(bf.clone().delimited_by('{', '}'))
                     .map_with_span(|x, span| Loop(x.0, x.1, span)))
-                .or(seq("if".chars())
-                    .ignore_then(exp.clone())
-                    .then(
-                        bf.clone()
-                            .delimited_by('{', '}')
-                            .then_ignore(seq("else".chars()).padded())
-                            .then(bf.clone().delimited_by('{', '}')),
-                    )
-                    .map_with_span(|x, r| IfElse(x.0, x.1 .0, x.1 .1, r)))
                 .or(seq("type".chars())
                     .ignore_then(ident().padded().map(String::from))
                     .then_ignore(just('=').padded())

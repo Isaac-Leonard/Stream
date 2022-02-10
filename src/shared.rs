@@ -58,7 +58,7 @@ pub mod shared {
         op: Op,
         left: &Expression,
         right: &Expression,
-        scope: &TempScope,
+        scope: &mut TempScope,
     ) -> Result<CompExpression, Vec<String>> {
         let left = match transform_exp(&left, scope) {
             Ok(exp) => exp,
@@ -71,8 +71,23 @@ pub mod shared {
         Ok(CompExpression::BinOp(op, Box::new(left), Box::new(right)))
     }
 
-    fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, Vec<String>> {
+    fn transform_exp(
+        exp: &Expression,
+        scope: &mut TempScope,
+    ) -> Result<CompExpression, Vec<String>> {
         match exp {
+            Expression::IfElse(cond, left, right, _) => {
+                let cond = transform_exp(&cond, scope)?;
+                let then = transform_ast(left, scope)?;
+                let alt = transform_ast(right, scope)?;
+                let exp = CompExpression::IfElse {
+                    cond: Box::new(cond),
+                    then: Box::new(CompExpression::Prog(Box::new(then))),
+                    otherwise: Box::new(CompExpression::Prog(Box::new(alt))),
+                };
+                get_type_from_exp(&exp).map_err(|x| vec![x])?;
+                Ok(exp)
+            }
             Expression::Block(expressions, _) => {
                 collect_ok_or_err(expressions.iter().map(|exp| transform_exp(exp, scope)))
                     .unwrap_or_else(|| Ok(Vec::new()))
@@ -364,43 +379,6 @@ pub mod shared {
                             cond: Box::new(cond),
                             body: Box::new(CompExpression::Prog(Box::new(body))),
                         }),
-                    };
-                }
-                Instr::IfElse(cond, left, right, loc) => {
-                    let cond = transform_exp(&cond, scope);
-                    let cond = match cond {
-                        Ok(cond) => cond,
-                        Err(msg) => {
-                            errors.append(&mut msg.clone());
-                            continue;
-                        }
-                    };
-                    let then = transform_ast(&left, scope);
-                    let then = match then {
-                        Err(messages) => {
-                            errors.append(&mut messages.clone());
-                            continue;
-                        }
-                        Ok(x) => x,
-                    };
-                    let alt = transform_ast(&right, scope);
-                    let alt = match alt {
-                        Err(messages) => {
-                            errors.append(&mut messages.clone());
-                            continue;
-                        }
-                        Ok(x) => x,
-                    };
-                    let exp = CompExpression::IfElse {
-                        cond: Box::new(cond),
-                        then: Box::new(CompExpression::Prog(Box::new(then))),
-                        otherwise: Box::new(CompExpression::Prog(Box::new(alt))),
-                    };
-                    match get_type_from_exp(&exp) {
-                        Ok(_) => expressions.push(exp),
-                        Err(msg) => {
-                            errors.push(format!("{} from {} to {}", msg, loc.start, loc.end))
-                        }
                     };
                 }
                 Instr::LoneExpression(exp, _) => {

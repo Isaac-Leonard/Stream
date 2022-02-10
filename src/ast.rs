@@ -35,6 +35,7 @@ pub mod ast {
         Terminal(Symbol, Range<usize>),
         FuncCall(String, Vec<Expression>, Range<usize>),
         Block(Vec<Expression>, Range<usize>),
+        IfElse(Box<Expression>, Vec<Instr>, Vec<Instr>, Range<usize>),
     }
     impl Expression {
         pub fn get_range(&self) -> Range<usize> {
@@ -47,6 +48,7 @@ pub mod ast {
                 | LessThan(_, _, range)
                 | Equal(_, _, range)
                 | FuncCall(_, _, range)
+                | IfElse(_, _, _, range)
                 | Block(_, range)
                 | Terminal(_, range) => range.clone(),
             }
@@ -70,7 +72,6 @@ pub mod ast {
         InitAssign(bool, bool, String, Option<Vec<String>>, Expression),
         LoneExpression(Expression, Range<usize>),
         Loop(Expression, Vec<Self>, Range<usize>),
-        IfElse(Expression, Vec<Instr>, Vec<Instr>, Range<usize>),
         TypeDeclaration(String, CustomType, Range<usize>),
     }
 
