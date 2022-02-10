@@ -49,6 +49,8 @@ let main=():Int => {
         puts("abc")
 	x=x+1
     }    	
-    newLine()    
-    0
+    {
+        newLine()    
+        0
+    }
 }

@@ -161,12 +161,12 @@ pub mod parser {
                 .then_ignore(seq(['=', '=']))
                 .then(comparison_parser.clone().or(multiply_parser.clone()))
                 .map_with_span(|x, span| Expression::Equal(Box::new(x.0), Box::new(x.1), span));
-            comparison_parser
+            let single = comparison_parser
                 .or(equal_parser)
                 .or(multiply_parser
                     .clone()
                     .then(one_of(['+', '-']).then(multiply_parser).repeated())
-                    .map_with_span(|x, span| {
+                    .map(|x| {
                         x.1.iter().fold(x.0, |left, right| match right.0 {
                             '+' => Expression::Addition(
                                 Box::new(left.clone()),
@@ -182,6 +182,13 @@ pub mod parser {
                         })
                     }))
                 .padded()
+                .then_ignore(just(';').or_not())
+                .padded()
+                .boxed();
+            single.clone().or(single
+                .repeated()
+                .delimited_by('{', '}')
+                .map_with_span(Expression::Block))
         })
     }
 
