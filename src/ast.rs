@@ -34,6 +34,7 @@ pub mod ast {
         LessThan(Box<Expression>, Box<Expression>, Range<usize>),
         Terminal(Symbol, Range<usize>),
         FuncCall(String, Vec<Expression>, Range<usize>),
+        Block(Vec<Expression>, Range<usize>),
     }
     impl Expression {
         pub fn get_range(&self) -> Range<usize> {
@@ -46,6 +47,7 @@ pub mod ast {
                 | LessThan(_, _, range)
                 | Equal(_, _, range)
                 | FuncCall(_, _, range)
+                | Block(_, range)
                 | Terminal(_, range) => range.clone(),
             }
         }

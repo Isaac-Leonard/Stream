@@ -73,6 +73,12 @@ pub mod shared {
 
     fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, Vec<String>> {
         match exp {
+            Expression::Block(expressions, _) => {
+                collect_ok_or_err(expressions.iter().map(|exp| transform_exp(exp, scope)))
+                    .unwrap_or_else(|| Ok(Vec::new()))
+                    .map(CompExpression::List)
+                    .map_err(|x| x.iter().flatten().cloned().collect())
+            }
             Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, scope),
             Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, scope),
             Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, scope),
