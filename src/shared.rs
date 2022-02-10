@@ -73,13 +73,13 @@ pub mod shared {
 
     fn transform_exp(exp: &Expression, scope: &TempScope) -> Result<CompExpression, Vec<String>> {
         match exp {
-            Expression::LessThan(l, r) => bin_exp(Op::Le, l, r, scope),
-            Expression::Addition(l, r) => bin_exp(Op::Add, l, r, scope),
-            Expression::Multiplication(l, r) => bin_exp(Op::Mult, l, r, scope),
-            Expression::Subtraction(l, r) => bin_exp(Op::Sub, l, r, scope),
-            Expression::Division(l, r) => bin_exp(Op::Div, l, r, scope),
-            Expression::Equal(l, r) => bin_exp(Op::Eq, l, r, scope),
-            Expression::FuncCall(name, args) => {
+            Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, scope),
+            Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, scope),
+            Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, scope),
+            Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, scope),
+            Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, scope),
+            Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, scope),
+            Expression::FuncCall(name, args, _) => {
                 let args = args
                     .iter()
                     .map(|x| transform_exp(x, scope))
@@ -93,7 +93,7 @@ pub mod shared {
                     Err(message) => Err(message),
                 }
             }
-            Expression::Terminal(sym) => match sym {
+            Expression::Terminal(sym, _) => match sym {
                 Symbol::Identifier(name) => match scope.get_variable(name) {
                     Ok(var) => Ok(CompExpression::Read(var)),
                     Err(msg) => Err(vec![msg]),

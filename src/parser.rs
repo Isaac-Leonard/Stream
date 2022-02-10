@@ -123,11 +123,11 @@ pub mod parser {
                         .flatten()
                         .delimited_by('(', ')'),
                 )
-                .map(|(name, args)| FuncCall(name, args));
+                .map_with_span(|(name, args), span| FuncCall(name, args, span));
 
             let primary_exp = func_call
-                .or(symbol_parser().map(Expression::Terminal))
-                .or(func_declaration.map(Expression::Terminal))
+                .or(symbol_parser().map_with_span(Expression::Terminal))
+                .or(func_declaration.map_with_span(Expression::Terminal))
                 .or(exp.delimited_by('(', ')'))
                 .boxed();
 
@@ -136,10 +136,16 @@ pub mod parser {
                 .then(one_of(['*', '/']).then(primary_exp.clone()).repeated())
                 .map(|(l, t)| {
                     t.iter().fold(l, |left, (op, right)| match op {
-                        '*' => Expression::Multiplication(Box::new(left), Box::new(right.clone())),
-                        '/' => {
-                            Expression::Division(Box::new(left.clone()), Box::new(right.clone()))
-                        }
+                        '*' => Expression::Multiplication(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                            left.get_range().start..right.get_range().end,
+                        ),
+                        '/' => Expression::Division(
+                            Box::new(left.clone()),
+                            Box::new(right.clone()),
+                            left.get_range().start..right.get_range().end,
+                        ),
                         _ => panic!("Unexpected operator {}", op),
                     })
                 })
@@ -148,24 +154,30 @@ pub mod parser {
                 .clone()
                 .then_ignore(just('<'))
                 .then(multiply_parser.clone())
-                .map(|x| Expression::LessThan(Box::new(x.0), Box::new(x.1)));
+                .map_with_span(|x, span| Expression::LessThan(Box::new(x.0), Box::new(x.1), span));
             let equal_parser = comparison_parser
                 .clone()
                 .or(multiply_parser.clone())
                 .then_ignore(seq(['=', '=']))
                 .then(comparison_parser.clone().or(multiply_parser.clone()))
-                .map(|x| Expression::Equal(Box::new(x.0), Box::new(x.1)));
+                .map_with_span(|x, span| Expression::Equal(Box::new(x.0), Box::new(x.1), span));
             comparison_parser
                 .or(equal_parser)
                 .or(multiply_parser
                     .clone()
                     .then(one_of(['+', '-']).then(multiply_parser).repeated())
-                    .map(|x| {
+                    .map_with_span(|x, span| {
                         x.1.iter().fold(x.0, |left, right| match right.0 {
-                            '+' => Expression::Addition(Box::new(left), Box::new(right.1.clone())),
-                            '-' => {
-                                Expression::Subtraction(Box::new(left), Box::new(right.1.clone()))
-                            }
+                            '+' => Expression::Addition(
+                                Box::new(left.clone()),
+                                Box::new(right.1.clone()),
+                                left.get_range().start..right.1.get_range().end,
+                            ),
+                            '-' => Expression::Subtraction(
+                                Box::new(left.clone()),
+                                Box::new(right.1.clone()),
+                                left.get_range().start..right.1.get_range().end,
+                            ),
                             _ => panic!("Error: Unexpected operator {}", right.0),
                         })
                     }))
@@ -253,8 +265,6 @@ pub mod parser {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
-
     use chumsky::Parser;
 
     use super::parser::parser;
@@ -266,10 +276,11 @@ mod tests {
             parser().parse("5+2").unwrap(),
             vec![Instr::LoneExpression(
                 Addition(
-                    Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
-                    Box::new(Terminal(Symbol::Data(RawData::Int(2))))
+                    Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
+                    Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
+                    0..3
                 ),
-                Range { start: 0, end: 3 }
+                0..3
             )]
         );
     }
@@ -282,15 +293,18 @@ mod tests {
             vec![Instr::LoneExpression(
                 Addition(
                     Box::new(Addition(
-                        Box::new(Terminal(Symbol::Data(RawData::Int(5)))),
+                        Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
                         Box::new(Multiplication(
-                            Box::new(Terminal(Symbol::Data(RawData::Int(2)))),
-                            Box::new(Terminal(Symbol::Data(RawData::Int(4))))
-                        ))
+                            Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
+                            Box::new(Terminal(Symbol::Data(RawData::Int(4)), 4..5)),
+                            2..5
+                        )),
+                        0..5
                     )),
-                    Box::new(Terminal(Symbol::Data(RawData::Int(8))))
+                    Box::new(Terminal(Symbol::Data(RawData::Int(8)), 6..7)),
+                    0..7
                 ),
-                Range { start: 0, end: 7 }
+                0..7
             )]
         );
     }

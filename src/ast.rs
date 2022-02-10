@@ -26,16 +26,30 @@ pub mod ast {
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum Expression {
-        Addition(Box<Expression>, Box<Expression>),
-        Subtraction(Box<Expression>, Box<Expression>),
-        Multiplication(Box<Expression>, Box<Expression>),
-        Division(Box<Expression>, Box<Expression>),
-        Equal(Box<Expression>, Box<Expression>),
-        LessThan(Box<Expression>, Box<Expression>),
-        Terminal(Symbol),
-        FuncCall(String, Vec<Expression>),
+        Addition(Box<Expression>, Box<Expression>, Range<usize>),
+        Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
+        Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
+        Division(Box<Expression>, Box<Expression>, Range<usize>),
+        Equal(Box<Expression>, Box<Expression>, Range<usize>),
+        LessThan(Box<Expression>, Box<Expression>, Range<usize>),
+        Terminal(Symbol, Range<usize>),
+        FuncCall(String, Vec<Expression>, Range<usize>),
     }
-
+    impl Expression {
+        pub fn get_range(&self) -> Range<usize> {
+            use Expression::*;
+            match &self {
+                Addition(_, _, range)
+                | Subtraction(_, _, range)
+                | Multiplication(_, _, range)
+                | Division(_, _, range)
+                | LessThan(_, _, range)
+                | Equal(_, _, range)
+                | FuncCall(_, _, range)
+                | Terminal(_, range) => range.clone(),
+            }
+        }
+    }
     #[derive(Clone, PartialEq)]
     pub struct Function {
         pub args: Vec<(String, Vec<String>)>,
