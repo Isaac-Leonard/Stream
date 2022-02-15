@@ -371,7 +371,7 @@ pub mod compile {
                     .iter()
                     .map(|x| self.compile_expression(x, variables, parent))
                     .last()
-                    .unwrap(),
+                    .unwrap_or_else(|| self.context.i32_type().const_zero().as_basic_value_enum()),
                 CompExpression::Prog(prog) => {
                     self.compile_expression(&prog.body, variables, parent)
                 }
