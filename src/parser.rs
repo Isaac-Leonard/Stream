@@ -298,12 +298,9 @@ mod tests {
         use Expression::*;
         assert_eq!(
             parser().parse("5+2").unwrap(),
-            vec![Instr::LoneExpression(
-                Addition(
-                    Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
-                    Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
-                    0..3
-                ),
+            [Addition(
+                Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
+                Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
                 0..3
             )]
         );
@@ -314,22 +311,246 @@ mod tests {
         use Expression::*;
         assert_eq!(
             parser().parse("5+2*4+8").unwrap(),
-            vec![Instr::LoneExpression(
-                Addition(
-                    Box::new(Addition(
-                        Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
-                        Box::new(Multiplication(
-                            Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
-                            Box::new(Terminal(Symbol::Data(RawData::Int(4)), 4..5)),
-                            2..5
-                        )),
-                        0..5
+            vec![Addition(
+                Box::new(Addition(
+                    Box::new(Terminal(Symbol::Data(RawData::Int(5)), 0..1)),
+                    Box::new(Multiplication(
+                        Box::new(Terminal(Symbol::Data(RawData::Int(2)), 2..3)),
+                        Box::new(Terminal(Symbol::Data(RawData::Int(4)), 4..5)),
+                        2..5
                     )),
-                    Box::new(Terminal(Symbol::Data(RawData::Int(8)), 6..7)),
-                    0..7
-                ),
+                    0..5
+                )),
+                Box::new(Terminal(Symbol::Data(RawData::Int(8)), 6..7)),
                 0..7
             )]
+        );
+    }
+
+    #[test]
+    fn empty_while_expression() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("while true {}").unwrap(),
+            vec![Loop(
+                Box::new(Terminal(Symbol::Data(RawData::Bool(true)), 6..11)),
+                Box::new(Block(Vec::new(), 11..13)),
+                0..13
+            )]
+        );
+    }
+
+    #[test]
+    fn empty_ifelse_expression() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("if true {} else {}").unwrap(),
+            vec![IfElse(
+                Box::new(Terminal(Symbol::Data(RawData::Bool(true)), 3..8)),
+                Box::new(Block(Vec::new(), 8..10)),
+                Box::new(Block(Vec::new(), 16..18)),
+                0..18
+            )]
+        );
+    }
+    #[test]
+    fn empty_main_declaration() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("let main=():Int=>{}").unwrap(),
+            vec![InitAssign(
+                false,
+                false,
+                "main".to_string(),
+                None,
+                Box::new(Terminal(
+                    Symbol::Data(RawData::Func(Function {
+                        args: Vec::new(),
+                        body: Some(Box::new(Block(Vec::new(), 17..19))),
+                        return_type: vec!["Int".to_string()]
+                    })),
+                    9..19
+                )),
+                0..19
+            )]
+        );
+    }
+
+    #[test]
+    fn func_type_declaration() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("type fn=(Int):Int"),
+            Ok(vec![TypeDeclaration(
+                "fn".to_string(),
+                CustomType::Callible(
+                    vec!(CustomType::Union(vec!("Int".to_string()))),
+                    Box::new(CustomType::Union(vec!("Int".to_string())))
+                ),
+                0..17
+            )])
+        );
+    }
+
+    #[test]
+    fn add_func_declaration() {
+        use Expression::*;
+        assert_eq!(
+            parser().parse("let add=(x:Int, y:Int):Int=>{x+y}").unwrap(),
+            vec![InitAssign(
+                false,
+                false,
+                "add".to_string(),
+                None,
+                Box::new(Terminal(
+                    Symbol::Data(RawData::Func(Function {
+                        args: vec![
+                            ("x".to_string(), vec!["Int".to_string()]),
+                            ("y".to_string(), vec!["Int".to_string()])
+                        ],
+                        body: Some(Box::new(Block(
+                            vec![Addition(
+                                Box::new(Terminal(Symbol::Identifier("x".to_string()), 29..30)),
+                                Box::new(Terminal(Symbol::Identifier("y".to_string()), 31..32)),
+                                29..32
+                            )],
+                            28..33
+                        ))),
+                        return_type: vec!["Int".to_string()]
+                    })),
+                    8..33
+                )),
+                0..33
+            )]
+        );
+    }
+
+    #[test]
+    fn extern_fn_declaration() {
+        use Expression::*;
+        assert_eq!(
+            parser()
+                .parse("extern let sin:Sin=(x:Float):Float")
+                .unwrap(),
+            vec![InitAssign(
+                true,
+                false,
+                "sin".to_string(),
+                Some(vec!["Sin".to_string()]),
+                Box::new(Terminal(
+                    Symbol::Data(RawData::Func(Function {
+                        args: vec![("x".to_string(), vec!["Float".to_string()])],
+                        body: None,
+                        return_type: vec!["Float".to_string()]
+                    })),
+                    19..34
+                )),
+                0..34
+            )]
+        );
+    }
+
+    #[test]
+    fn extern_fn_declaration_with_semi_than_add_fn() {
+        use Expression::*;
+        assert_eq!(
+            parser()
+                .parse("extern let sin:Sin=(x:Float):Float;\nlet add=(x:Int, y:Int):Int=>{x+y}")
+                .unwrap(),
+            vec![
+                InitAssign(
+                    true,
+                    false,
+                    "sin".to_string(),
+                    Some(vec!["Sin".to_string()]),
+                    Box::new(Terminal(
+                        Symbol::Data(RawData::Func(Function {
+                            args: vec![("x".to_string(), vec!["Float".to_string()])],
+                            body: None,
+                            return_type: vec!["Float".to_string()]
+                        })),
+                        19..34
+                    )),
+                    0..35
+                ),
+                InitAssign(
+                    false,
+                    false,
+                    "add".to_string(),
+                    None,
+                    Box::new(Terminal(
+                        Symbol::Data(RawData::Func(Function {
+                            args: vec![
+                                ("x".to_string(), vec!["Int".to_string()]),
+                                ("y".to_string(), vec!["Int".to_string()])
+                            ],
+                            body: Some(Box::new(Block(
+                                vec![Addition(
+                                    Box::new(Terminal(Symbol::Identifier("x".to_string()), 65..66)),
+                                    Box::new(Terminal(Symbol::Identifier("y".to_string()), 67..68)),
+                                    65..68
+                                )],
+                                64..69
+                            ))),
+                            return_type: vec!["Int".to_string()]
+                        })),
+                        44..69
+                    )),
+                    36..69
+                )
+            ]
+        );
+    }
+
+    #[test]
+    fn extern_fn_declaration_with_semi_double_newline_than_add_fn() {
+        use Expression::*;
+        assert_eq!(
+            parser()
+                .parse("extern let sin:Sin=(x:Float):Float;\n\nlet add=(x:Int, y:Int):Int=>{x+y}")
+                .unwrap(),
+            vec![
+                InitAssign(
+                    true,
+                    false,
+                    "sin".to_string(),
+                    Some(vec!["Sin".to_string()]),
+                    Box::new(Terminal(
+                        Symbol::Data(RawData::Func(Function {
+                            args: vec![("x".to_string(), vec!["Float".to_string()])],
+                            body: None,
+                            return_type: vec!["Float".to_string()]
+                        })),
+                        19..34
+                    )),
+                    0..35
+                ),
+                InitAssign(
+                    false,
+                    false,
+                    "add".to_string(),
+                    None,
+                    Box::new(Terminal(
+                        Symbol::Data(RawData::Func(Function {
+                            args: vec![
+                                ("x".to_string(), vec!["Int".to_string()]),
+                                ("y".to_string(), vec!["Int".to_string()])
+                            ],
+                            body: Some(Box::new(Block(
+                                vec![Addition(
+                                    Box::new(Terminal(Symbol::Identifier("x".to_string()), 66..67)),
+                                    Box::new(Terminal(Symbol::Identifier("y".to_string()), 68..69)),
+                                    66..69
+                                )],
+                                65..70
+                            ))),
+                            return_type: vec!["Int".to_string()]
+                        })),
+                        45..70
+                    )),
+                    37..70
+                )
+            ]
         );
     }
 }
