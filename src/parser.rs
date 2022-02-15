@@ -209,7 +209,7 @@ pub mod parser {
                 .boxed();
 
             let if_parser = raw("if")
-                .ignore_then(primary_exp.clone().map(Box::new).padded())
+                .ignore_then(exp.clone().map(Box::new).padded())
                 .then(block_exp.clone().map(Box::new))
                 .then_ignore(raw("else").padded())
                 .then(block_exp.clone().map(Box::new))
