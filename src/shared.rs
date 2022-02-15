@@ -23,25 +23,18 @@ pub mod shared {
         }
     }
 
-    pub fn transform_type(
-        ty: &CustomType,
-        scope: &CompScope,
-        types: &HashMap<String, CompType>,
-    ) -> Result<CompType, Vec<String>> {
+    pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<String>> {
         match ty {
             CustomType::Union(sub_types) => {
-                collect_ok_or_err(sub_types.iter().map(|x| match types.get(x) {
-                    None => scope.get_type(x),
-                    Some(ty) => Ok(ty.flatten()),
-                }))
-                .unwrap_or_else(|| Err(vec!["Cannot have empty types".to_string()]))
-                .map(|x| CompType::Union(x).flatten())
+                collect_ok_or_err(sub_types.iter().map(|x| scope.get_type(x)))
+                    .unwrap_or_else(|| Err(vec!["Cannot have empty types".to_string()]))
+                    .map(|x| CompType::Union(x).flatten())
             }
 
             CustomType::Callible(args, ret) => {
-                let args = collect_ok_or_err(args.iter().map(|x| transform_type(x, scope, types)))
+                let args = collect_ok_or_err(args.iter().map(|x| transform_type(x, scope)))
                     .unwrap_or(Ok(Vec::new()));
-                let ret = transform_type(ret, scope, types);
+                let ret = transform_type(ret, scope);
                 match (args, ret) {
                     (Err(args), Err(ret)) => {
                         Err(args.iter().flatten().chain(ret.iter()).cloned().collect())
@@ -73,9 +66,51 @@ pub mod shared {
 
     fn transform_exp(
         exp: &Expression,
-        scope: &mut TempScope,
+        mut scope: &mut TempScope,
     ) -> Result<CompExpression, Vec<String>> {
         match exp {
+            Expression::TypeDeclaration(_, _, _) => Ok(CompExpression::List(Vec::new())),
+            Expression::InitAssign(_, _, name, _, exp, _) => {
+                if scope.variable_initialised(name) {
+                    return Err(vec![format!(
+                        "Cannot re-initialise already declared variable '{}'",
+                        name
+                    )]);
+                }
+
+                let exp = transform_exp(&exp, scope)?;
+                let exp_ty = get_type_from_exp(&exp).map_err(|x| vec![x])?;
+                let has_type = scope.variable_has_type(name);
+                if !has_type {
+                    scope = scope.set_variable_type(name, &exp_ty);
+                }
+                scope.set_variable_initialised(name);
+                let var = scope.get_variable(&name).map_err(|x| vec![x])?;
+                if has_type && !var.typing.super_of(&exp_ty) {
+                    return Err(vec!["Connot assign type to type".to_string()]);
+                }
+                Ok(CompExpression::Assign(var, Box::new(exp)))
+            }
+            Expression::Assign(name, exp, loc) => {
+                let exp = transform_exp(&exp, scope)?;
+                if scope.constant_exists(name) {
+                    return Err(vec![format!(
+                        "Cannot reassign to constant variable '{}' at {}",
+                        name, loc.start
+                    )]);
+                }
+                let var = scope.get_variable(name).map_err(|x| vec![x])?;
+
+                let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
+                if var.typing.super_of(&exp_ty) {
+                    Ok(CompExpression::Assign(var, Box::new(exp)))
+                } else {
+                    Err(vec![format!(
+                        "type {} not assignable to type {} at {}",
+                        exp_ty, var.typing, loc.start
+                    )])
+                }
+            }
             Expression::IfElse(cond, left, right, _) => {
                 let cond = transform_exp(&cond, scope)?;
                 let then = transform_ast(left, scope)?;
@@ -87,6 +122,14 @@ pub mod shared {
                 };
                 get_type_from_exp(&exp).map_err(|x| vec![x])?;
                 Ok(exp)
+            }
+            Expression::Loop(exp, body, _) => {
+                let cond = transform_exp(&exp, scope)?;
+                let body = Box::new(transform_exp(&body, scope)?);
+                Ok(CompExpression::WhileLoop {
+                    cond: Box::new(cond),
+                    body,
+                })
             }
             Expression::Block(expressions, _) => {
                 collect_ok_or_err(expressions.iter().map(|exp| transform_exp(exp, scope)))
@@ -127,11 +170,7 @@ pub mod shared {
                     RawData::Null => CompData::Null,
                     RawData::Func(func) => {
                         let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
-                            match transform_type(
-                                &CustomType::Union(x.1.clone()),
-                                &scope.to_comp_scope_so_far(),
-                                &HashMap::new(),
-                            ) {
+                            match transform_type(&CustomType::Union(x.1.clone()), scope) {
                                 Err(messages) => Err(messages),
                                 Ok(typing) => Ok(CompVariable {
                                     constant: true,
@@ -142,11 +181,8 @@ pub mod shared {
                             }
                         }))
                         .unwrap_or_else(|| Ok(Vec::new()));
-                        let return_type = transform_type(
-                            &CustomType::Union(func.return_type).clone(),
-                            &scope.to_comp_scope_so_far(),
-                            &HashMap::new(),
-                        );
+                        let return_type =
+                            transform_type(&CustomType::Union(func.return_type).clone(), scope);
                         let (temp_variables, return_type) = match (temp_variables, return_type) {
                             (Ok(vars), Ok(ret)) => (vars, ret),
                             (Err(vars), Err(ret)) => {
@@ -167,20 +203,18 @@ pub mod shared {
                         }
                         match func.body {
                             Some(body) => {
-                                let mut local_scope = match resolve_scope(
-                                    &body,
-                                    &scope.to_comp_scope_so_far(),
-                                    &mut local_variables,
-                                    &mut HashMap::new(),
-                                ) {
+                                let mut local_scope = TempScope {
+                                    parent: Some(Box::new(scope.to_comp_scope_so_far())),
+                                    preset_variables: local_variables,
+                                    variables: HashMap::new(),
+                                    types: HashMap::new(),
+                                };
+                                let mut local_scope = match resolve_scope(&body, &mut local_scope) {
                                     Err(messages) => return Err(messages),
                                     Ok(scope) => scope,
                                 };
-                                let body = transform_ast(&body, &mut local_scope);
-                                let body = match body {
-                                    Err(messages) => return Err(messages),
-                                    Ok(x) => x,
-                                };
+                                let body = transform_ast(&body, &mut local_scope)?;
+
                                 CompData::Func(FunctionAst {
                                     arguments,
                                     return_type,
@@ -196,230 +230,102 @@ pub mod shared {
                     }
                 })),
             },
+            Expression::Invalid(x) => Err(vec![format!("invalid at '{}' to '{}'", x.start, x.end)]),
         }
     }
 
-    fn resolve_scope(
-        ast: &Vec<Instr>,
-        scope: &CompScope,
-        preset_variables: &mut HashMap<String, CompVariable>,
-        types: &mut HashMap<String, CompType>,
-    ) -> Result<TempScope, Vec<String>> {
-        let mut variables: HashMap<String, NewVariable> = HashMap::new();
-        let mut errors = Vec::new();
-        for stat in ast {
-            match stat.clone() {
-                Instr::TypeDeclaration(name, declared_type, _) => {
-                    if !types.contains_key(&name) {
-                        match transform_type(&declared_type, scope, types) {
-                            Ok(ty) => {
-                                types.insert(name, ty);
-                            }
-                            Err(messages) => errors.append(&mut messages.clone()),
-                        }
-                    } else {
-                        errors.push(format!("Type '{}' is already defined", name));
-                    }
+    fn resolve_scope<'a>(
+        ast: &Expression,
+        mut scope: &'a mut TempScope,
+    ) -> Result<&'a mut TempScope, Vec<String>> {
+        match ast {
+            Expression::TypeDeclaration(name, declared_type, _) => {
+                if !scope.types.contains_key(name) {
+                    Ok(scope.add_type(name.clone(), transform_type(&declared_type, scope)?))
+                } else {
+                    Err(vec![format!("Type '{}' is already defined", name)])
                 }
-                Instr::InitAssign(external, constant, name, declared_type, _exp) => {
-                    if variables.values().any(|x| x.name == name) {
-                        errors.push(format!(
-                            "Cannot re-declare variable in the same scope '{}'",
-                            name
-                        ));
-                    } else if external && declared_type == None {
-                        errors.push(format!(
-                            "External variable '{}' must be declared with a type",
-                            name
-                        ));
-                    } else {
-                        let typing = declared_type
-                            .map(
-                                |x| match transform_type(&CustomType::Union(x), scope, types) {
-                                    Ok(x) => Some(x),
-                                    Err(messages) => {
-                                        errors.append(&mut messages.clone());
-                                        None
-                                    }
-                                },
-                            )
-                            .flatten();
-                        variables.insert(
-                            name.clone(),
-                            NewVariable {
-                                constant,
-                                name,
-                                typing,
-                                initialised: false,
-                                external,
-                            },
-                        );
-                    }
+            }
+            Expression::InitAssign(external, constant, name, declared_type, _exp, _) => {
+                if scope.variables.contains_key(name) {
+                    Err(vec![format!(
+                        "Cannot re-declare variable in the same scope '{}'",
+                        name
+                    )])
+                } else if *external && declared_type.is_none() {
+                    Err(vec![format!(
+                        "External variable '{}' must be declared with a type",
+                        name
+                    )])
+                } else {
+                    let typing = match declared_type {
+                        None => None,
+                        Some(x) => Some(transform_type(&CustomType::Union(x.to_vec()), scope)?),
+                    };
+                    Ok(scope.add_variable(NewVariable {
+                        constant: constant.clone(),
+                        name: name.clone(),
+                        typing,
+                        initialised: false,
+                        external: external.clone(),
+                    }))
                 }
-                Instr::Assign(name, _, loc) => {
-                    if scope.is_global() {
-                        errors.push(format!(
-                            "Cannot reassign after declaration in the global scope '{}' at {}",
-                            name, loc.start
-                        ));
-                    } else if !scope.variable_exists(&name) && !variables.contains_key(&name) {
-                        errors.push(format!(
-                            "Attempted to assign to undeclared variable '{}'",
-                            name
-                        ));
-                    } else if scope.constant_exists(&name) || variables.values().any(|x| x.constant)
-                    {
-                        errors.push(format!(
-                            "Attempted to reassign to constant variable '{}'",
-                            name
-                        ));
-                    }
+            }
+            Expression::Assign(name, _, loc) => {
+                if scope.parent.is_none() {
+                    Err(vec![format!(
+                        "Cannot reassign after declaration in the global scope '{}' at {}",
+                        name, loc.start
+                    )])
+                } else if !scope.variable_exists(name) {
+                    Err(vec![format!(
+                        "Attempted to assign to undeclared variable '{}'",
+                        name
+                    )])
+                } else if scope.constant_exists(&name) {
+                    Err(vec![format!(
+                        "Attempted to reassign to constant variable '{}'",
+                        name
+                    )])
+                } else {
+                    Ok(scope)
                 }
-                _x => {}
-            };
-        }
-        if errors.is_empty() {
-            Ok(TempScope {
-                preset_variables: preset_variables.clone(),
-                variables: variables.clone(),
-                types: types.clone(),
-                parent: Some(Box::new(scope.clone())),
-            })
-        } else {
-            Err(errors)
+            }
+            Expression::Block(expressions, _) => {
+                let mut errors = Vec::new();
+
+                for exp in expressions {
+                    scope = resolve_scope(exp, scope)?;
+                }
+                if errors.is_empty() {
+                    Ok(scope)
+                } else {
+                    Err(errors)
+                }
+            }
+            _x => Ok(scope),
         }
     }
 
-    fn transform_ast(ast: &Vec<Instr>, mut scope: &mut TempScope) -> Result<Program, Vec<String>> {
-        let mut expressions: Vec<CompExpression> = Vec::new();
-        let mut errors: Vec<String> = Vec::new();
-        for stat in ast {
-            println!("{:?}", stat);
-            match stat {
-                Instr::TypeDeclaration(_, _, _) => {}
-                Instr::InitAssign(_, _, name, _, exp) => {
-                    if scope.variable_initialised(name) {
-                        errors.push(format!(
-                            "Cannot re-initialise already declared variable '{}'",
-                            name
-                        ));
-                    } else {
-                        let exp = transform_exp(&exp, scope);
-                        let exp = match exp {
-                            Ok(exp) => exp,
-                            Err(msg) => {
-                                errors.append(&mut msg.clone());
-                                continue;
-                            }
-                        };
-                        if !scope.variable_has_type(name) {
-                            let ty = get_type_from_exp(&exp);
-                            if let Err(msg) = ty {
-                                errors.push(msg);
-                                continue;
-                            } else if let Ok(ty) = ty {
-                                scope = scope.set_variable_type(name, &ty);
-                            }
-                        }
-                        scope.set_variable_initialised(name);
-                        let var = scope.get_variable(&name);
-                        if let Ok(var) = var {
-                            let assign = CompExpression::Assign(var, Box::new(exp));
-                            match get_type_from_exp(&assign) {
-                                Ok(_) => expressions.push(assign),
-                                Err(msg) => errors.push(msg),
-                            };
-                        } else if let Err(msg) = var {
-                            errors.push(msg);
-                        }
-                    }
-                }
-                Instr::Assign(name, exp, loc) => {
-                    let exp = transform_exp(&exp, scope);
-                    let exp = match exp {
-                        Ok(exp) => exp,
-                        Err(msg) => {
-                            errors.append(&mut msg.clone());
-                            continue;
-                        }
-                    };
-                    if scope.constant_exists(name) {
-                        errors.push(format!(
-                            "Cannot reassign to constant variable '{}' at {}",
-                            name, loc.start
-                        ));
-                        continue;
-                    }
-                    let var = scope.get_variable(name);
-                    let assign = match var {
-                        Err(msg) => {
-                            errors.push(format!("{} at {}", msg, loc.start));
-                            continue;
-                        }
-                        Ok(var) => CompExpression::Assign(var, Box::new(exp)),
-                    };
-                    match get_type_from_exp(&assign) {
-                        Ok(_exp) => expressions.push(assign),
-                        Err(msg) => errors.push(msg),
-                    };
-                }
-                Instr::Loop(exp, body, _) => {
-                    let cond = transform_exp(&exp, scope);
-                    let cond = match cond {
-                        Ok(cond) => cond,
-                        Err(msg) => {
-                            errors.append(&mut msg.clone());
-                            continue;
-                        }
-                    };
-                    let body = transform_ast(&body, scope);
-                    match body {
-                        Err(messages) => errors.append(&mut messages.clone()),
-                        Ok(body) => expressions.push(CompExpression::WhileLoop {
-                            cond: Box::new(cond),
-                            body: Box::new(CompExpression::Prog(Box::new(body))),
-                        }),
-                    };
-                }
-                Instr::LoneExpression(exp, _) => {
-                    let exp = transform_exp(&exp, scope);
-                    let _exp = match exp {
-                        Ok(exp) => expressions.push(exp),
-                        Err(msg) => errors.append(&mut msg.clone()),
-                    };
-                }
-                Instr::Invalid(x) => {
-                    errors.push(format!("invalid '{}'", x));
-                }
-            };
-        }
-        let expressions = expressions;
-        let scope = scope.to_comp_scope_so_far();
-        if errors.is_empty() {
-            Ok(Program {
-                scope: scope.clone(),
-                body: CompExpression::List(expressions),
-            })
-        } else {
-            Err(errors)
-        }
+    fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<String>> {
+        let expression = transform_exp(ast, scope)?;
+        Ok(Program {
+            scope: scope.to_comp_scope_so_far(),
+            body: expression,
+        })
     }
 
-    pub fn create_program(ast: &Vec<Instr>, scope: &CompScope) -> Result<Program, Vec<String>> {
-        let mut local_scope =
-            match resolve_scope(ast, scope, &mut HashMap::new(), &mut HashMap::new()) {
-                Err(messages) => return Err(messages),
-                Ok(scope) => scope,
-            };
-        let prog = transform_ast(ast, &mut local_scope);
-        if prog.is_err() {
-            return prog;
-        }
-        let prog = prog.unwrap();
-        match get_type_from_exp(&prog.body) {
-            Err(messages) => Err(vec![messages]),
-            _ => Ok(prog),
-        }
+    pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Vec<String>> {
+        let mut local_scope = TempScope {
+            parent: Some(Box::new(scope.clone())),
+            variables: HashMap::new(),
+            preset_variables: HashMap::new(),
+            types: HashMap::new(),
+        };
+        let mut local_scope = resolve_scope(ast, &mut local_scope)?;
+        let prog = transform_ast(ast, &mut local_scope)?;
+        get_type_from_exp(&prog.body).map_err(|x| vec![x])?;
+        Ok(prog)
     }
 
     pub fn flatten_action(action: CompExpression) -> Option<CompExpression> {

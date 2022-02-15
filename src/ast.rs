@@ -26,6 +26,7 @@ pub mod ast {
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum Expression {
+        TypeDeclaration(String, CustomType, Range<usize>),
         Addition(Box<Expression>, Box<Expression>, Range<usize>),
         Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
         Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
@@ -35,13 +36,30 @@ pub mod ast {
         Terminal(Symbol, Range<usize>),
         FuncCall(String, Vec<Expression>, Range<usize>),
         Block(Vec<Expression>, Range<usize>),
-        IfElse(Box<Expression>, Vec<Instr>, Vec<Instr>, Range<usize>),
+        IfElse(
+            Box<Expression>,
+            Box<Expression>,
+            Box<Expression>,
+            Range<usize>,
+        ),
+        Loop(Box<Expression>, Box<Expression>, Range<usize>),
+        Invalid(Range<usize>),
+        Assign(String, Box<Expression>, Range<usize>),
+        InitAssign(
+            bool,
+            bool,
+            String,
+            Option<Vec<String>>,
+            Box<Expression>,
+            Range<usize>,
+        ),
     }
     impl Expression {
         pub fn get_range(&self) -> Range<usize> {
             use Expression::*;
             match &self {
-                Addition(_, _, range)
+                TypeDeclaration(_, _, range)
+                | Addition(_, _, range)
                 | Subtraction(_, _, range)
                 | Multiplication(_, _, range)
                 | Division(_, _, range)
@@ -49,30 +67,20 @@ pub mod ast {
                 | Equal(_, _, range)
                 | FuncCall(_, _, range)
                 | IfElse(_, _, _, range)
+                | Loop(_, _, range)
                 | Block(_, range)
-                | Terminal(_, range) => range.clone(),
+                | Terminal(_, range)
+                | InitAssign(_, _, _, _, _, range)
+                | Assign(_, _, range)
+                | Invalid(range) => range.clone(),
             }
         }
     }
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub struct Function {
         pub args: Vec<(String, Vec<String>)>,
-        pub body: Option<Vec<Instr>>,
+        pub body: Option<Box<Expression>>,
         pub return_type: Vec<String>,
-    }
-    impl std::fmt::Debug for Function {
-        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(f, "Function({:?})", self.args)
-        }
-    }
-    #[derive(Clone, Debug, PartialEq)]
-    pub enum Instr {
-        Invalid(String),
-        Assign(String, Expression, Range<usize>),
-        InitAssign(bool, bool, String, Option<Vec<String>>, Expression),
-        LoneExpression(Expression, Range<usize>),
-        Loop(Expression, Vec<Self>, Range<usize>),
-        TypeDeclaration(String, CustomType, Range<usize>),
     }
 
     #[derive(Debug, Clone, PartialEq)]
@@ -329,6 +337,27 @@ pub mod ast {
         pub parent: Option<Box<CompScope>>,
     }
     impl TempScope {
+        pub fn variable_exists(&self, name: &String) -> bool {
+            if self.variables.contains_key(name) || self.preset_variables.contains_key(name) {
+                true
+            } else {
+                match &self.parent {
+                    Some(parent) => (*parent).variable_exists(name),
+                    None => false,
+                }
+            }
+        }
+
+        pub fn add_variable(&mut self, var: NewVariable) -> &mut TempScope {
+            self.variables.insert(var.name.clone(), var);
+            self
+        }
+
+        pub fn add_type(&mut self, name: String, ty: CompType) -> &mut TempScope {
+            self.types.insert(name, ty);
+            self
+        }
+
         pub fn set_variable_initialised(&mut self, name: &String) {
             self.variables.get_mut(name).map(|v| v.initialised = true);
         }
@@ -393,7 +422,7 @@ pub mod ast {
             }
         }
 
-        fn get_type(&self, name: &String) -> Result<CompType, String> {
+        pub fn get_type(&self, name: &String) -> Result<CompType, String> {
             if let Some(ty) = self.types.get(name) {
                 Ok(ty.clone())
             } else {

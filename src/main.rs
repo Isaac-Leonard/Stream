@@ -39,7 +39,7 @@ fn main() {
     let parsed = parser().parse(src.trim());
     match parsed {
         Ok(ast) => {
-            let prog = create_program(&ast, &global_scope);
+            let prog = create_program(&Expression::Block(ast, 0..0), &global_scope);
             match prog {
                 Ok(prog) => compile::compile::compile(&prog, settings),
                 Err(messages) => messages.into_iter().for_each(|e| println!("{}", e)),
