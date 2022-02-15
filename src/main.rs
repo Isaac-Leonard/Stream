@@ -13,13 +13,14 @@ use std::{collections::HashMap, env, fs};
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
         .expect("Failed to read file");
-    let newlines_positions = src.split("\n").map(|x| x.len());
-    let mut positions = Vec::new();
-    let mut last = 0;
+    let newlines_positions = src.split("\n").map(|x| x.len()).collect::<Vec<_>>();
+    let mut positions = vec![0];
+    let mut last = 0 as i32;
     for pos in newlines_positions {
-        last += pos;
+        last += pos as i32 + 1;
         positions.push(last);
     }
+    println!("{:?}", positions.clone());
     let settings = Settings {
         print_llvm: env::args().nth(2).is_some(),
     };
@@ -42,7 +43,9 @@ fn main() {
             let prog = create_program(&Expression::Block(ast, 0..0), &global_scope);
             match prog {
                 Ok(prog) => compile::compile::compile(&prog, settings),
-                Err(messages) => messages.into_iter().for_each(|e| println!("{}", e)),
+                Err(messages) => messages
+                    .into_iter()
+                    .for_each(|e| println!("{}", e.get_msg(&positions))),
             };
         }
         Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),

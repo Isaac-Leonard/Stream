@@ -23,11 +23,11 @@ pub mod shared {
         }
     }
 
-    pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<String>> {
+    pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<CompError>> {
         match ty {
             CustomType::Union(sub_types) => {
                 collect_ok_or_err(sub_types.iter().map(|x| scope.get_type(x)))
-                    .unwrap_or_else(|| Err(vec!["Cannot have empty types".to_string()]))
+                    .unwrap_or_else(|| Err(vec![CompError::EmptyType(0..0)]))
                     .map(|x| CompType::Union(x).flatten())
             }
 
@@ -52,7 +52,7 @@ pub mod shared {
         left: &Expression,
         right: &Expression,
         scope: &mut TempScope,
-    ) -> Result<CompExpression, Vec<String>> {
+    ) -> Result<CompExpression, Vec<CompError>> {
         let left = match transform_exp(&left, scope) {
             Ok(exp) => exp,
             Err(msg) => return Err(msg),
@@ -67,14 +67,14 @@ pub mod shared {
     fn transform_exp(
         exp: &Expression,
         mut scope: &mut TempScope,
-    ) -> Result<CompExpression, Vec<String>> {
+    ) -> Result<CompExpression, Vec<CompError>> {
         match exp {
             Expression::TypeDeclaration(_, _, _) => Ok(CompExpression::List(Vec::new())),
-            Expression::InitAssign(_, _, name, _, exp, _) => {
+            Expression::InitAssign(_, _, name, _, exp, loc) => {
                 if scope.variable_initialised(name) {
-                    return Err(vec![format!(
-                        "Cannot re-initialise already declared variable '{}'",
-                        name
+                    return Err(vec![CompError::RedeclareInSameScope(
+                        name.clone(),
+                        loc.clone(),
                     )]);
                 }
 
@@ -85,29 +85,35 @@ pub mod shared {
                     scope = scope.set_variable_type(name, &exp_ty);
                 }
                 scope.set_variable_initialised(name);
-                let var = scope.get_variable(&name).map_err(|x| vec![x])?;
+                let var = scope
+                    .get_variable(&name)
+                    .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
                 if has_type && !var.typing.super_of(&exp_ty) {
-                    return Err(vec!["Connot assign type to type".to_string()]);
+                    return Err(vec![CompError::InvalidAssignment(
+                        var.typing,
+                        exp_ty,
+                        loc.clone(),
+                    )]);
                 }
                 Ok(CompExpression::Assign(var, Box::new(exp)))
             }
             Expression::Assign(name, exp, loc) => {
                 let exp = transform_exp(&exp, scope)?;
                 if scope.constant_exists(name) {
-                    return Err(vec![format!(
-                        "Cannot reassign to constant variable '{}' at {}",
-                        name, loc.start
-                    )]);
+                    return Err(vec![CompError::ConstReassign(name.clone(), loc.clone())]);
                 }
-                let var = scope.get_variable(name).map_err(|x| vec![x])?;
+                let var = scope
+                    .get_variable(name)
+                    .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
 
                 let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
                 if var.typing.super_of(&exp_ty) {
                     Ok(CompExpression::Assign(var, Box::new(exp)))
                 } else {
-                    Err(vec![format!(
-                        "type {} not assignable to type {} at {}",
-                        exp_ty, var.typing, loc.start
+                    Err(vec![CompError::InvalidAssignment(
+                        exp_ty,
+                        var.typing,
+                        loc.clone(),
                     )])
                 }
             }
@@ -143,24 +149,32 @@ pub mod shared {
             Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, scope),
             Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, scope),
             Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, scope),
-            Expression::FuncCall(name, args, _) => {
+            Expression::FuncCall(name, args, loc) => {
                 let args = args
                     .iter()
                     .map(|x| transform_exp(x, scope))
-                    .collect::<Result<Vec<CompExpression>, Vec<String>>>();
+                    .collect::<Result<Vec<CompExpression>, Vec<CompError>>>();
                 let func = match scope.get_variable(name) {
                     Ok(var) => var,
-                    Err(msg) => return Err(vec![msg]),
+                    Err(_) => {
+                        return Err(vec![CompError::CannotFindVariable(
+                            name.clone(),
+                            loc.clone(),
+                        )])
+                    }
                 };
                 match args {
                     Ok(args) => Ok(CompExpression::Call(func, args)),
                     Err(message) => Err(message),
                 }
             }
-            Expression::Terminal(sym, _) => match sym {
+            Expression::Terminal(sym, loc) => match sym {
                 Symbol::Identifier(name) => match scope.get_variable(name) {
                     Ok(var) => Ok(CompExpression::Read(var)),
-                    Err(msg) => Err(vec![msg]),
+                    Err(_) => Err(vec![CompError::CannotFindVariable(
+                        name.clone(),
+                        loc.clone(),
+                    )]),
                 },
                 Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
                     RawData::Int(val) => CompData::Int(val),
@@ -230,33 +244,33 @@ pub mod shared {
                     }
                 })),
             },
-            Expression::Invalid(x) => Err(vec![format!("invalid at '{}' to '{}'", x.start, x.end)]),
+            Expression::Invalid(x) => panic!("invalid {:?}", x),
         }
     }
 
     fn resolve_scope<'a>(
         ast: &Expression,
         mut scope: &'a mut TempScope,
-    ) -> Result<&'a mut TempScope, Vec<String>> {
+    ) -> Result<&'a mut TempScope, Vec<CompError>> {
         match ast {
-            Expression::TypeDeclaration(name, declared_type, _) => {
+            Expression::TypeDeclaration(name, declared_type, loc) => {
                 if !scope.types.contains_key(name) {
                     Ok(scope.add_type(name.clone(), transform_type(&declared_type, scope)?))
                 } else {
-                    Err(vec![format!("Type '{}' is already defined", name)])
+                    Err(vec![CompError::TypeAlreadyDefined(
+                        name.clone(),
+                        loc.clone(),
+                    )])
                 }
             }
-            Expression::InitAssign(external, constant, name, declared_type, _exp, _) => {
+            Expression::InitAssign(external, constant, name, declared_type, _exp, loc) => {
                 if scope.variables.contains_key(name) {
-                    Err(vec![format!(
-                        "Cannot re-declare variable in the same scope '{}'",
-                        name
+                    Err(vec![CompError::RedeclareInSameScope(
+                        name.clone(),
+                        loc.clone(),
                     )])
                 } else if *external && declared_type.is_none() {
-                    Err(vec![format!(
-                        "External variable '{}' must be declared with a type",
-                        name
-                    )])
+                    Err(vec![CompError::UntypedExternal(name.clone(), loc.clone())])
                 } else {
                     let typing = match declared_type {
                         None => None,
@@ -273,20 +287,14 @@ pub mod shared {
             }
             Expression::Assign(name, _, loc) => {
                 if scope.parent.is_none() {
-                    Err(vec![format!(
-                        "Cannot reassign after declaration in the global scope '{}' at {}",
-                        name, loc.start
-                    )])
+                    Err(vec![CompError::GlobalReassign(name.clone(), loc.clone())])
                 } else if !scope.variable_exists(name) {
-                    Err(vec![format!(
-                        "Attempted to assign to undeclared variable '{}'",
-                        name
+                    Err(vec![CompError::CannotFindVariable(
+                        name.clone(),
+                        loc.clone(),
                     )])
                 } else if scope.constant_exists(&name) {
-                    Err(vec![format!(
-                        "Attempted to reassign to constant variable '{}'",
-                        name
-                    )])
+                    Err(vec![CompError::ConstReassign(name.clone(), loc.clone())])
                 } else {
                     Ok(scope)
                 }
@@ -307,7 +315,7 @@ pub mod shared {
         }
     }
 
-    fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<String>> {
+    fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
         let expression = transform_exp(ast, scope)?;
         Ok(Program {
             scope: scope.to_comp_scope_so_far(),
@@ -315,7 +323,7 @@ pub mod shared {
         })
     }
 
-    pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Vec<String>> {
+    pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Vec<CompError>> {
         let mut local_scope = TempScope {
             parent: Some(Box::new(scope.clone())),
             variables: HashMap::new(),
@@ -360,7 +368,7 @@ pub mod shared {
         }
     }
 
-    fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, String> {
+    fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
         use CompExpression::*;
         match exp {
             Prog(prog) => get_type_from_exp(&prog.body),
@@ -379,10 +387,7 @@ pub mod shared {
                     if cond.is_bool() {
                         get_type_from_exp(body)
                     } else {
-                        Err(
-                            "The comparison expression in a while loop must return a Bool"
-                                .to_string(),
-                        )
+                        Err(CompError::BoolInWhile(cond, 0..0))
                     }
                 } else {
                     cond
@@ -409,10 +414,7 @@ pub mod shared {
                             )
                         }
                     } else {
-                        Err(
-                            "The comparison expression in an if expression must return a Bool"
-                                .to_string(),
-                        )
+                        Err(CompError::BoolInIf(cond, 0..0))
                     }
                 } else {
                     cond
@@ -429,10 +431,7 @@ pub mod shared {
                             Ok(CompType::Null)
                         }
                     } else {
-                        Err(
-                            "The comparison expression in an if expression must return a Bool"
-                                .to_string(),
-                        )
+                        Err(CompError::BoolInIf(cond, 0..0))
                     }
                 } else {
                     cond
@@ -446,11 +445,7 @@ pub mod shared {
                     if var.typing.super_of(&ty) {
                         Ok(var.typing.clone())
                     } else {
-                        Err(format!(
-                            "Type '{}' is not assignable to type '{}'",
-                            ty.get_str(),
-                            var.typing.get_str()
-                        ))
+                        Err(CompError::InvalidAssignment(var.typing.clone(), ty, 0..0))
                     }
                 } else {
                     exp
@@ -484,11 +479,7 @@ pub mod shared {
                         .zip(arg_types)
                         .map(|(x, y)| {
                             if !x.super_of(&y) {
-                                Some(format!(
-                                    "Type '{}' is not assignable to type '{}'",
-                                    y.get_str(),
-                                    x.get_str()
-                                ))
+                                Some(CompError::InvalidAssignment(x.clone(), y.clone(), 0..0))
                             } else {
                                 None
                             }
@@ -501,10 +492,7 @@ pub mod shared {
                         Ok(*ret.clone())
                     }
                 } else {
-                    Err(format!(
-                        "Cannot call variable of type '{}'",
-                        var.typing.get_str()
-                    ))
+                    Err(CompError::NonfunctionCall(var.name, var.typing, 0..0))
                 }
             }
         }

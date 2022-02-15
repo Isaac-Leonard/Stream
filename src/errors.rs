@@ -5,6 +5,7 @@ pub mod errors {
 
     macro_rules! errors {
         ($(($code:tt, $Name:ident $(($($arg_name:ident: $arg_type:ty),*))?, $msg:tt)),*) => {
+	    #[derive(Debug, PartialEq, Clone)]
 	    pub enum CompError {
                 $($Name(
 		    $($($arg_type,)*)?
@@ -17,11 +18,11 @@ pub mod errors {
 			$(CompError::$Name($($($arg_name,)*)? _) =>$code,)*
 		    }
 		}
-                fn get_msg(&self, lines:&Vec<i32>) -> String {
+                pub fn get_msg(&self, lines:&Vec<i32>) -> String {
                     match self {
 			$(CompError::$Name($($($arg_name,)*)? loc) =>{
 			    let pos = get_pos(loc.start as i32, lines);
-			    format!("Error [{}]: {}, at {}", format!($msg, $($($arg_name,)*)?), self.get_code(), pos)
+			    format!("Error [{}]: {}, at {}", self.get_code(), format!($msg, $($($arg_name,)*)?), pos)
 			})*
                     }
                 }
@@ -38,7 +39,7 @@ pub mod errors {
         }
     }
     fn get_pos(pos: i32, lines: &Vec<i32>) -> FilePosition {
-        let mut line_number: usize = 0;
+        let mut line_number: i32 = 0;
         for line in lines {
             if *line > pos {
                 break;
@@ -53,7 +54,7 @@ pub mod errors {
         } else {
             FilePosition {
                 line: line_number as i32,
-                column: pos - lines[line_number],
+                column: pos - lines[line_number as usize - 1] + 1,
             }
         }
     }
@@ -92,6 +93,9 @@ pub mod errors {
         ),
 	(9, BoolInIf(ty:CompType), "The comparison expression in an if expression must resolve to type  'Bool', found '{}' instead"),
 	(10, InvalidAssignment(allowed:CompType, attempted:CompType), "Type '{}' is not assignable to type '{}'"),
-	(11, NonfunctionCall(name:String, var:CompType), "Cannot call variable '{}' of type '{}'")
+	(11, NonfunctionCall(name:String, var:CompType), "Cannot call variable '{}' of type '{}'"),
+	(12, UntypedExternal(name:String), "External variable '{}' must be declared with a type"),
+	(13, RedeclareInSameScope(name:String), "Cannot redeclare variable '{}' in the same scope"),
+	    (14, TypeAlreadyDefined(name:String), "Type '{}' is already defined")
     );
 }

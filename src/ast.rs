@@ -1,4 +1,5 @@
 pub mod ast {
+    use crate::errors::errors::CompError;
     use std::fmt::{self, Display, Formatter};
 
     use std::{collections::HashMap, ops::Range};
@@ -149,7 +150,7 @@ pub mod ast {
         pub fn get_str(&self) -> String {
             format!("{}", self)
         }
-        pub fn resulting_type(&self, a: &CompType, b: &CompType) -> Result<CompType, String> {
+        pub fn resulting_type(&self, a: &CompType, b: &CompType) -> Result<CompType, CompError> {
             use CompType::*;
             use Op::*;
             match self {
@@ -182,13 +183,8 @@ pub mod ast {
                 }
             }
         }
-        fn invalid_comparison_msg(&self, a: &CompType, b: &CompType) -> String {
-            format!(
-                "Invalid operation '{}' for types '{}' and '{}' ",
-                self.get_str(),
-                a.get_str(),
-                b.get_str()
-            )
+        fn invalid_comparison_msg(&self, a: &CompType, b: &CompType) -> CompError {
+            CompError::InvalidComparison(self.clone(), a.clone(), b.clone(), 0..0)
         }
     }
     impl Display for Op {
@@ -292,13 +288,13 @@ pub mod ast {
             }
         }
 
-        pub fn get_type(&self, name: &String) -> Result<CompType, String> {
+        pub fn get_type(&self, name: &String) -> Result<CompType, CompError> {
             if let Some(ty) = self.types.get(name) {
                 Ok(ty.clone())
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_type(name),
-                    None => Err(format!("Cannot find type '{}'", name)),
+                    None => Err(CompError::CannotFindType(name.clone(), 0..0)),
                 }
             }
         }
@@ -422,13 +418,13 @@ pub mod ast {
             }
         }
 
-        pub fn get_type(&self, name: &String) -> Result<CompType, String> {
+        pub fn get_type(&self, name: &String) -> Result<CompType, CompError> {
             if let Some(ty) = self.types.get(name) {
                 Ok(ty.clone())
             } else {
                 match &self.parent {
                     Some(parent) => (*parent).get_type(name),
-                    None => Err(format!("Cannot find type '{}'", name)),
+                    None => Err(CompError::CannotFindType(name.clone(), 0..0)),
                 }
             }
         }
