@@ -20,7 +20,6 @@ fn main() {
         last += pos as i32 + 1;
         positions.push(last);
     }
-    println!("{:?}", positions.clone());
     let settings = Settings {
         print_llvm: env::args().nth(2).is_some(),
     };
