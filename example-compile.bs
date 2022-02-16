@@ -50,6 +50,11 @@ let main=():Int => {
 	x=x+1
     }    	
     {
+    x=0;
+    while x<5 {
+        putchar(hello[x])
+	x=x+1
+    }
         newLine()    
         0
     }
