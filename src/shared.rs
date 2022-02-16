@@ -70,6 +70,13 @@ pub mod shared {
         mut scope: &mut TempScope,
     ) -> Result<CompExpression, Vec<CompError>> {
         match exp {
+            Expression::Index(arr, index, loc) => {
+                let arr_exp = transform_exp(arr, scope)?;
+                let index_exp = transform_exp(index, scope)?;
+                let exp = CompExpression::Index(Box::new(arr_exp), Box::new(index_exp));
+                get_type_from_exp(&exp).map_err(|x| vec![x])?;
+                Ok(exp)
+            }
             Expression::TypeDeclaration(_, _, _) => Ok(CompExpression::List(Vec::new())),
             Expression::InitAssign(_, _, name, _, exp, loc) => {
                 if scope.variable_initialised(name) {

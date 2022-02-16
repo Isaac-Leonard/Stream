@@ -54,12 +54,14 @@ pub mod ast {
             Box<Expression>,
             Range<usize>,
         ),
+        Index(Box<Expression>, Box<Expression>, Range<usize>),
     }
     impl Expression {
         pub fn get_range(&self) -> Range<usize> {
             use Expression::*;
             match &self {
-                TypeDeclaration(_, _, range)
+                Index(_, _, range)
+                | TypeDeclaration(_, _, range)
                 | Addition(_, _, range)
                 | Subtraction(_, _, range)
                 | Multiplication(_, _, range)
