@@ -375,6 +375,19 @@ pub mod compile {
                 CompExpression::Prog(prog) => {
                     self.compile_expression(&prog.body, variables, parent)
                 }
+                CompExpression::Index(arr, index) => unsafe {
+                    self.builder.build_load(
+                        self.builder.build_gep(
+                            self.compile_expression(arr, variables, parent)
+                                .into_pointer_value(),
+                            &[self
+                                .compile_expression(index, variables, parent)
+                                .into_int_value()],
+                            "calc_pos",
+                        ),
+                        "indexing",
+                    )
+                },
                 other => panic!("Not implemented '{:?}'", other),
             }
         }
