@@ -228,7 +228,7 @@ pub mod parser {
                 .then_ignore(whitespace())
                 .ignore_then(ident().map(String::from))
                 .then_ignore(just('=').padded())
-                .then(type_parser())
+                .then(type_parser().map(CustomTypeStruct::simple))
                 .labelled("Type assignment")
                 .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
                 .boxed();

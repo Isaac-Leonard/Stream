@@ -27,7 +27,7 @@ pub mod ast {
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum Expression {
-        TypeDeclaration(String, CustomType, Range<usize>),
+        TypeDeclaration(String, CustomTypeStruct, Range<usize>),
         Addition(Box<Expression>, Box<Expression>, Range<usize>),
         Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
         Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
@@ -93,6 +93,19 @@ pub mod ast {
         Union(Vec<String>),
     }
 
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct CustomTypeStruct {
+        pub generics: Vec<String>,
+        pub ty: CustomType,
+    }
+    impl CustomTypeStruct {
+        pub fn simple(ty: CustomType) -> CustomTypeStruct {
+            CustomTypeStruct {
+                generics: Vec::new(),
+                ty,
+            }
+        }
+    }
     #[derive(Debug, PartialEq, Clone)]
     pub struct NewVariable {
         pub name: String,

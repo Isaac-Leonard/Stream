@@ -24,8 +24,11 @@ pub mod shared {
         }
     }
 
-    pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<CompError>> {
-        match ty {
+    pub fn transform_type(
+        ty: &CustomTypeStruct,
+        scope: &TempScope,
+    ) -> Result<CompType, Vec<CompError>> {
+        match ty.clone().ty {
             CustomType::Union(sub_types) => {
                 collect_ok_or_err(sub_types.iter().map(|x| scope.get_type(x)))
                     .unwrap_or_else(|| Err(vec![CompError::EmptyType(0..0)]))
@@ -33,9 +36,14 @@ pub mod shared {
             }
 
             CustomType::Callible(args, ret) => {
-                let args = collect_ok_or_err(args.iter().map(|x| transform_type(x, scope)))
-                    .unwrap_or(Ok(Vec::new()));
-                let ret = transform_type(ret, scope);
+                let args = collect_ok_or_err(
+                    args.iter()
+                        .cloned()
+                        .map(CustomTypeStruct::simple)
+                        .map(|x| transform_type(&x, scope)),
+                )
+                .unwrap_or(Ok(Vec::new()));
+                let ret = transform_type(&CustomTypeStruct::simple(*ret.clone()), scope);
                 match (args, ret) {
                     (Err(args), Err(ret)) => {
                         Err(args.iter().flatten().chain(ret.iter()).cloned().collect())
@@ -192,7 +200,10 @@ pub mod shared {
                     RawData::Null => CompData::Null,
                     RawData::Func(func) => {
                         let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
-                            match transform_type(&CustomType::Union(x.1.clone()), scope) {
+                            match transform_type(
+                                &CustomTypeStruct::simple(CustomType::Union(x.1.clone())),
+                                scope,
+                            ) {
                                 Err(messages) => Err(messages),
                                 Ok(typing) => Ok(CompVariable {
                                     constant: true,
@@ -203,8 +214,10 @@ pub mod shared {
                             }
                         }))
                         .unwrap_or_else(|| Ok(Vec::new()));
-                        let return_type =
-                            transform_type(&CustomType::Union(func.return_type).clone(), scope);
+                        let return_type = transform_type(
+                            &CustomTypeStruct::simple(CustomType::Union(func.return_type)),
+                            scope,
+                        );
                         let (temp_variables, return_type) = match (temp_variables, return_type) {
                             (Ok(vars), Ok(ret)) => (vars, ret),
                             (Err(vars), Err(ret)) => {
@@ -282,7 +295,10 @@ pub mod shared {
                 } else {
                     let typing = match declared_type {
                         None => None,
-                        Some(x) => Some(transform_type(&CustomType::Union(x.to_vec()), scope)?),
+                        Some(x) => Some(transform_type(
+                            &CustomTypeStruct::simple(CustomType::Union(x.to_vec())),
+                            scope,
+                        )?),
                     };
                     Ok(scope.add_variable(NewVariable {
                         constant: constant.clone(),
