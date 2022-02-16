@@ -20,8 +20,10 @@ fn main() {
         last += pos as i32 + 1;
         positions.push(last);
     }
+    let args = env::args().collect::<Vec<_>>();
     let settings = Settings {
-        print_llvm: env::args().nth(2).is_some(),
+        print_llvm: args.contains(&"-p".to_string()),
+        skip_optimizations: !args.contains(&"-s".to_string()),
     };
     // let src = "[!]+";
     let mut types = HashMap::new();
