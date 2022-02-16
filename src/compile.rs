@@ -10,7 +10,9 @@ pub mod compile {
     use inkwell::targets::{
         CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
     };
-    use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType};
+    use inkwell::types::{
+        AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType, IntMathType,
+    };
     use inkwell::values::{
         BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, PointerValue,
     };
@@ -376,17 +378,27 @@ pub mod compile {
                     self.compile_expression(&prog.body, variables, parent)
                 }
                 CompExpression::Index(arr, index) => unsafe {
-                    self.builder.build_load(
-                        self.builder.build_gep(
-                            self.compile_expression(arr, variables, parent)
-                                .into_pointer_value(),
-                            &[self
-                                .compile_expression(index, variables, parent)
-                                .into_int_value()],
-                            "calc_pos",
-                        ),
-                        "indexing",
-                    )
+                    let ptr = self
+                        .compile_expression(arr, variables, parent)
+                        .into_pointer_value();
+                    let val = self
+                        .builder
+                        .build_load(
+                            self.builder.build_in_bounds_gep(
+                                ptr,
+                                &[
+                                    self.context.i32_type().const_zero(),
+                                    self.compile_expression(index, variables, parent)
+                                        .into_int_value(),
+                                ],
+                                "calc_pos",
+                            ),
+                            "indexing",
+                        )
+                        .into_int_value();
+                    self.builder
+                        .build_int_cast(val, self.context.i32_type(), "int_cast")
+                        .as_basic_value_enum()
                 },
                 other => panic!("Not implemented '{:?}'", other),
             }
