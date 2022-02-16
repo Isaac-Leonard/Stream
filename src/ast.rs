@@ -237,6 +237,7 @@ pub mod ast {
             cond: Box<CompExpression>,
             body: Box<CompExpression>,
         },
+        Index(Box<CompExpression>, Box<CompExpression>),
         List(Vec<CompExpression>),
         Prog(Box<Program>),
     }
@@ -510,7 +511,7 @@ pub mod ast {
             self == &CompType::Null
         }
 
-        fn is_int(&self) -> bool {
+        pub fn is_int(&self) -> bool {
             *self == CompType::Int
         }
 

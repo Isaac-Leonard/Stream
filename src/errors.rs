@@ -96,6 +96,8 @@ pub mod errors {
 	(11, NonfunctionCall(name:String, var:CompType), "Cannot call variable '{}' of type '{}'"),
 	(12, UntypedExternal(name:String), "External variable '{}' must be declared with a type"),
 	(13, RedeclareInSameScope(name:String), "Cannot redeclare variable '{}' in the same scope"),
-	    (14, TypeAlreadyDefined(name:String), "Type '{}' is already defined")
+	(14, TypeAlreadyDefined(name:String), "Type '{}' is already defined"),
+	(15, CannotIndexType(ty:CompType), "Cannot access elements of type '{}'"),
+	(16, InvalidIndexType(ty:CompType), "Cannot index array with '{}'")
     );
 }

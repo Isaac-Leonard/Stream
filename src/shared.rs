@@ -433,6 +433,17 @@ pub mod shared {
                 }
             }
             Value(data) => Ok(data.get_type()),
+            Index(arr, i) => {
+                let arr_ty = get_type_from_exp(arr)?;
+                let i_ty = get_type_from_exp(i)?;
+                if !arr_ty.is_str() {
+                    Err(CompError::CannotIndexType(arr_ty, 0..0))
+                } else if !i_ty.is_int() {
+                    Err(CompError::InvalidIndexType(i_ty, 0..0))
+                } else {
+                    Ok(CompType::Int)
+                }
+            }
             Assign(var, exp) => {
                 let exp = get_type_from_exp(exp);
                 if let Ok(ty) = exp {
