@@ -214,7 +214,11 @@ pub mod parser {
                 .then_ignore(raw("else").padded())
                 .then(block_exp.clone().map(Box::new))
                 .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
-
+            let index_parser = primary_exp
+                .clone()
+                .then_ignore(whitespace())
+                .then(primary_exp.clone().padded().delimited_by('[', ']'))
+                .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
             let loop_parser = raw("while")
                 .ignore_then(exp.clone().padded())
                 .then(block_exp.clone())
@@ -255,6 +259,7 @@ pub mod parser {
                 .or(declaration)
                 .or(equal_parser)
                 .or(compare_parser)
+                .or(index_parser)
                 .or(addition_parser.or(subtraction_parser))
                 .then_ignore(whitespace().then(just(';')).or_not())
                 .boxed();
