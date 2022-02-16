@@ -1,6 +1,7 @@
 pub mod shared {
     use crate::ast::ast::*;
     use crate::errors::errors::*;
+    use std::borrow::BorrowMut;
     use std::collections::HashMap;
 
     fn collect_ok_or_err<T, E>(
@@ -300,16 +301,10 @@ pub mod shared {
                 }
             }
             Expression::Block(expressions, _) => {
-                let mut errors = Vec::new();
-
                 for exp in expressions {
-                    scope = resolve_scope(exp, scope)?;
+                    resolve_scope(exp, scope);
                 }
-                if errors.is_empty() {
-                    Ok(scope)
-                } else {
-                    Err(errors)
-                }
+                Ok(scope)
             }
             _x => Ok(scope),
         }
