@@ -1,7 +1,6 @@
 pub mod shared {
     use crate::ast::ast::*;
     use crate::errors::errors::*;
-    use std::borrow::BorrowMut;
     use std::collections::HashMap;
 
     fn collect_ok_or_err<T, E>(
@@ -24,26 +23,20 @@ pub mod shared {
         }
     }
 
-    pub fn transform_type(
-        ty: &CustomTypeStruct,
-        scope: &TempScope,
-    ) -> Result<CompType, Vec<CompError>> {
-        match ty.clone().ty {
+    pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<CompError>> {
+        match ty {
             CustomType::Union(sub_types) => {
-                collect_ok_or_err(sub_types.iter().map(|x| scope.get_type(x)))
+                collect_ok_or_err(sub_types.iter().map(|x| transform_type(x, scope)))
+                    .map(|x| x.map_err(|x| x.iter().flatten().cloned().collect()))
                     .unwrap_or_else(|| Err(vec![CompError::EmptyType(0..0)]))
                     .map(|x| CompType::Union(x).flatten())
             }
 
             CustomType::Callible(args, ret) => {
-                let args = collect_ok_or_err(
-                    args.iter()
-                        .cloned()
-                        .map(CustomTypeStruct::simple)
-                        .map(|x| transform_type(&x, scope)),
-                )
-                .unwrap_or(Ok(Vec::new()));
-                let ret = transform_type(&CustomTypeStruct::simple(*ret.clone()), scope);
+                let args =
+                    collect_ok_or_err(args.iter().cloned().map(|x| transform_type(&x, scope)))
+                        .unwrap_or(Ok(Vec::new()));
+                let ret = transform_type(&*ret.clone(), scope);
                 match (args, ret) {
                     (Err(args), Err(ret)) => {
                         Err(args.iter().flatten().chain(ret.iter()).cloned().collect())
@@ -53,6 +46,9 @@ pub mod shared {
                     (Ok(args), Ok(ret)) => Ok(CompType::Callible(args, Box::new(ret))),
                 }
             }
+            CustomType::Lone(ty) => scope
+                .get_type(&ty.name)
+                .map_err(|_| vec![CompError::CannotFindType(ty.clone().name, 0..0)]),
         }
     }
 
@@ -200,10 +196,7 @@ pub mod shared {
                     RawData::Null => CompData::Null,
                     RawData::Func(func) => {
                         let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
-                            match transform_type(
-                                &CustomTypeStruct::simple(CustomType::Union(x.1.clone())),
-                                scope,
-                            ) {
+                            match transform_type(&x.1.clone(), scope) {
                                 Err(messages) => Err(messages),
                                 Ok(typing) => Ok(CompVariable {
                                     constant: true,
@@ -214,10 +207,7 @@ pub mod shared {
                             }
                         }))
                         .unwrap_or_else(|| Ok(Vec::new()));
-                        let return_type = transform_type(
-                            &CustomTypeStruct::simple(CustomType::Union(func.return_type)),
-                            scope,
-                        );
+                        let return_type = transform_type(&func.return_type, scope);
                         let (temp_variables, return_type) = match (temp_variables, return_type) {
                             (Ok(vars), Ok(ret)) => (vars, ret),
                             (Err(vars), Err(ret)) => {
@@ -295,10 +285,7 @@ pub mod shared {
                 } else {
                     let typing = match declared_type {
                         None => None,
-                        Some(x) => Some(transform_type(
-                            &CustomTypeStruct::simple(CustomType::Union(x.to_vec())),
-                            scope,
-                        )?),
+                        Some(x) => Some(transform_type(x, scope)?),
                     };
                     Ok(scope.add_variable(NewVariable {
                         constant: constant.clone(),

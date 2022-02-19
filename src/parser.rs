@@ -8,28 +8,6 @@ pub mod parser {
         text::{ident, whitespace},
     };
 
-    fn parse_to_i32(x: String) -> i32 {
-        return x.parse::<i32>().unwrap();
-    }
-
-    fn parse_to_f32(x: String) -> f32 {
-        return x.parse::<f32>().unwrap();
-    }
-
-    fn type_specifyer() -> impl Parser<char, Vec<String>, Error = Cheap<char>> {
-        just(':')
-            .then_ignore(whitespace())
-            .ignore_then(
-                ident().map(String::from).chain::<String, _, _>(
-                    just('|')
-                        .padded()
-                        .ignore_then(ident().map(String::from))
-                        .repeated(),
-                ),
-            )
-            .map(|x| x)
-    }
-
     fn integer() -> impl Parser<char, i32, Error = Cheap<char>> {
         filter::<_, _, Cheap<char>>(char::is_ascii_digit)
             .repeated()
@@ -52,6 +30,14 @@ pub mod parser {
             ))
         .map(|x| format!("{}.{}", x.0, x.1))
         .map(parse_to_f32)
+    }
+
+    fn parse_to_i32(x: String) -> i32 {
+        return x.parse::<i32>().unwrap();
+    }
+
+    fn parse_to_f32(x: String) -> f32 {
+        return x.parse::<f32>().unwrap();
     }
 
     fn string() -> impl Parser<char, String, Error = Cheap<char>> {
@@ -85,6 +71,34 @@ pub mod parser {
             .or(ident().map(String::from).map(Symbol::Identifier))
             .labelled("Symbol")
     }
+
+    fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
+        recursive(|ty: Recursive<char, CustomType, _>| {
+            let singular = ident()
+                .map(String::from)
+                .then_ignore(whitespace())
+                .then(
+                    (ty.clone().padded())
+                        .separated_by(just(','))
+                        .at_least(1)
+                        .delimited_by('<', '>')
+                        .or_not(),
+                )
+                .map(|x| UseType::complex(x.0, x.1.unwrap_or_else(Vec::new)))
+                .boxed();
+            let union = ty
+                .clone()
+                .separated_by(just('|').padded())
+                .at_least(2)
+                .map(CustomType::Union);
+            let callible = (ty.clone().padded().separated_by(just(',')))
+                .delimited_by('(', ')')
+                .then(just(':').padded().ignore_then(ty.clone()))
+                .map(|x| CustomType::Callible(x.0, Box::new(x.1)));
+            (callible).or(singular.clone().map(CustomType::Lone))
+        })
+    }
+
     fn raw(string: &str) -> impl Parser<char, (), Error = Cheap<char>> {
         seq(string.chars())
     }
@@ -104,22 +118,22 @@ pub mod parser {
             let func_declaration = ident()
                 .map(String::from)
                 .padded()
-                .then(type_specifyer())
+                .then(just(':').then(whitespace()).ignore_then(type_parser()))
                 .then_ignore(whitespace())
                 .separated_by(just(','))
                 .delimited_by('(', ')')
                 .then_ignore(whitespace())
-                .then(type_specifyer().then_ignore(whitespace()).or_not())
+                .then(just(':').ignore_then(type_parser().padded()).or_not())
                 .then(
-                    raw("=>")
-                        .then_ignore(whitespace())
+                    (raw("=>").then(whitespace()))
                         .ignore_then(exp.clone().map(Box::new))
                         .or_not(),
                 )
                 .map(|((args, ret), body)| Function {
                     args,
                     body,
-                    return_type: ret.unwrap_or_else(|| vec!["Null".to_string()]),
+                    return_type: ret
+                        .unwrap_or_else(|| CustomType::Lone(UseType::simple("Null".to_string()))),
                 })
                 .map(RawData::Func)
                 .map(Symbol::Data)
@@ -228,7 +242,7 @@ pub mod parser {
                 .then_ignore(whitespace())
                 .ignore_then(ident().map(String::from))
                 .then_ignore(just('=').padded())
-                .then(type_parser().map(CustomTypeStruct::simple))
+                .then(type_parser())
                 .labelled("Type assignment")
                 .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
                 .boxed();
@@ -243,8 +257,7 @@ pub mod parser {
             let declaration = is_external
                 .then(raw("let").to(false).or(raw("const").to(true)).padded())
                 .then(ident().map(String::from))
-                .then_ignore(whitespace())
-                .then(type_specifyer().or_not())
+                .then(just(':').padded().ignore_then(type_parser()).or_not())
                 .then_ignore(just('=').padded())
                 .then(primary_exp.clone().map(Box::new))
                 .map_with_span(|x, span| {
@@ -265,25 +278,6 @@ pub mod parser {
                 .boxed();
 
             expression.or(block_exp)
-        })
-    }
-
-    pub fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
-        recursive(|bf: Recursive<char, CustomType, _>| {
-            ident()
-                .map(String::from)
-                .separated_by(just('|').padded())
-                .at_least(1)
-                .map(CustomType::Union)
-                .or(bf
-                    .clone()
-                    .separated_by(just(',').padded())
-                    .delimited_by('(', ')')
-                    .then_ignore(just(':').padded())
-                    .then(bf.clone())
-                    .map(|x: (Vec<CustomType>, CustomType)| {
-                        CustomType::Callible(x.0, Box::new(x.1))
-                    }))
         })
     }
 
@@ -372,7 +366,7 @@ mod tests {
                     Symbol::Data(RawData::Func(Function {
                         args: Vec::new(),
                         body: Some(Box::new(Block(Vec::new(), 17..19))),
-                        return_type: vec!["Int".to_string()]
+                        return_type: CustomType::Lone(UseType::simple("Int".to_string()))
                     })),
                     9..19
                 )),
@@ -389,8 +383,8 @@ mod tests {
             Ok(vec![TypeDeclaration(
                 "fn".to_string(),
                 CustomType::Callible(
-                    vec!(CustomType::Union(vec!("Int".to_string()))),
-                    Box::new(CustomType::Union(vec!("Int".to_string())))
+                    vec!(CustomType::Lone(UseType::simple("Int".to_string()))),
+                    Box::new(CustomType::Lone(UseType::simple("Int".to_string())))
                 ),
                 0..17
             )])
@@ -410,8 +404,14 @@ mod tests {
                 Box::new(Terminal(
                     Symbol::Data(RawData::Func(Function {
                         args: vec![
-                            ("x".to_string(), vec!["Int".to_string()]),
-                            ("y".to_string(), vec!["Int".to_string()])
+                            (
+                                "x".to_string(),
+                                CustomType::Lone(UseType::simple("Int".to_string()))
+                            ),
+                            (
+                                "y".to_string(),
+                                CustomType::Lone(UseType::simple("Int".to_string()))
+                            )
                         ],
                         body: Some(Box::new(Block(
                             vec![Addition(
@@ -421,7 +421,7 @@ mod tests {
                             )],
                             28..33
                         ))),
-                        return_type: vec!["Int".to_string()]
+                        return_type: CustomType::Lone(UseType::simple("Int".to_string()))
                     })),
                     8..33
                 )),
@@ -441,12 +441,15 @@ mod tests {
                 true,
                 false,
                 "sin".to_string(),
-                Some(vec!["Sin".to_string()]),
+                Some(CustomType::Lone(UseType::simple("Sin".to_string()))),
                 Box::new(Terminal(
                     Symbol::Data(RawData::Func(Function {
-                        args: vec![("x".to_string(), vec!["Float".to_string()])],
+                        args: vec![(
+                            "x".to_string(),
+                            CustomType::Lone(UseType::simple("Float".to_string()))
+                        )],
                         body: None,
-                        return_type: vec!["Float".to_string()]
+                        return_type: CustomType::Lone(UseType::simple("Float".to_string()))
                     })),
                     19..34
                 )),
@@ -467,12 +470,15 @@ mod tests {
                     true,
                     false,
                     "sin".to_string(),
-                    Some(vec!["Sin".to_string()]),
+                    Some(CustomType::Lone(UseType::simple("Sin".to_string()))),
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
-                            args: vec![("x".to_string(), vec!["Float".to_string()])],
+                            args: vec![(
+                                "x".to_string(),
+                                CustomType::Lone(UseType::simple("Float".to_string()))
+                            )],
                             body: None,
-                            return_type: vec!["Float".to_string()]
+                            return_type: CustomType::Lone(UseType::simple("Float".to_string()))
                         })),
                         19..34
                     )),
@@ -486,8 +492,14 @@ mod tests {
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
                             args: vec![
-                                ("x".to_string(), vec!["Int".to_string()]),
-                                ("y".to_string(), vec!["Int".to_string()])
+                                (
+                                    "x".to_string(),
+                                    CustomType::Lone(UseType::simple("Int".to_string()))
+                                ),
+                                (
+                                    "y".to_string(),
+                                    CustomType::Lone(UseType::simple("Int".to_string()))
+                                )
                             ],
                             body: Some(Box::new(Block(
                                 vec![Addition(
@@ -497,7 +509,7 @@ mod tests {
                                 )],
                                 64..69
                             ))),
-                            return_type: vec!["Int".to_string()]
+                            return_type: CustomType::Lone(UseType::simple("Int".to_string()))
                         })),
                         44..69
                     )),
@@ -519,12 +531,15 @@ mod tests {
                     true,
                     false,
                     "sin".to_string(),
-                    Some(vec!["Sin".to_string()]),
+                    Some(CustomType::Lone(UseType::simple("Sin".to_string()))),
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
-                            args: vec![("x".to_string(), vec!["Float".to_string()])],
+                            args: vec![(
+                                "x".to_string(),
+                                CustomType::Lone(UseType::simple("Float".to_string()))
+                            )],
                             body: None,
-                            return_type: vec!["Float".to_string()]
+                            return_type: CustomType::Lone(UseType::simple("Float".to_string()))
                         })),
                         19..34
                     )),
@@ -538,8 +553,14 @@ mod tests {
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
                             args: vec![
-                                ("x".to_string(), vec!["Int".to_string()]),
-                                ("y".to_string(), vec!["Int".to_string()])
+                                (
+                                    "x".to_string(),
+                                    CustomType::Lone(UseType::simple("Int".to_string()))
+                                ),
+                                (
+                                    "y".to_string(),
+                                    CustomType::Lone(UseType::simple("Int".to_string()))
+                                )
                             ],
                             body: Some(Box::new(Block(
                                 vec![Addition(
@@ -549,7 +570,7 @@ mod tests {
                                 )],
                                 65..70
                             ))),
-                            return_type: vec!["Int".to_string()]
+                            return_type: CustomType::Lone(UseType::simple("Int".to_string()))
                         })),
                         45..70
                     )),

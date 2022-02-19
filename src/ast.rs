@@ -27,7 +27,7 @@ pub mod ast {
 
     #[derive(Clone, Debug, PartialEq)]
     pub enum Expression {
-        TypeDeclaration(String, CustomTypeStruct, Range<usize>),
+        TypeDeclaration(String, CustomType, Range<usize>),
         Addition(Box<Expression>, Box<Expression>, Range<usize>),
         Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
         Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
@@ -50,7 +50,7 @@ pub mod ast {
             bool,
             bool,
             String,
-            Option<Vec<String>>,
+            Option<CustomType>,
             Box<Expression>,
             Range<usize>,
         ),
@@ -81,16 +81,32 @@ pub mod ast {
     }
     #[derive(Clone, PartialEq, Debug)]
     pub struct Function {
-        pub args: Vec<(String, Vec<String>)>,
+        pub args: Vec<(String, CustomType)>,
         pub body: Option<Box<Expression>>,
-        pub return_type: Vec<String>,
+        pub return_type: CustomType,
     }
 
     #[derive(Debug, Clone, PartialEq)]
+    pub struct UseType {
+        pub generics: Vec<CustomType>,
+        pub name: String,
+    }
+    impl UseType {
+        pub fn simple(name: String) -> UseType {
+            UseType {
+                generics: Vec::new(),
+                name,
+            }
+        }
+        pub fn complex(name: String, generics: Vec<CustomType>) -> UseType {
+            UseType { generics, name }
+        }
+    }
+    #[derive(Debug, Clone, PartialEq)]
     pub enum CustomType {
         Callible(Vec<Self>, Box<Self>),
-        // Only have union, can map singular types / aliases to a union then flaten them later
-        Union(Vec<String>),
+        Union(Vec<Self>),
+        Lone(UseType),
     }
 
     #[derive(Debug, Clone, PartialEq)]
@@ -105,7 +121,11 @@ pub mod ast {
                 ty,
             }
         }
+        pub fn complex(generics: Vec<String>, ty: CustomType) -> CustomTypeStruct {
+            CustomTypeStruct { generics, ty }
+        }
     }
+
     #[derive(Debug, PartialEq, Clone)]
     pub struct NewVariable {
         pub name: String,
