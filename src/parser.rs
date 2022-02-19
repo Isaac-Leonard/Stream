@@ -1,296 +1,293 @@
-pub mod parser {
+use crate::ast::*;
+use chumsky::{
+    error::Cheap,
+    prelude::*,
+    recursive::Recursive,
+    text::{ident, whitespace},
+};
 
-    use crate::ast::ast::*;
-    use chumsky::{
-        error::Cheap,
-        prelude::*,
-        recursive::Recursive,
-        text::{ident, whitespace},
-    };
+fn integer() -> impl Parser<char, i32, Error = Cheap<char>> {
+    filter::<_, _, Cheap<char>>(char::is_ascii_digit)
+        .repeated()
+        .at_least(1)
+        .collect::<String>()
+        .map(parse_to_i32)
+}
 
-    fn integer() -> impl Parser<char, i32, Error = Cheap<char>> {
-        filter::<_, _, Cheap<char>>(char::is_ascii_digit)
-            .repeated()
-            .at_least(1)
-            .collect::<String>()
-            .map(parse_to_i32)
-    }
-
-    fn float() -> impl Parser<char, f32, Error = Cheap<char>> {
-        (filter::<_, _, Cheap<char>>(char::is_ascii_digit)
-            .repeated()
-            .at_least(1)
-            .collect::<String>()
-            .then_ignore(just('.'))
-            .then(
-                filter::<_, _, Cheap<char>>(char::is_ascii_digit)
-                    .repeated()
-                    .at_least(1)
-                    .collect::<String>(),
-            ))
-        .map(|x| format!("{}.{}", x.0, x.1))
-        .map(parse_to_f32)
-    }
-
-    fn parse_to_i32(x: String) -> i32 {
-        return x.parse::<i32>().unwrap();
-    }
-
-    fn parse_to_f32(x: String) -> f32 {
-        return x.parse::<f32>().unwrap();
-    }
-
-    fn string() -> impl Parser<char, String, Error = Cheap<char>> {
-        let escape = just('\\').ignore_then(
-            just('\\')
-                .or(just('/'))
-                .or(just('"'))
-                .or(just('b').to('\x08'))
-                .or(just('f').to('\x0C'))
-                .or(just('n').to('\n'))
-                .or(just('r').to('\r'))
-                .or(just('t').to('\t'))
-                .or(just('0').to('\0')),
-        );
-
-        just('"')
-            .ignore_then(filter(|c| *c != '\\' && *c != '"').or(escape).repeated())
-            .then_ignore(just('"'))
-            .collect::<String>()
-    }
-
-    fn symbol_parser() -> impl Parser<char, Symbol, Error = Cheap<char>> {
-        string()
-            .map(RawData::Str)
-            .or(integer().map(RawData::Int))
-            .or(float().map(RawData::Float))
-            .or(raw("null").to(RawData::Null))
-            .or(raw("true").to(RawData::Bool(true)))
-            .or(raw("false").to(RawData::Bool(false)))
-            .map(Symbol::Data)
-            .or(ident().map(String::from).map(Symbol::Identifier))
-            .labelled("Symbol")
-    }
-
-    fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
-        recursive(|ty: Recursive<char, CustomType, _>| {
-            let singular = ident()
-                .map(String::from)
-                .then_ignore(whitespace())
-                .then(
-                    (ty.clone().padded())
-                        .separated_by(just(','))
-                        .at_least(1)
-                        .delimited_by('<', '>')
-                        .or_not(),
-                )
-                .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_else(Vec::new))))
-                .boxed();
-            let callible = (ty.clone().padded().separated_by(just(',')))
-                .delimited_by('(', ')')
-                .then(just(':').padded().ignore_then(ty.clone()))
-                .map(|x| CustomType::Callible(x.0, Box::new(x.1)));
-            let union = (singular.clone().or(callible.clone()))
-                .separated_by(just('|').padded())
-                .at_least(2)
-                .map(CustomType::Union);
-            (callible).or(union).or(singular)
-        })
-    }
-
-    fn raw(string: &str) -> impl Parser<char, (), Error = Cheap<char>> {
-        seq(string.chars())
-    }
-
-    fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
-        use Expression::*;
-        recursive(|exp: Recursive<'_, char, Expression, Cheap<char>>| {
-            let block_exp = exp
-                .clone()
-                .padded()
+fn float() -> impl Parser<char, f32, Error = Cheap<char>> {
+    (filter::<_, _, Cheap<char>>(char::is_ascii_digit)
+        .repeated()
+        .at_least(1)
+        .collect::<String>()
+        .then_ignore(just('.'))
+        .then(
+            filter::<_, _, Cheap<char>>(char::is_ascii_digit)
                 .repeated()
-                .delimited_by('{', '}')
-                .map_with_span(Expression::Block)
-                .then_ignore(whitespace().then(just(';')).or_not())
-                .labelled("Block");
+                .at_least(1)
+                .collect::<String>(),
+        ))
+    .map(|x| format!("{}.{}", x.0, x.1))
+    .map(parse_to_f32)
+}
 
-            let func_declaration = ident()
-                .map(String::from)
-                .padded()
-                .then(just(':').then(whitespace()).ignore_then(type_parser()))
-                .then_ignore(whitespace())
-                .separated_by(just(','))
-                .delimited_by('(', ')')
-                .then_ignore(whitespace())
-                .then(just(':').ignore_then(type_parser().padded()).or_not())
-                .then(
-                    (raw("=>").then(whitespace()))
-                        .ignore_then(exp.clone().map(Box::new))
-                        .or_not(),
-                )
-                .map(|((args, ret), body)| Function {
-                    args,
-                    body,
-                    return_type: ret
-                        .unwrap_or_else(|| CustomType::Lone(UseType::simple("Null".to_string()))),
+fn parse_to_i32(x: String) -> i32 {
+    return x.parse::<i32>().unwrap();
+}
+
+fn parse_to_f32(x: String) -> f32 {
+    return x.parse::<f32>().unwrap();
+}
+
+fn string() -> impl Parser<char, String, Error = Cheap<char>> {
+    let escape = just('\\').ignore_then(
+        just('\\')
+            .or(just('/'))
+            .or(just('"'))
+            .or(just('b').to('\x08'))
+            .or(just('f').to('\x0C'))
+            .or(just('n').to('\n'))
+            .or(just('r').to('\r'))
+            .or(just('t').to('\t'))
+            .or(just('0').to('\0')),
+    );
+
+    just('"')
+        .ignore_then(filter(|c| *c != '\\' && *c != '"').or(escape).repeated())
+        .then_ignore(just('"'))
+        .collect::<String>()
+}
+
+fn symbol_parser() -> impl Parser<char, Symbol, Error = Cheap<char>> {
+    string()
+        .map(RawData::Str)
+        .or(integer().map(RawData::Int))
+        .or(float().map(RawData::Float))
+        .or(raw("null").to(RawData::Null))
+        .or(raw("true").to(RawData::Bool(true)))
+        .or(raw("false").to(RawData::Bool(false)))
+        .map(Symbol::Data)
+        .or(ident().map(String::from).map(Symbol::Identifier))
+        .labelled("Symbol")
+}
+
+fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
+    recursive(|ty: Recursive<char, CustomType, _>| {
+        let singular = ident()
+            .map(String::from)
+            .then_ignore(whitespace())
+            .then(
+                (ty.clone().padded())
+                    .separated_by(just(','))
+                    .at_least(1)
+                    .delimited_by('<', '>')
+                    .or_not(),
+            )
+            .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_else(Vec::new))))
+            .boxed();
+        let callible = (ty.clone().padded().separated_by(just(',')))
+            .delimited_by('(', ')')
+            .then(just(':').padded().ignore_then(ty.clone()))
+            .map(|x| CustomType::Callible(x.0, Box::new(x.1)));
+        let union = (singular.clone().or(callible.clone()))
+            .separated_by(just('|').padded())
+            .at_least(2)
+            .map(CustomType::Union);
+        (callible).or(union).or(singular)
+    })
+}
+
+fn raw(string: &str) -> impl Parser<char, (), Error = Cheap<char>> {
+    seq(string.chars())
+}
+
+fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
+    use Expression::*;
+    recursive(|exp: Recursive<'_, char, Expression, Cheap<char>>| {
+        let block_exp = exp
+            .clone()
+            .padded()
+            .repeated()
+            .delimited_by('{', '}')
+            .map_with_span(Expression::Block)
+            .then_ignore(whitespace().then(just(';')).or_not())
+            .labelled("Block");
+
+        let func_declaration = ident()
+            .map(String::from)
+            .padded()
+            .then(just(':').then(whitespace()).ignore_then(type_parser()))
+            .then_ignore(whitespace())
+            .separated_by(just(','))
+            .delimited_by('(', ')')
+            .then_ignore(whitespace())
+            .then(just(':').ignore_then(type_parser().padded()).or_not())
+            .then(
+                (raw("=>").then(whitespace()))
+                    .ignore_then(exp.clone().map(Box::new))
+                    .or_not(),
+            )
+            .map(|((args, ret), body)| Function {
+                args,
+                body,
+                return_type: ret
+                    .unwrap_or_else(|| CustomType::Lone(UseType::simple("Null".to_string()))),
+            })
+            .map(RawData::Func)
+            .map(Symbol::Data)
+            .labelled("Function");
+
+        let func_call = ident()
+            .map(String::from)
+            .then_ignore(whitespace())
+            .then(
+                exp.clone()
+                    .padded()
+                    .separated_by(just(','))
+                    .delimited_by('(', ')'),
+            )
+            .map_with_span(|(name, args), span| FuncCall(name, args, span))
+            .labelled("Call");
+
+        let primary_exp = func_call
+            .or(symbol_parser().map_with_span(Terminal))
+            .or(func_declaration.map_with_span(Terminal))
+            .or(exp.clone().padded().delimited_by('(', ')'))
+            .boxed()
+            .labelled("Primary");
+
+        let mult_parser = (primary_exp.clone())
+            .then(
+                one_of(['*', '/'])
+                    .padded()
+                    .then(primary_exp.clone())
+                    .repeated(),
+            )
+            .map(|(l, t)| {
+                t.iter().fold(l, |left, (op, right)| match op {
+                    '*' => Expression::Multiplication(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                        left.get_range().start..right.get_range().end,
+                    ),
+                    '/' => Expression::Division(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                        left.get_range().start..right.get_range().end,
+                    ),
+                    _ => panic!("Unexpected operator {}", op),
                 })
-                .map(RawData::Func)
-                .map(Symbol::Data)
-                .labelled("Function");
+            })
+            .boxed();
 
-            let func_call = ident()
-                .map(String::from)
-                .then_ignore(whitespace())
-                .then(
-                    exp.clone()
-                        .padded()
-                        .separated_by(just(','))
-                        .delimited_by('(', ')'),
-                )
-                .map_with_span(|(name, args), span| FuncCall(name, args, span))
-                .labelled("Call");
+        let compare_parser = (mult_parser.clone().map(Box::new))
+            .then_ignore(just('<').padded())
+            .then(mult_parser.clone().map(Box::new))
+            .map_with_span(|x, span| Expression::LessThan(x.0, x.1, span));
 
-            let primary_exp = func_call
-                .or(symbol_parser().map_with_span(Terminal))
-                .or(func_declaration.map_with_span(Terminal))
-                .or(exp.clone().padded().delimited_by('(', ')'))
-                .boxed()
-                .labelled("Primary");
+        let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
+            .then_ignore(raw("==").padded())
+            .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
+            .map_with_span(|x, span| Expression::Equal(x.0, x.1, span));
 
-            let mult_parser = (primary_exp.clone())
-                .then(
-                    one_of(['*', '/'])
-                        .padded()
-                        .then(primary_exp.clone())
-                        .repeated(),
-                )
-                .map(|(l, t)| {
-                    t.iter().fold(l, |left, (op, right)| match op {
-                        '*' => Expression::Multiplication(
-                            Box::new(left.clone()),
-                            Box::new(right.clone()),
-                            left.get_range().start..right.get_range().end,
-                        ),
-                        '/' => Expression::Division(
-                            Box::new(left.clone()),
-                            Box::new(right.clone()),
-                            left.get_range().start..right.get_range().end,
-                        ),
-                        _ => panic!("Unexpected operator {}", op),
-                    })
+        let addition_parser = (mult_parser.clone())
+            .then(
+                just('+')
+                    .padded()
+                    .ignore_then(mult_parser.clone())
+                    .repeated(),
+            )
+            .map(|x| {
+                x.1.iter().fold(x.0, |left, right| {
+                    Addition(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                        left.get_range().start..right.get_range().end,
+                    )
                 })
-                .boxed();
-
-            let compare_parser = (mult_parser.clone().map(Box::new))
-                .then_ignore(just('<').padded())
-                .then(mult_parser.clone().map(Box::new))
-                .map_with_span(|x, span| Expression::LessThan(x.0, x.1, span));
-
-            let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-                .then_ignore(raw("==").padded())
-                .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-                .map_with_span(|x, span| Expression::Equal(x.0, x.1, span));
-
-            let addition_parser = (mult_parser.clone())
-                .then(
-                    just('+')
-                        .padded()
-                        .ignore_then(mult_parser.clone())
-                        .repeated(),
-                )
-                .map(|x| {
-                    x.1.iter().fold(x.0, |left, right| {
-                        Addition(
-                            Box::new(left.clone()),
-                            Box::new(right.clone()),
-                            left.get_range().start..right.get_range().end,
-                        )
-                    })
+            })
+            .boxed();
+        let subtraction_parser = (mult_parser.clone())
+            .then(just('-').padded().ignore_then(mult_parser).repeated())
+            .map(|x| {
+                x.1.iter().fold(x.0, |left, right| {
+                    Subtraction(
+                        Box::new(left.clone()),
+                        Box::new(right.clone()),
+                        left.get_range().start..right.get_range().end,
+                    )
                 })
-                .boxed();
-            let subtraction_parser = (mult_parser.clone())
-                .then(just('-').padded().ignore_then(mult_parser).repeated())
-                .map(|x| {
-                    x.1.iter().fold(x.0, |left, right| {
-                        Subtraction(
-                            Box::new(left.clone()),
-                            Box::new(right.clone()),
-                            left.get_range().start..right.get_range().end,
-                        )
-                    })
-                })
-                .boxed();
+            })
+            .boxed();
 
-            let if_parser = raw("if")
-                .ignore_then(exp.clone().map(Box::new).padded())
-                .then(block_exp.clone().map(Box::new))
-                .then_ignore(raw("else").padded())
-                .then(block_exp.clone().map(Box::new))
-                .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
-            let index_parser = primary_exp
-                .clone()
-                .then_ignore(whitespace())
-                .then(primary_exp.clone().padded().delimited_by('[', ']'))
-                .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
-            let loop_parser = raw("while")
-                .ignore_then(exp.clone().padded())
-                .then(block_exp.clone())
-                .map_with_span(|x, span| Loop(Box::new(x.0), Box::new(x.1), span));
+        let if_parser = raw("if")
+            .ignore_then(exp.clone().map(Box::new).padded())
+            .then(block_exp.clone().map(Box::new))
+            .then_ignore(raw("else").padded())
+            .then(block_exp.clone().map(Box::new))
+            .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
+        let index_parser = primary_exp
+            .clone()
+            .then_ignore(whitespace())
+            .then(primary_exp.clone().padded().delimited_by('[', ']'))
+            .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
+        let loop_parser = raw("while")
+            .ignore_then(exp.clone().padded())
+            .then(block_exp.clone())
+            .map_with_span(|x, span| Loop(Box::new(x.0), Box::new(x.1), span));
 
-            let type_declaration = raw("type")
-                .then_ignore(whitespace())
-                .ignore_then(ident().map(String::from))
-                .then_ignore(just('=').padded())
-                .then(type_parser())
-                .labelled("Type assignment")
-                .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
-                .boxed();
+        let type_declaration = raw("type")
+            .then_ignore(whitespace())
+            .ignore_then(ident().map(String::from))
+            .then_ignore(just('=').padded())
+            .then(type_parser())
+            .labelled("Type assignment")
+            .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
+            .boxed();
 
-            let reassign = ident()
-                .map(String::from)
-                .then_ignore(just('=').padded())
-                .then(exp.clone().map(Box::new))
-                .map_with_span(|x, span| Assign(x.0, x.1, span));
+        let reassign = ident()
+            .map(String::from)
+            .then_ignore(just('=').padded())
+            .then(exp.clone().map(Box::new))
+            .map_with_span(|x, span| Assign(x.0, x.1, span));
 
-            let is_external = raw("extern").or_not().map(|x| x.is_some());
-            let declaration = is_external
-                .then(raw("let").to(false).or(raw("const").to(true)).padded())
-                .then(ident().map(String::from))
-                .then(just(':').padded().ignore_then(type_parser()).or_not())
-                .then_ignore(just('=').padded())
-                .then(primary_exp.clone().map(Box::new))
-                .map_with_span(|x, span| {
-                    InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1, span)
-                })
-                .labelled("Declaration");
+        let is_external = raw("extern").or_not().map(|x| x.is_some());
+        let declaration = is_external
+            .then(raw("let").to(false).or(raw("const").to(true)).padded())
+            .then(ident().map(String::from))
+            .then(just(':').padded().ignore_then(type_parser()).or_not())
+            .then_ignore(just('=').padded())
+            .then(primary_exp.clone().map(Box::new))
+            .map_with_span(|x, span| {
+                InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1, span)
+            })
+            .labelled("Declaration");
 
-            let expression = (if_parser)
-                .or(loop_parser)
-                .or(reassign)
-                .or(type_declaration.clone())
-                .or(declaration)
-                .or(equal_parser)
-                .or(compare_parser)
-                .or(index_parser)
-                .or(addition_parser.or(subtraction_parser))
-                .then_ignore(whitespace().then(just(';')).or_not())
-                .boxed();
+        let expression = (if_parser)
+            .or(loop_parser)
+            .or(reassign)
+            .or(type_declaration.clone())
+            .or(declaration)
+            .or(equal_parser)
+            .or(compare_parser)
+            .or(index_parser)
+            .or(addition_parser.or(subtraction_parser))
+            .then_ignore(whitespace().then(just(';')).or_not())
+            .boxed();
 
-            expression.or(block_exp)
-        })
-    }
+        expression.or(block_exp)
+    })
+}
 
-    pub fn parser() -> impl Parser<char, Vec<Expression>, Error = Cheap<char>> {
-        exp_parser().padded().repeated().then_ignore(end())
-    }
+pub fn parser() -> impl Parser<char, Vec<Expression>, Error = Cheap<char>> {
+    exp_parser().padded().repeated().then_ignore(end())
 }
 
 #[cfg(test)]
 mod tests {
     use chumsky::Parser;
 
-    use super::parser::parser;
-    use crate::ast::ast::*;
+    use super::parser;
+    use crate::ast::*;
     #[test]
     fn add_expression() {
         use Expression::*;

@@ -4,11 +4,11 @@ mod errors;
 mod parser;
 mod settings;
 mod shared;
-use ast::ast::*;
+use ast::*;
 use chumsky::Parser;
-use parser::parser::*;
-use settings::settings::Settings;
-use shared::shared::*;
+use parser::*;
+use settings::Settings;
+use shared::*;
 use std::{collections::HashMap, env, fs};
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument"))
@@ -43,7 +43,7 @@ fn main() {
         Ok(ast) => {
             let prog = create_program(&Expression::Block(ast, 0..0), &global_scope);
             match prog {
-                Ok(prog) => compile::compile::compile(&prog, settings),
+                Ok(prog) => compile::compile(&prog, settings),
                 Err(messages) => messages
                     .into_iter()
                     .for_each(|e| println!("{}", e.get_msg(&positions))),

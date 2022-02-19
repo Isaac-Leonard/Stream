@@ -1,9 +1,8 @@
-pub mod errors {
-    use crate::ast::ast::*;
-    use std::fmt::{Display, Formatter, Result};
-    use std::ops::Range;
+use crate::ast::*;
+use std::fmt::{Display, Formatter, Result};
+use std::ops::Range;
 
-    macro_rules! errors {
+macro_rules! errors {
         ($(($code:tt, $Name:ident $(($($arg_name:ident: $arg_type:ty),*))?, $msg:tt)),*) => {
 	    #[derive(Debug, PartialEq, Clone)]
 	    pub enum CompError {
@@ -29,36 +28,36 @@ pub mod errors {
             }
         };
     }
-    struct FilePosition {
-        line: i32,
-        column: i32,
+struct FilePosition {
+    line: i32,
+    column: i32,
+}
+impl Display for FilePosition {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}: {}", self.line, self.column)
     }
-    impl Display for FilePosition {
-        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "{}: {}", self.line, self.column)
+}
+fn get_pos(pos: i32, lines: &Vec<i32>) -> FilePosition {
+    let mut line_number: i32 = 0;
+    for line in lines {
+        if *line > pos {
+            break;
+        };
+        line_number += 1
+    }
+    if lines.len() == 0 {
+        FilePosition {
+            line: 0,
+            column: pos,
+        }
+    } else {
+        FilePosition {
+            line: line_number as i32,
+            column: pos - lines[line_number as usize - 1] + 1,
         }
     }
-    fn get_pos(pos: i32, lines: &Vec<i32>) -> FilePosition {
-        let mut line_number: i32 = 0;
-        for line in lines {
-            if *line > pos {
-                break;
-            };
-            line_number += 1
-        }
-        if lines.len() == 0 {
-            FilePosition {
-                line: 0,
-                column: pos,
-            }
-        } else {
-            FilePosition {
-                line: line_number as i32,
-                column: pos - lines[line_number as usize - 1] + 1,
-            }
-        }
-    }
-    errors!(
+}
+errors!(
         (
             1,
             ConstReassign(name:String),
@@ -100,4 +99,3 @@ pub mod errors {
 	(15, CannotIndexType(ty:CompType), "Cannot access elements of type '{}'"),
 	(16, InvalidIndexType(ty:CompType), "Cannot index array with '{}'")
     );
-}
