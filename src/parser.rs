@@ -84,18 +84,17 @@ pub mod parser {
                         .delimited_by('<', '>')
                         .or_not(),
                 )
-                .map(|x| UseType::complex(x.0, x.1.unwrap_or_else(Vec::new)))
+                .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_else(Vec::new))))
                 .boxed();
-            let union = ty
-                .clone()
-                .separated_by(just('|').padded())
-                .at_least(2)
-                .map(CustomType::Union);
             let callible = (ty.clone().padded().separated_by(just(',')))
                 .delimited_by('(', ')')
                 .then(just(':').padded().ignore_then(ty.clone()))
                 .map(|x| CustomType::Callible(x.0, Box::new(x.1)));
-            (callible).or(singular.clone().map(CustomType::Lone))
+            let union = (singular.clone().or(callible.clone()))
+                .separated_by(just('|').padded())
+                .at_least(2)
+                .map(CustomType::Union);
+            (callible).or(union).or(singular)
         })
     }
 
