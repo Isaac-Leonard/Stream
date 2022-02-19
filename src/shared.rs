@@ -56,11 +56,11 @@ fn bin_exp(
     right: &Expression,
     scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
-    let left = match transform_exp(&left, scope) {
+    let left = match transform_exp(left, scope) {
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
-    let right = match transform_exp(&right, scope) {
+    let right = match transform_exp(right, scope) {
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
@@ -72,7 +72,7 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
     match exp {
-        Expression::Index(arr, index, loc) => {
+        Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, scope)?;
             let index_exp = transform_exp(index, scope)?;
             let exp = CompExpression::Index(Box::new(arr_exp), Box::new(index_exp));
@@ -88,7 +88,7 @@ fn transform_exp(
                 )]);
             }
 
-            let exp = transform_exp(&exp, scope)?;
+            let exp = transform_exp(exp, scope)?;
             let exp_ty = get_type_from_exp(&exp).map_err(|x| vec![x])?;
             let has_type = scope.variable_has_type(name);
             if !has_type {
@@ -96,7 +96,7 @@ fn transform_exp(
             }
             scope.set_variable_initialised(name);
             let var = scope
-                .get_variable(&name)
+                .get_variable(name)
                 .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
             if has_type && !var.typing.super_of(&exp_ty) {
                 return Err(vec![CompError::InvalidAssignment(
@@ -108,7 +108,7 @@ fn transform_exp(
             Ok(CompExpression::Assign(var, Box::new(exp)))
         }
         Expression::Assign(name, exp, loc) => {
-            let exp = transform_exp(&exp, scope)?;
+            let exp = transform_exp(exp, scope)?;
             if scope.constant_exists(name) {
                 return Err(vec![CompError::ConstReassign(name.clone(), loc.clone())]);
             }
@@ -128,7 +128,7 @@ fn transform_exp(
             }
         }
         Expression::IfElse(cond, left, right, _) => {
-            let cond = transform_exp(&cond, scope)?;
+            let cond = transform_exp(cond, scope)?;
             let then = transform_ast(left, scope)?;
             let alt = transform_ast(right, scope)?;
             let exp = CompExpression::IfElse {
@@ -140,8 +140,8 @@ fn transform_exp(
             Ok(exp)
         }
         Expression::Loop(exp, body, _) => {
-            let cond = transform_exp(&exp, scope)?;
-            let body = Box::new(transform_exp(&body, scope)?);
+            let cond = transform_exp(exp, scope)?;
+            let body = Box::new(transform_exp(body, scope)?);
             Ok(CompExpression::WhileLoop {
                 cond: Box::new(cond),
                 body,
@@ -189,7 +189,7 @@ fn transform_exp(
             Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
                 RawData::Float(val) => CompData::Float(val),
-                RawData::Str(val) => CompData::Str(val.clone()),
+                RawData::Str(val) => CompData::Str(val),
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
                 RawData::Func(func) => {
@@ -227,11 +227,11 @@ fn transform_exp(
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
                             };
-                            let mut local_scope = match resolve_scope(&body, &mut local_scope) {
+                            let local_scope = match resolve_scope(&body, &mut local_scope) {
                                 Err(messages) => return Err(messages),
                                 Ok(scope) => scope,
                             };
-                            let body = transform_ast(&body, &mut local_scope)?;
+                            let body = transform_ast(&body, local_scope)?;
 
                             CompData::Func(FunctionAst {
                                 arguments,
@@ -254,12 +254,12 @@ fn transform_exp(
 
 fn resolve_scope<'a>(
     ast: &Expression,
-    mut scope: &'a mut TempScope,
+    scope: &'a mut TempScope,
 ) -> Result<&'a mut TempScope, Vec<CompError>> {
     match ast {
         Expression::TypeDeclaration(name, declared_type, loc) => {
             if !scope.types.contains_key(name) {
-                Ok(scope.add_type(name.clone(), transform_type(&declared_type, scope)?))
+                Ok(scope.add_type(name.clone(), transform_type(declared_type, scope)?))
             } else {
                 Err(vec![CompError::TypeAlreadyDefined(
                     name.clone(),
@@ -281,11 +281,11 @@ fn resolve_scope<'a>(
                     Some(x) => Some(transform_type(x, scope)?),
                 };
                 Ok(scope.add_variable(NewVariable {
-                    constant: constant.clone(),
+                    constant: *constant,
                     name: name.clone(),
                     typing,
                     initialised: false,
-                    external: external.clone(),
+                    external: *external,
                 }))
             }
         }
@@ -297,7 +297,7 @@ fn resolve_scope<'a>(
                     name.clone(),
                     loc.clone(),
                 )])
-            } else if scope.constant_exists(&name) {
+            } else if scope.constant_exists(name) {
                 Err(vec![CompError::ConstReassign(name.clone(), loc.clone())])
             } else {
                 Ok(scope)
@@ -328,8 +328,8 @@ pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Ve
         preset_variables: HashMap::new(),
         types: HashMap::new(),
     };
-    let mut local_scope = resolve_scope(ast, &mut local_scope)?;
-    let prog = transform_ast(ast, &mut local_scope)?;
+    let local_scope = resolve_scope(ast, &mut local_scope)?;
+    let prog = transform_ast(ast, local_scope)?;
     get_type_from_exp(&prog.body).map_err(|x| vec![x])?;
     Ok(prog)
 }
@@ -371,7 +371,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
     match exp {
         Prog(prog) => get_type_from_exp(&prog.body),
         List(exps) => {
-            let mut types = exps.iter().map(|x| get_type_from_exp(x));
+            let mut types = exps.iter().map(get_type_from_exp);
             let err = types.find(|x| x.is_err());
             if let Some(err) = err {
                 err
@@ -474,7 +474,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
         Read(var) => Ok(var.typing.clone()),
         Call(var, args) => {
             let var = var.clone();
-            let mut arg_types = args.iter().map(|x| get_type_from_exp(x));
+            let mut arg_types = args.iter().map(get_type_from_exp);
             if let Some(msg) = arg_types.find(|x| x.is_err()) {
                 return msg;
             }
@@ -485,7 +485,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
                     .zip(arg_types)
                     .map(|(x, y)| {
                         if !x.super_of(&y) {
-                            Some(CompError::InvalidAssignment(x.clone(), y.clone(), 0..0))
+                            Some(CompError::InvalidAssignment(x.clone(), y, 0..0))
                         } else {
                             None
                         }
@@ -495,7 +495,7 @@ fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
                 if let Some(err) = mismatched_args {
                     Err(err)
                 } else {
-                    Ok(*ret.clone())
+                    Ok(*ret)
                 }
             } else {
                 Err(CompError::NonfunctionCall(var.name, var.typing, 0..0))
