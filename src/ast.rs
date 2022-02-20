@@ -524,6 +524,17 @@ impl CompType {
                 .i8_type()
                 .ptr_type(inkwell::AddressSpace::Generic)
                 .as_basic_type_enum(),
+            Union(types) => {
+                let mut types = types.clone();
+                types.sort_by(|a, b| a.get_discriminant().cmp(&b.get_discriminant()));
+                let types = types
+                    .iter()
+                    .map(|x| x.get_compiler_type(context))
+                    .collect::<Vec<_>>();
+                context
+                    .struct_type(types.as_slice(), false)
+                    .as_basic_type_enum()
+            }
             _ => panic!(
                 "get_compiler_type not implemented for type '{}'",
                 self.get_str()
