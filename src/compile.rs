@@ -48,7 +48,7 @@ fn get_value<'a, 'ctx>(
             .as_basic_value_enum(),
         CompData::Str(str) => {
             let var = compiler.add_variable_to_block(
-                &"string".to_string(),
+                "string",
                 val.get_type().get_compiler_type(compiler.context),
                 fn_val.unwrap(),
             );
@@ -56,7 +56,7 @@ fn get_value<'a, 'ctx>(
                 .context
                 .i8_type()
                 .const_array(
-                    &str.chars()
+                    str.chars()
                         .chain(['\0'])
                         .map(|x| compiler.context.i8_type().const_int(x as u64, false))
                         .collect::<Vec<_>>()
@@ -453,7 +453,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             other => panic!("Not implemented '{:?}'", other),
         }
     }
-    fn create_function(&'a self, func: &FunctionAst, name: &String) -> FunctionValue<'ctx> {
+    fn create_function(&'a self, func: &FunctionAst, name: &str) -> FunctionValue<'ctx> {
         let fn_val = self.create_function_shape(&CompType::Callible(
             func.arguments.iter().map(|x| x.typing.clone()).collect(),
             Box::new(func.return_type.clone()),
@@ -613,7 +613,7 @@ pub fn compile(ast: &Program, settings: Settings) {
         )
         .unwrap();
     target_machine
-        .write_to_file(&compiler.module, FileType::Object, &path)
+        .write_to_file(compiler.module, FileType::Object, path)
         .unwrap();
     if settings.print_llvm {
         module.print_to_stderr();
