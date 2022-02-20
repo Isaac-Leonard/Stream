@@ -287,6 +287,7 @@ pub enum CompData {
     Float(f32),
     Str(String),
     Func(FunctionAst),
+    Multi(CompType, Box<CompData>),
 }
 impl CompData {
     pub fn get_type(&self) -> CompType {
@@ -298,6 +299,7 @@ impl CompData {
             Float(_) => CompType::Float,
             Str(content) => CompType::Str(content.len() as u32),
             Func(ast) => ast.as_type(),
+            Multi(_, _) => panic!("Cannot get type of multi in compiler yet"),
         }
     }
 }
@@ -533,6 +535,8 @@ impl CompType {
             true
         } else if self == &CompType::Ptr && ty.is_str() {
             true
+        } else if let CompType::Union(types) = self {
+            types.contains(ty)
         } else {
             false
         }
@@ -585,7 +589,7 @@ impl CompType {
         }
     }
 
-    fn get_discriminant(&self) -> i8 {
+    pub fn get_discriminant(&self) -> i8 {
         use CompType::*;
         match self {
             Ptr => 8,

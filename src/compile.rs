@@ -9,7 +9,7 @@ use inkwell::passes::PassManager;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
 };
-use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType, IntMathType};
+use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, PointerValue,
 };
@@ -64,6 +64,44 @@ fn get_value<'a, 'ctx>(
                 .as_basic_value_enum();
             compiler.builder.build_store(var, string);
             var.as_basic_value_enum()
+        }
+        CompData::Multi(allowed, current) => {
+            if allowed != &CompType::Union(vec![CompType::Int, CompType::Float]) {
+                panic!("Unions of {} are not compilable yet", allowed)
+            };
+            let struct_ty = compiler.context.struct_type(
+                &[
+                    compiler.context.i8_type().as_basic_type_enum(),
+                    compiler.context.i32_type().as_basic_type_enum(),
+                ],
+                false,
+            );
+            let discriminant = current.get_type().get_discriminant();
+            let discriminant = compiler
+                .context
+                .i8_type()
+                .const_int(discriminant as u64, false)
+                .as_basic_value_enum();
+            let val = match *current.to_owned() {
+                CompData::Int(val) => compiler
+                    .context
+                    .i32_type()
+                    .const_int(val as u64, false)
+                    .as_basic_value_enum(),
+                CompData::Float(val) => compiler.builder.build_bitcast(
+                    compiler
+                        .context
+                        .f32_type()
+                        .const_float(val as f64)
+                        .as_basic_value_enum(),
+                    compiler.context.i32_type().as_basic_type_enum(),
+                    "union_cast",
+                ),
+                other => panic!("value {:?} not allowed in {}", other, allowed),
+            };
+            struct_ty
+                .const_named_struct(&[discriminant, val])
+                .as_basic_value_enum()
         }
         CompData::Func(_) => panic!("Functions should be retrieved seperately"),
     }

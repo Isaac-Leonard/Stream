@@ -100,8 +100,8 @@ fn transform_exp(
                 .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
             if has_type && !var.typing.super_of(&exp_ty) {
                 return Err(vec![CompError::InvalidAssignment(
-                    var.typing,
                     exp_ty,
+                    var.typing,
                     loc.clone(),
                 )]);
             }
@@ -195,15 +195,12 @@ fn transform_exp(
                 RawData::Func(func) => {
                     let generics = func.generics;
                     let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
-                        match transform_type(&x.1.clone(), scope) {
-                            Err(messages) => Err(messages),
-                            Ok(typing) => Ok(CompVariable {
-                                constant: true,
-                                name: x.0.clone(),
-                                typing,
-                                external: false,
-                            }),
-                        }
+                        transform_type(&x.1.clone(), scope).map(|typing| CompVariable {
+                            constant: true,
+                            name: x.0.clone(),
+                            typing,
+                            external: false,
+                        })
                     }))
                     .unwrap_or_else(|| Ok(Vec::new()));
                     let return_type = transform_type(&func.return_type, scope);
