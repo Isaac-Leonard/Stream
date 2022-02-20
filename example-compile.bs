@@ -55,7 +55,8 @@ let main=():Int => {
         putchar(hello[x])
 	x=x+1
     }
-        newLine()    
-        0
+    newLine();
+    let union:Int|Float=4;
+    0
     }
 }
