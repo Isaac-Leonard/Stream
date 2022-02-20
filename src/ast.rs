@@ -502,6 +502,7 @@ pub enum CompType {
     Float,
     Str(u32),
     Ptr,
+    Generic(String),
 }
 impl CompType {
     pub fn get_str(&self) -> String {
@@ -578,8 +579,10 @@ impl CompType {
                     _ => Union(types),
                 }
             }
+            Generic(name) => Generic(name.clone()),
         }
     }
+
     fn get_discriminant(&self) -> i8 {
         use CompType::*;
         match self {
@@ -591,6 +594,7 @@ impl CompType {
             Str(_) => 4,
             Callible(_, _) => 5,
             Union(_) => 7,
+            Generic(_) => 8,
         }
     }
 }
@@ -599,6 +603,7 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Generic(name) => write!(f, "{}", name),
             Ptr => write!(f, "Ptr"),
             Int => write!(f, "Int"),
             Null => write!(f, "Null"),
