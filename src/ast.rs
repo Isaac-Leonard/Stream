@@ -569,6 +569,14 @@ impl CompType {
             _ => false,
         }
     }
+
+    pub fn is_union(&self) -> bool {
+        match self {
+            CompType::Union(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_callable(&self) -> bool {
         match self {
             CompType::Callible(_, _) => true,

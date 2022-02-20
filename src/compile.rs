@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::settings::Settings;
+use crate::shared::get_type_from_exp;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 
@@ -116,7 +117,7 @@ fn comp_bin_op<'a, 'ctx>(
 ) -> BasicValueEnum<'ctx> {
     use BasicValueEnum::*;
     match (lhs, rhs) {
-        (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, &compiler.builder),
+        (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, compiler.builder),
         (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, compiler.builder),
         (PointerValue(a), PointerValue(b)) => match (
             a.get_type().get_element_type(),
@@ -330,8 +331,26 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         .as_basic_value_enum()
                 }
                 exp => {
-                    let val = self.compile_expression(exp, variables, parent);
+                    let mut val = self.compile_expression(exp, variables, parent);
                     let var_ptr = *variables.get(&var.name).unwrap();
+                    if var.typing.is_union() {
+                        let ty = get_type_from_exp(exp).unwrap();
+                        if let CompType::Union(_) = ty {
+                        } else {
+                            val = var
+                                .typing
+                                .get_compiler_type(self.context)
+                                .into_struct_type()
+                                .const_named_struct(&[
+                                    self.context
+                                        .i8_type()
+                                        .const_int(ty.get_discriminant() as u64, false)
+                                        .as_basic_value_enum(),
+                                    val,
+                                ])
+                                .as_basic_value_enum();
+                        }
+                    }
                     self.builder.build_store(var_ptr, val);
                     val
                 }

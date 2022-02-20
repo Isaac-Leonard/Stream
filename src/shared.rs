@@ -367,7 +367,7 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
     func.clone()
 }
 
-fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
+pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
     use CompExpression::*;
     match exp {
         Prog(prog) => get_type_from_exp(&prog.body),
