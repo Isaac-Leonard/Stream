@@ -80,6 +80,7 @@ impl Expression {
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct Function {
+    pub generics: Vec<String>,
     pub args: Vec<(String, CustomType)>,
     pub body: Option<Box<Expression>>,
     pub return_type: CustomType,
@@ -158,6 +159,7 @@ pub struct CompVariable {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FunctionAst {
+    pub generics: Vec<String>,
     pub arguments: Vec<CompVariable>,
     pub return_type: CompType,
     pub body: Option<Box<Program>>,

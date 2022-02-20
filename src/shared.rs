@@ -193,6 +193,7 @@ fn transform_exp(
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
                 RawData::Func(func) => {
+                    let generics = func.generics;
                     let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
                         match transform_type(&x.1.clone(), scope) {
                             Err(messages) => Err(messages),
@@ -227,19 +228,18 @@ fn transform_exp(
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
                             };
-                            let local_scope = match resolve_scope(&body, &mut local_scope) {
-                                Err(messages) => return Err(messages),
-                                Ok(scope) => scope,
-                            };
+                            let local_scope = resolve_scope(&body, &mut local_scope)?;
                             let body = transform_ast(&body, local_scope)?;
 
                             CompData::Func(FunctionAst {
+                                generics,
                                 arguments,
                                 return_type,
                                 body: Some(Box::new(body)),
                             })
                         }
                         None => CompData::Func(FunctionAst {
+                            generics,
                             arguments,
                             return_type,
                             body: None,
@@ -364,6 +364,10 @@ pub fn flatten_action(action: CompExpression) -> Option<CompExpression> {
         }),
         x => Some(x),
     }
+}
+
+pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
+    func.clone()
 }
 
 fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {

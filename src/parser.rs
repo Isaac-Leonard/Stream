@@ -113,20 +113,31 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .labelled("Block");
 
         let func_declaration = ident()
-            .map(String::from)
             .padded()
-            .then(just(':').then(whitespace()).ignore_then(type_parser()))
-            .then_ignore(whitespace())
             .separated_by(just(','))
-            .delimited_by('(', ')')
+            .at_least(1)
+            .delimited_by('<', '>')
+            .or_not()
+            .map(|x| x.unwrap_or_else(Vec::new))
             .then_ignore(whitespace())
-            .then(just(':').ignore_then(type_parser().padded()).or_not())
             .then(
-                (raw("=>").then(whitespace()))
-                    .ignore_then(exp.clone().map(Box::new))
-                    .or_not(),
+                ident()
+                    .map(String::from)
+                    .padded()
+                    .then(just(':').then(whitespace()).ignore_then(type_parser()))
+                    .then_ignore(whitespace())
+                    .separated_by(just(','))
+                    .delimited_by('(', ')')
+                    .then_ignore(whitespace())
+                    .then(just(':').ignore_then(type_parser().padded()).or_not())
+                    .then(
+                        (raw("=>").then(whitespace()))
+                            .ignore_then(exp.clone().map(Box::new))
+                            .or_not(),
+                    ),
             )
-            .map(|((args, ret), body)| Function {
+            .map(|(generics, ((args, ret), body))| Function {
+                generics,
                 args,
                 body,
                 return_type: ret
