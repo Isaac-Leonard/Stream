@@ -72,6 +72,11 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
     match exp {
+        Expression::Typeof(name, loc) => {
+            Ok(CompExpression::Typeof(scope.get_variable(name).map_err(
+                |_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())],
+            )?))
+        }
         Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, scope)?;
             let index_exp = transform_exp(index, scope)?;

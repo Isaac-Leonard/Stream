@@ -27,6 +27,7 @@ pub enum RawData {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     TypeDeclaration(String, CustomType, Range<usize>),
+    Typeof(String, Range<usize>),
     Addition(Box<Expression>, Box<Expression>, Range<usize>),
     Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
     Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
@@ -59,7 +60,8 @@ impl Expression {
     pub fn get_range(&self) -> Range<usize> {
         use Expression::*;
         match &self {
-            Index(_, _, range)
+            Typeof(_, range)
+            | Index(_, _, range)
             | TypeDeclaration(_, _, range)
             | Addition(_, _, range)
             | Subtraction(_, _, range)

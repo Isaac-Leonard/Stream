@@ -231,6 +231,11 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             })
             .boxed();
 
+        let typeof_check = raw("typeof")
+            .then(whitespace())
+            .ignore_then(ident().map(String::from))
+            .map_with_span(Typeof);
+
         let if_parser = raw("if")
             .ignore_then(exp.clone().map(Box::new).padded())
             .then(block_exp.clone().map(Box::new))
@@ -275,6 +280,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .labelled("Declaration");
 
         let expression = (if_parser)
+            .or(typeof_check)
             .or(loop_parser)
             .or(reassign)
             .or(type_declaration.clone())
