@@ -107,7 +107,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .clone()
             .padded()
             .repeated()
-            .or(whitespace().map(|_| Vec::new()))
+            .padded()
             .delimited_by('{', '}')
             .map_with_span(Expression::Block)
             .then_ignore(whitespace().then(just(';')).or_not())
