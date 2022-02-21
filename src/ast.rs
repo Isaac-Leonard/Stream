@@ -255,6 +255,7 @@ impl Prefix {
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
     Value(CompData),
+    Typeof(CompVariable),
     BinOp(Op, Box<CompExpression>, Box<CompExpression>),
     Read(CompVariable),
     OneOp(Prefix, Box<CompExpression>),
@@ -277,7 +278,6 @@ pub enum CompExpression {
     List(Vec<CompExpression>),
     Prog(Box<Program>),
 }
-impl CompExpression {}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompData {
@@ -507,6 +507,7 @@ pub enum CompType {
     Str(u32),
     Ptr,
     Generic(String),
+    Type,
 }
 impl CompType {
     pub fn get_str(&self) -> String {
@@ -586,6 +587,7 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Type => Type,
             Ptr => Ptr,
             Int => Int,
             Float => Float,
@@ -611,15 +613,16 @@ impl CompType {
     pub fn get_discriminant(&self) -> i8 {
         use CompType::*;
         match self {
-            Ptr => 8,
             Null => 0,
             Bool => 1,
             Int => 2,
             Float => 3,
             Str(_) => 4,
             Callible(_, _) => 5,
+            Type => 6,
             Union(_) => 7,
-            Generic(_) => 8,
+            Ptr => 8,
+            Generic(_) => 9,
         }
     }
 }
@@ -628,6 +631,7 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Type => write!(f, "Type"),
             Generic(name) => write!(f, "{}", name),
             Ptr => write!(f, "Ptr"),
             Int => write!(f, "Int"),
