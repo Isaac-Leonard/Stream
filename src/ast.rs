@@ -518,6 +518,7 @@ impl CompType {
     pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
         use CompType::*;
         match self.clone() {
+            Type => context.i8_type().as_basic_type_enum(),
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
