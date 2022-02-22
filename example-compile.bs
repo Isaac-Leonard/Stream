@@ -56,13 +56,14 @@ let main=():Int => {
 	x=x+1
     }
     newLine();
-    let union:Int|Float=4;
+    let union:Int|Float=4.0;
     let unionType=(typeof union);
     let intType=(typeof x);
     if unionType==intType {
-    puts("Int");
+        puts("Int");
     } else{
-    puts("Float")}
+        puts("Float")
+    }
     0
     }
 }
