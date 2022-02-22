@@ -450,6 +450,24 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .build_int_cast(val, self.context.i32_type(), "int_cast")
                     .as_basic_value_enum()
             },
+            CompExpression::Typeof(var) => {
+                if var.typing.is_union() {
+                    self.builder
+                        .build_extract_value(
+                            self.builder
+                                .build_load(*variables.get(&var.name).unwrap(), "type_load")
+                                .into_struct_value(),
+                            0,
+                            "get_type",
+                        )
+                        .unwrap()
+                } else {
+                    self.context
+                        .i8_type()
+                        .const_int(var.typing.get_discriminant() as u64, false)
+                        .as_basic_value_enum()
+                }
+            }
             other => panic!("Not implemented '{:?}'", other),
         }
     }

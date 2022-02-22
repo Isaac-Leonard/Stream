@@ -31,11 +31,11 @@ fn float() -> impl Parser<char, f32, Error = Cheap<char>> {
 }
 
 fn parse_to_i32(x: String) -> i32 {
-    return x.parse::<i32>().unwrap();
+    x.parse::<i32>().unwrap()
 }
 
 fn parse_to_f32(x: String) -> f32 {
-    return x.parse::<f32>().unwrap();
+    x.parse::<f32>().unwrap()
 }
 
 fn string() -> impl Parser<char, String, Error = Cheap<char>> {
@@ -82,7 +82,7 @@ fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
                     .delimited_by('<', '>')
                     .or_not(),
             )
-            .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_else(Vec::new))))
+            .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_default())))
             .boxed();
         let callible = (ty.clone().padded().separated_by(just(',')))
             .delimited_by('(', ')')
@@ -119,7 +119,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .at_least(1)
             .delimited_by('<', '>')
             .or_not()
-            .map(|x| x.unwrap_or_else(Vec::new))
+            .map(Option::unwrap_or_default)
             .then_ignore(whitespace())
             .then(
                 ident()
