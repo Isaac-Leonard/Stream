@@ -60,8 +60,8 @@ fn string() -> impl Parser<char, String, Error = Cheap<char>> {
 fn symbol_parser() -> impl Parser<char, Symbol, Error = Cheap<char>> {
     string()
         .map(RawData::Str)
-        .or(integer().map(RawData::Int))
         .or(float().map(RawData::Float))
+        .or(integer().map(RawData::Int))
         .or(raw("null").to(RawData::Null))
         .or(raw("true").to(RawData::Bool(true)))
         .or(raw("false").to(RawData::Bool(false)))
