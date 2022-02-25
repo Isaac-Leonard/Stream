@@ -273,7 +273,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then(ident().map(String::from))
             .then(just(':').padded().ignore_then(type_parser()).or_not())
             .then_ignore(just('=').padded())
-            .then(primary_exp.clone().map(Box::new))
+            .then(exp.clone().map(Box::new))
             .map_with_span(|x, span| {
                 InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1, span)
             })
