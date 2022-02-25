@@ -268,6 +268,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .map_with_span(|x, span| Assign(x.0, x.1, span));
 
         let is_external = raw("extern").or_not().map(|x| x.is_some());
+
         let declaration = is_external
             .then(raw("let").to(false).or(raw("const").to(true)).padded())
             .then(ident().map(String::from))

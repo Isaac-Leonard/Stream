@@ -1,6 +1,6 @@
-use crate::ast::*;
 use crate::settings::Settings;
 use crate::shared::get_type_from_exp;
+use crate::{ast::*, linker};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 
@@ -646,4 +646,8 @@ pub fn compile(ast: &Program, settings: Settings) {
     if settings.print_llvm {
         module.print_to_stderr();
     }
+    let mut linker = linker::Linker::new();
+    linker.input("example-compile.o");
+    linker.output("testing");
+    linker.link();
 }

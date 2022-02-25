@@ -1,6 +1,7 @@
 mod ast;
 mod compile;
 mod errors;
+mod linker;
 mod parser;
 mod settings;
 mod shared;
