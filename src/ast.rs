@@ -515,6 +515,15 @@ impl CompType {
     pub fn get_str(&self) -> String {
         format!("{}", self)
     }
+
+    pub fn get_variants(&self) -> Vec<CompType> {
+        if let CompType::Union(types) = self {
+            types.clone()
+        } else {
+            vec![self.clone()]
+        }
+    }
+
     pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
         use CompType::*;
         match self.clone() {

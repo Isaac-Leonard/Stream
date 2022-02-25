@@ -67,7 +67,13 @@ fn get_value<'a, 'ctx>(
             var.as_basic_value_enum()
         }
         CompData::Multi(allowed, current) => {
-            if allowed != &CompType::Union(vec![CompType::Int, CompType::Float]) {
+            let compilable = allowed
+                .get_variants()
+                .iter()
+                .filter(|x| !vec![CompType::Int, CompType::Float].contains(x))
+                .count()
+                == 0;
+            if !compilable {
                 panic!("Unions of {} are not compilable yet", allowed)
             };
             let struct_ty = compiler.context.struct_type(
@@ -98,6 +104,11 @@ fn get_value<'a, 'ctx>(
                     compiler.context.i32_type().as_basic_type_enum(),
                     "union_cast",
                 ),
+                CompData::Null => compiler
+                    .context
+                    .i32_type()
+                    .const_zero()
+                    .as_basic_value_enum(),
                 other => panic!("value {:?} not allowed in {}", other, allowed),
             };
             struct_ty
@@ -335,8 +346,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     let var_ptr = *variables.get(&var.name).unwrap();
                     if var.typing.is_union() {
                         let ty = get_type_from_exp(exp).unwrap();
-                        if let CompType::Union(_) = ty {
-                        } else {
+                        if !ty.is_union() {
                             val = var
                                 .typing
                                 .get_compiler_type(self.context)
