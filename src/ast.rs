@@ -24,6 +24,16 @@ pub enum RawData {
     Null,
 }
 
+pub enum Import {
+    All(Option<String>),
+    Specific(Vec<(String, Option<String>)>),
+}
+
+pub struct ImportFrom {
+    pub imports: Import,
+    pub file: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     TypeDeclaration(String, CustomType, Range<usize>),

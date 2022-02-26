@@ -297,8 +297,33 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
     })
 }
 
-pub fn parser() -> impl Parser<char, Vec<Expression>, Error = Cheap<char>> {
-    exp_parser().padded().repeated().then_ignore(end())
+pub fn parser() -> impl Parser<char, (Vec<ImportFrom>, Vec<Expression>), Error = Cheap<char>> {
+    let as_name = raw("as")
+        .then(whitespace())
+        .ignore_then(ident())
+        .or_not()
+        .boxed();
+    let imports = raw("from")
+        .ignore_then(string().padded())
+        .then_ignore(raw("import"))
+        .then_ignore(whitespace())
+        .then(
+            (just('*').ignore_then(as_name.clone().padded()))
+                .map(Import::All)
+                .or((ident().then_ignore(whitespace()).then(as_name.clone()))
+                    .separated_by(just(',').padded())
+                    .padded()
+                    .delimited_by('{', '}')
+                    .padded()
+                    .map(Import::Specific)),
+        )
+        .then_ignore(just(';').or_not())
+        .map(|(file, imports)| ImportFrom { file, imports })
+        .padded()
+        .repeated();
+    imports
+        .then(exp_parser().padded().repeated())
+        .then_ignore(end())
 }
 
 #[cfg(test)]
