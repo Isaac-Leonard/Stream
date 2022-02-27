@@ -127,6 +127,15 @@ fn main() {
         input_name: name.clone(),
         object_name: name.replace(".bs", ".o"),
     };
-    let mut files = parse_files(settings, HashMap::new());
+    let mut files = parse_files(settings.clone(), HashMap::new());
     transform_files(&name, &mut files);
+    if settings.call_linker {
+        let mut linker = linker::Linker::new();
+        for file in files {
+            linker.input(&file.1.settings.object_name);
+        }
+
+        linker.output("testing");
+        linker.link();
+    };
 }

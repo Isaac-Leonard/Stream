@@ -1,7 +1,7 @@
 use std::process::Command;
 
 pub struct Linker {
-    input_file: String,
+    input_files: Vec<String>,
     output_file: String,
     dynamic: bool,
     demangle: bool,
@@ -28,8 +28,11 @@ impl Linker {
             .arg("-syslibroot")
             .arg("/Library/Developer/CommandLineTools/SDKs/MacOSX11.sdk")
             .arg("-o")
-            .arg(&self.output_file)
-            .arg(&self.input_file)
+            .arg(&self.output_file);
+        for file in &self.input_files {
+            command.arg(file);
+        }
+        command
             .arg("-lSystem")
             .arg("/usr/local/Cellar/llvm/13.0.0_2/lib/clang/13.0.0/lib/darwin/libclang_rt.osx.a")
             .output()
@@ -39,7 +42,7 @@ impl Linker {
 
     pub fn new() -> Self {
         Linker {
-            input_file: "example-compile.o".to_string(),
+            input_files: Vec::new(),
             output_file: "testing".to_string(),
             dynamic: true,
             demangle: true,
@@ -47,7 +50,7 @@ impl Linker {
     }
 
     pub fn input<'a>(&'a mut self, name: &str) -> &'a Self {
-        self.input_file = name.to_string();
+        self.input_files.push(name.to_string());
         self
     }
 
