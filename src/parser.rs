@@ -297,7 +297,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
     })
 }
 
-pub fn parser() -> impl Parser<char, (Vec<ImportFrom>, Vec<Expression>), Error = Cheap<char>> {
+pub fn parser() -> impl Parser<char, (Vec<ImportFrom>, Expression), Error = Cheap<char>> {
     let as_name = raw("as")
         .then(whitespace())
         .ignore_then(ident())
@@ -322,7 +322,12 @@ pub fn parser() -> impl Parser<char, (Vec<ImportFrom>, Vec<Expression>), Error =
         .padded()
         .repeated();
     imports
-        .then(exp_parser().padded().repeated())
+        .then(
+            exp_parser()
+                .padded()
+                .repeated()
+                .map_with_span(Expression::Block),
+        )
         .then_ignore(end())
 }
 
@@ -505,7 +510,7 @@ mod tests {
             parser()
                 .parse("extern let sin:Sin=(x:Float):Float;\nlet add=(x:Int, y:Int):Int=>{x+y}")
                 .unwrap(),
-            vec![
+            Block(
                 InitAssign(
                     true,
                     false,
@@ -531,6 +536,7 @@ mod tests {
                     None,
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
+                            generics: Vec::new(),
                             args: vec![
                                 (
                                     "x".to_string(),
@@ -555,7 +561,7 @@ mod tests {
                     )),
                     36..69
                 )
-            ]
+            )
         );
     }
 
@@ -565,8 +571,9 @@ mod tests {
         assert_eq!(
             parser()
                 .parse("extern let sin:Sin=(x:Float):Float;\n\nlet add=(x:Int, y:Int):Int=>{x+y}")
-                .unwrap(),
-            vec![
+                .unwrap()
+                .1,
+            Block(
                 InitAssign(
                     true,
                     false,
@@ -592,6 +599,7 @@ mod tests {
                     None,
                     Box::new(Terminal(
                         Symbol::Data(RawData::Func(Function {
+                            generics: Vec::new(),
                             args: vec![
                                 (
                                     "x".to_string(),
@@ -615,8 +623,9 @@ mod tests {
                         45..70
                     )),
                     37..70
-                )
-            ]
+                ),
+                37..70
+            )
         );
     }
 }

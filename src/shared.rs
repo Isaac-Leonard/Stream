@@ -275,8 +275,6 @@ fn resolve_scope<'a>(
                     name.clone(),
                     loc.clone(),
                 )])
-            } else if *external && declared_type.is_none() {
-                Err(vec![CompError::UntypedExternal(name.clone(), loc.clone())])
             } else {
                 let typing = match declared_type {
                     None => None,

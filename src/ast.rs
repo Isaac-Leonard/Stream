@@ -24,11 +24,13 @@ pub enum RawData {
     Null,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Import {
     All(Option<String>),
     Specific(Vec<(String, Option<String>)>),
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct ImportFrom {
     pub imports: Import,
     pub file: String,
@@ -149,7 +151,6 @@ pub struct NewVariable {
 impl NewVariable {
     fn get_final(&self) -> Result<CompVariable, String> {
         if self.typing == None || !self.initialised {
-            println!("{:?}", self);
             Err(format!("Cannot use uninitialised variable '{}'", self.name))
         } else {
             Ok(CompVariable {
@@ -319,6 +320,17 @@ impl CompData {
 pub struct Program {
     pub scope: CompScope,
     pub body: CompExpression,
+}
+impl Program {
+    pub fn get_exported(&self) -> Vec<CompVariable> {
+        self.scope
+            .variables
+            .iter()
+            .filter(|x| x.1.external)
+            .map(|x| x.1)
+            .cloned()
+            .collect()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

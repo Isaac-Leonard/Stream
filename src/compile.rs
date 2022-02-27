@@ -1,6 +1,6 @@
+use crate::ast::*;
 use crate::settings::Settings;
 use crate::shared::get_type_from_exp;
-use crate::{ast::*, linker};
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 
@@ -622,13 +622,23 @@ pub fn compile(ast: &Program, settings: Settings) {
         fpm: &fpm,
         module: &module,
     };
+    ast.scope
+        .clone()
+        .parent
+        .unwrap()
+        .variables
+        .iter()
+        .for_each(|(name, var)| {
+            let fn_val = compiler.create_function_shape(&var.typing);
+            compiler.module.add_function(name, fn_val, None);
+        });
     compiler.compile_expression(&ast.body, &HashMap::new(), None);
 
     Target::initialize_x86(&InitializationConfig::default());
     let opt = OptimizationLevel::Default;
     let reloc = RelocMode::Default;
     let model = CodeModel::Default;
-    let path = Path::new("./example-compile.o");
+    let path = Path::new(&settings.object_name);
     let target = Target::from_name("x86-64").unwrap();
     let target_machine = target
         .create_target_machine(
@@ -646,8 +656,4 @@ pub fn compile(ast: &Program, settings: Settings) {
     if settings.print_llvm {
         module.print_to_stderr();
     }
-    let mut linker = linker::Linker::new();
-    linker.input("example-compile.o");
-    linker.output("testing");
-    linker.link();
 }

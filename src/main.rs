@@ -37,24 +37,83 @@ fn get_global_scope() -> CompScope {
         parent: None,
     }
 }
+#[derive(Clone, Debug, PartialEq)]
+struct ImportMap {
+    //TODO: Change string to path
+    file: String,
+    depends_on: Vec<ImportFrom>,
 
-fn compile_file(name: &str, settings: Settings) {
-    let src = fs::read_to_string(name).expect("Failed to read file");
+    program: Option<Program>,
+    ast: Option<Expression>,
+    compiled: bool,
+    settings: Settings,
+    line_numbers: Vec<i32>,
+}
+impl ImportMap {}
+fn parse_files(
+    settings: Settings,
+    mut files: HashMap<String, ImportMap>,
+) -> HashMap<String, ImportMap> {
+    let src = fs::read_to_string(&settings.input_name).expect("Failed to read file");
 
     let lines = calc_lines(&src);
-    let global_scope = get_global_scope();
     let parsed = parser().parse(src.trim());
     match parsed {
         Ok(ast) => {
-            let prog = create_program(&Expression::Block(ast.1, 0..0), &global_scope);
-            match prog {
-                Ok(prog) => compile::compile(&prog, settings),
-                Err(messages) => messages
-                    .into_iter()
-                    .for_each(|e| println!("{}", e.get_msg(&lines))),
-            };
+            for import in &ast.0 {
+                if !files.contains_key(&import.file) {
+                    let sub_settings = Settings {
+                        call_linker: false,
+                        input_name: import.file.clone(),
+                        object_name: import.file.replace(".bs", ".o"),
+                        ..settings
+                    };
+                    files = parse_files(sub_settings, files);
+                }
+            }
+            files.insert(
+                settings.input_name.clone(),
+                ImportMap {
+                    file: settings.input_name.clone(),
+                    settings,
+                    line_numbers: lines,
+                    depends_on: ast.0,
+                    ast: Some(ast.1),
+                    program: None,
+                    compiled: false,
+                },
+            );
+            files
         }
-        Err(errs) => errs.into_iter().for_each(|e| println!("{:?}", e)),
+        Err(errs) => {
+            errs.into_iter().for_each(|e| println!("{:?}", e));
+            files
+        }
+    }
+}
+
+fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
+    let mut global_scope = get_global_scope();
+    for import in programs.get(name).unwrap().depends_on.clone() {
+        transform_files(&import.file, programs);
+        if let Some(prog) = &programs.get(&import.file).unwrap().program {
+            println!("here");
+            prog.get_exported().iter().for_each(|x| {
+                println!("{}", x.name);
+                global_scope.variables.insert(x.name.clone(), x.clone());
+            });
+        }
+    }
+    let mut program = programs.get_mut(name).unwrap();
+    let prog = create_program(program.ast.as_ref().unwrap(), &global_scope);
+    match prog {
+        Ok(prog) => {
+            compile::compile(&prog, program.settings.clone());
+            program.program = Some(prog)
+        }
+        Err(messages) => messages
+            .into_iter()
+            .for_each(|e| println!("{}", e.get_msg(&program.line_numbers))),
     }
 }
 
@@ -64,6 +123,10 @@ fn main() {
     let settings = Settings {
         print_llvm: args.contains(&"-p".to_string()),
         skip_optimizations: !args.contains(&"-s".to_string()),
+        call_linker: true,
+        input_name: name.clone(),
+        object_name: name.replace(".bs", ".o"),
     };
-    compile_file(&name, settings);
+    let mut files = parse_files(settings, HashMap::new());
+    transform_files(&name, &mut files);
 }
