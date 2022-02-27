@@ -113,21 +113,28 @@ fn transform_exp(
             Ok(CompExpression::Assign(var, Box::new(exp)))
         }
         Expression::Assign(name, exp, loc) => {
-            let exp = transform_exp(exp, scope)?;
-            if scope.constant_exists(name) {
-                return Err(vec![CompError::ConstReassign(name.clone(), loc.clone())]);
-            }
-            let var = scope
-                .get_variable(name)
-                .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
+            if let Expression::Terminal(Symbol::Identifier(name), _) = name.as_ref() {
+                let exp = transform_exp(exp, scope)?;
+                if scope.constant_exists(name) {
+                    return Err(vec![CompError::ConstReassign(name.clone(), loc.clone())]);
+                }
+                let var = scope
+                    .get_variable(name)
+                    .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
 
-            let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
-            if var.typing.super_of(&exp_ty) {
-                Ok(CompExpression::Assign(var, Box::new(exp)))
+                let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
+                if var.typing.super_of(&exp_ty) {
+                    Ok(CompExpression::Assign(var, Box::new(exp)))
+                } else {
+                    Err(vec![CompError::InvalidAssignment(
+                        exp_ty,
+                        var.typing,
+                        loc.clone(),
+                    )])
+                }
             } else {
-                Err(vec![CompError::InvalidAssignment(
-                    exp_ty,
-                    var.typing,
+                Err(vec![CompError::InvalidLeftHandForAssignment(
+                    *name.clone(),
                     loc.clone(),
                 )])
             }
@@ -290,17 +297,24 @@ fn resolve_scope<'a>(
             }
         }
         Expression::Assign(name, _, loc) => {
-            if scope.parent.is_none() {
-                Err(vec![CompError::GlobalReassign(name.clone(), loc.clone())])
-            } else if !scope.variable_exists(name) {
-                Err(vec![CompError::CannotFindVariable(
-                    name.clone(),
+            if let Expression::Terminal(Symbol::Identifier(name), _) = name.as_ref() {
+                if scope.parent.is_none() {
+                    Err(vec![CompError::GlobalReassign(name.clone(), loc.clone())])
+                } else if !scope.variable_exists(name) {
+                    Err(vec![CompError::CannotFindVariable(
+                        name.clone(),
+                        loc.clone(),
+                    )])
+                } else if scope.constant_exists(name) {
+                    Err(vec![CompError::ConstReassign(name.clone(), loc.clone())])
+                } else {
+                    Ok(scope)
+                }
+            } else {
+                Err(vec![CompError::InvalidLeftHandForAssignment(
+                    *name.clone(),
                     loc.clone(),
                 )])
-            } else if scope.constant_exists(name) {
-                Err(vec![CompError::ConstReassign(name.clone(), loc.clone())])
-            } else {
-                Ok(scope)
             }
         }
         Expression::Block(expressions, _) => {

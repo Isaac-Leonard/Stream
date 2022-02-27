@@ -57,7 +57,7 @@ pub enum Expression {
     ),
     Loop(Box<Expression>, Box<Expression>, Range<usize>),
     Invalid(Range<usize>),
-    Assign(String, Box<Expression>, Range<usize>),
+    Assign(Box<Expression>, Box<Expression>, Range<usize>),
     InitAssign(
         bool,
         bool,

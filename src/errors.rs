@@ -97,5 +97,6 @@ errors!(
 	(13, RedeclareInSameScope(name:String), "Cannot redeclare variable '{}' in the same scope"),
 	(14, TypeAlreadyDefined(name:String), "Type '{}' is already defined"),
 	(15, CannotIndexType(ty:CompType), "Cannot access elements of type '{}'"),
-	(16, InvalidIndexType(ty:CompType), "Cannot index array with '{}'")
+        (16, InvalidIndexType(ty:CompType), "Cannot index array with '{}'"),
+        (17, InvalidLeftHandForAssignment(found:Expression), "Cannot assign to expression {:?}, can only assign to variables")
     );
