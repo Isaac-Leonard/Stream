@@ -1,34 +1,4 @@
-type Putchar=(Int):Int
-extern let putchar:Putchar=(x:Int):Int;
-type Getchar=():Int
-extern let getchar:Getchar=():Int;
-
-type Sin=(Float):Float
-extern let sin:Sin=(x:Float):Float;
-
-let add=(x:Int, y:Int):Int=>{x+y}
-let sayHello=()=>{
-putchar(64+8)
-putchar(64+5)
-putchar(64+12)
-putchar(64+12)
-putchar(64+15)
-putchar(10)
-putchar(13)
-
-}
-let newLine=()=>{
-putchar(10)
-putchar(13)
-}
-
-
-type Puts=(Ptr):Int
-let puts:Puts=(str:Ptr):Int;
-type Ptrcat=(Ptr,Ptr):Int
-extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int;
-extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int;
-
+from "stdlib.bs" import *;
 let main=():Int => {
     let hello="Hello"
     let world="World"
