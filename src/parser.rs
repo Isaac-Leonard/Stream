@@ -261,10 +261,12 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
             .boxed();
 
-        let reassign = ident()
-            .map(String::from)
-            .map(Symbol::Identifier)
-            .map_with_span(Terminal)
+        let reassign = index_parser
+            .clone()
+            .or(ident()
+                .map(String::from)
+                .map(Symbol::Identifier)
+                .map_with_span(Terminal))
             .map(Box::new)
             .then_ignore(just('=').padded())
             .then(exp.clone().map(Box::new))
