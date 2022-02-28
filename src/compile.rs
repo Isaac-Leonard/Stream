@@ -333,37 +333,40 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let var = variables.get(&var.name).unwrap();
                 self.builder.build_load(*var, "load").as_basic_value_enum()
             }
-            CompExpression::Assign(var, exp) => match exp.as_ref() {
-                CompExpression::Value(CompData::Func(func)) => {
-                    self.create_function(func, &var.name);
-                    self.context
-                        .custom_width_int_type(1)
-                        .const_int(0, false)
-                        .as_basic_value_enum()
-                }
-                exp => {
-                    let mut val = self.compile_expression(exp, variables, parent);
-                    let var_ptr = *variables.get(&var.name).unwrap();
-                    if var.typing.is_union() {
-                        let ty = get_type_from_exp(exp).unwrap();
-                        if !ty.is_union() {
-                            val = var
-                                .typing
-                                .get_compiler_type(self.context)
-                                .into_struct_type()
-                                .const_named_struct(&[
-                                    self.context
-                                        .i8_type()
-                                        .const_int(ty.get_discriminant() as u64, false)
-                                        .as_basic_value_enum(),
-                                    val,
-                                ])
-                                .as_basic_value_enum();
-                        }
+            CompExpression::Assign(var, exp) => match var.as_ref() {
+                CompExpression::Read(var) => match exp.as_ref() {
+                    CompExpression::Value(CompData::Func(func)) => {
+                        self.create_function(func, &var.name);
+                        self.context
+                            .custom_width_int_type(1)
+                            .const_int(0, false)
+                            .as_basic_value_enum()
                     }
-                    self.builder.build_store(var_ptr, val);
-                    val
-                }
+                    exp => {
+                        let mut val = self.compile_expression(exp, variables, parent);
+                        let var_ptr = *variables.get(&var.name).unwrap();
+                        if var.typing.is_union() {
+                            let ty = get_type_from_exp(exp).unwrap();
+                            if !ty.is_union() {
+                                val = var
+                                    .typing
+                                    .get_compiler_type(self.context)
+                                    .into_struct_type()
+                                    .const_named_struct(&[
+                                        self.context
+                                            .i8_type()
+                                            .const_int(ty.get_discriminant() as u64, false)
+                                            .as_basic_value_enum(),
+                                        val,
+                                    ])
+                                    .as_basic_value_enum();
+                            }
+                        }
+                        self.builder.build_store(var_ptr, val);
+                        val
+                    }
+                },
+                _ => panic!("{:?} not supported on lhs of assignment", var),
             },
             CompExpression::Value(val) => get_value(val, self, parent),
             CompExpression::IfElse {

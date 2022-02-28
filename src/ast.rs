@@ -273,7 +273,7 @@ pub enum CompExpression {
     Read(CompVariable),
     OneOp(Prefix, Box<CompExpression>),
     Call(CompVariable, Vec<CompExpression>),
-    Assign(CompVariable, Box<CompExpression>),
+    Assign(Box<CompExpression>, Box<CompExpression>),
     IfOnly {
         cond: Box<CompExpression>,
         then: Box<CompExpression>,

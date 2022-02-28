@@ -110,7 +110,10 @@ fn transform_exp(
                     loc.clone(),
                 )]);
             }
-            Ok(CompExpression::Assign(var, Box::new(exp)))
+            Ok(CompExpression::Assign(
+                Box::new(CompExpression::Read(var)),
+                Box::new(exp),
+            ))
         }
         Expression::Assign(name, exp, loc) => {
             if let Expression::Terminal(Symbol::Identifier(name), _) = name.as_ref() {
@@ -124,7 +127,10 @@ fn transform_exp(
 
                 let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
                 if var.typing.super_of(&exp_ty) {
-                    Ok(CompExpression::Assign(var, Box::new(exp)))
+                    Ok(CompExpression::Assign(
+                        Box::new(CompExpression::Read(var)),
+                        Box::new(exp),
+                    ))
                 } else {
                     Err(vec![CompError::InvalidAssignment(
                         exp_ty,
@@ -467,10 +473,11 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
             let exp = get_type_from_exp(exp);
             if let Ok(ty) = exp {
                 let ty = ty.flatten();
-                if var.typing.super_of(&ty) {
-                    Ok(var.typing.clone())
+                let var_ty = get_type_from_exp(var)?;
+                if var_ty.super_of(&ty) {
+                    Ok(var_ty)
                 } else {
-                    Err(CompError::InvalidAssignment(var.typing.clone(), ty, 0..0))
+                    Err(CompError::InvalidAssignment(var_ty, ty, 0..0))
                 }
             } else {
                 exp
