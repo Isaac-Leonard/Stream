@@ -72,6 +72,11 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
     match exp {
+        Expression::Array(elements, _) => Ok(CompExpression::Array(
+            collect_ok_or_err(elements.iter().map(|x| transform_exp(x, scope)))
+                .map(|x| x.map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>()))
+                .unwrap_or_else(|| Ok(Vec::new()))?,
+        )),
         Expression::Typeof(name, loc) => {
             Ok(CompExpression::Typeof(scope.get_variable(name).map_err(
                 |_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())],
@@ -368,6 +373,25 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
 pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
     use CompExpression::*;
     match exp {
+        Array(elements) => {
+            if elements.is_empty() {
+                return Ok(CompType::Array(Box::new(CompType::Null), 0));
+            }
+            let el_ty = get_type_from_exp(&elements[0])?;
+            let non_allowed = collect_ok_or_err(elements.iter().map(get_type_from_exp))
+                .unwrap()
+                .map_err(|x| x.clone()[0].clone())?
+                .iter()
+                .filter(|ty| ty != &&el_ty)
+                .cloned()
+                .collect::<Vec<_>>();
+            if !non_allowed.is_empty() {
+                Err(CompError::MismatchedTypeInArray(el_ty, non_allowed, 0..0))
+            } else {
+                Ok(CompType::Array(Box::new(el_ty), elements.len()))
+            }
+        }
+
         Typeof(_) => Ok(CompType::Type),
         Prog(prog) => get_type_from_exp(&prog.body),
         List(exps) => {

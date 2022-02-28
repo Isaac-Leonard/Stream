@@ -112,6 +112,12 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .map_with_span(Expression::Block)
             .then_ignore(whitespace().then(just(';')).or_not())
             .labelled("Block");
+        let array_parser = exp
+            .clone()
+            .padded()
+            .separated_by(just(','))
+            .delimited_by('[', ']')
+            .map_with_span(Array);
 
         let func_declaration = ident()
             .padded()
@@ -295,6 +301,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .or(compare_parser)
             .or(index_parser)
             .or(addition_parser.or(subtraction_parser))
+            .or(array_parser)
             .then_ignore(whitespace().then(just(';')).or_not())
             .boxed();
 

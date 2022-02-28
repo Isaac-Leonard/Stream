@@ -35,6 +35,7 @@ let main=():Int => {
         puts("Float")
     }
     hello [x]  =65;
+    let arr=[4,8,7]
     puts(hello)
     newLine()
     0

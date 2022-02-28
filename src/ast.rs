@@ -40,6 +40,7 @@ pub struct ImportFrom {
 pub enum Expression {
     TypeDeclaration(String, CustomType, Range<usize>),
     Typeof(String, Range<usize>),
+    Array(Vec<Expression>, Range<usize>),
     Addition(Box<Expression>, Box<Expression>, Range<usize>),
     Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
     Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
@@ -72,7 +73,8 @@ impl Expression {
     pub fn get_range(&self) -> Range<usize> {
         use Expression::*;
         match &self {
-            Typeof(_, range)
+            Array(_, range)
+            | Typeof(_, range)
             | Index(_, _, range)
             | TypeDeclaration(_, _, range)
             | Addition(_, _, range)
@@ -268,6 +270,7 @@ impl Prefix {
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
     Value(CompData),
+    Array(Vec<CompExpression>),
     Typeof(CompVariable),
     BinOp(Op, Box<CompExpression>, Box<CompExpression>),
     Read(CompVariable),
@@ -550,6 +553,10 @@ impl CompType {
     pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
         use CompType::*;
         match self.clone() {
+            Array(ty, len) => ty
+                .get_compiler_type(context)
+                .array_type(len as u32)
+                .as_basic_type_enum(),
             Type => context.i8_type().as_basic_type_enum(),
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
@@ -597,6 +604,10 @@ impl CompType {
 
     pub fn is_str(&self) -> bool {
         matches!(self, CompType::Str(_))
+    }
+
+    pub fn is_array(&self) -> bool {
+        matches!(self, CompType::Array(_, _))
     }
 
     pub fn is_union(&self) -> bool {

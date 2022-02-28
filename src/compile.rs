@@ -510,6 +510,33 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         .as_basic_value_enum()
                 }
             }
+            CompExpression::Array(elements) => {
+                let var = self.add_variable_to_block(
+                    "array",
+                    get_type_from_exp(&elements[0])
+                        .unwrap()
+                        .get_compiler_type(self.context)
+                        .array_type(elements.len() as u32),
+                    parent.unwrap(),
+                );
+                let arr = get_type_from_exp(&elements[0])
+                    .unwrap()
+                    .get_compiler_type(self.context)
+                    .into_int_type()
+                    .const_array(
+                        elements
+                            .iter()
+                            .map(|x| {
+                                self.compile_expression(x, variables, parent)
+                                    .into_int_value()
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                    )
+                    .as_basic_value_enum();
+                self.builder.build_store(var, arr);
+                var.as_basic_value_enum()
+            }
             other => panic!("Not implemented '{:?}'", other),
         }
     }
@@ -552,11 +579,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let ty = x.1.typing.clone();
                 let comp_type = ty.get_compiler_type(self.context);
                 let name = x.0.to_string();
-                if ty.is_str() {
-                    let string = self.add_variable_to_block(str_name, comp_type, &fn_val);
+                if ty.is_str() || ty.is_array() {
+                    let raw = self.add_variable_to_block(str_name, comp_type, &fn_val);
                     let ptr_ty = comp_type.ptr_type(inkwell::AddressSpace::Generic);
                     let var = self.add_variable_to_block(&name, ptr_ty, &fn_val);
-                    self.builder.build_store(var, string);
+                    self.builder.build_store(var, raw);
                     variables.insert(name, var);
                 } else {
                     let var = self.add_variable_to_block(&name, comp_type, &fn_val);
