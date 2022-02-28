@@ -524,6 +524,7 @@ impl TempScope {
 pub enum CompType {
     Callible(Vec<Self>, Box<Self>),
     Union(Vec<Self>),
+    Array(Box<CompType>, usize),
     Null,
     Bool,
     Int,
@@ -575,9 +576,7 @@ impl CompType {
         }
     }
     pub fn super_of(&self, ty: &CompType) -> bool {
-        if self == ty {
-            true
-        } else if self == &CompType::Ptr && ty.is_str() {
+        if self == ty || (self == &CompType::Ptr && ty.is_str()) {
             true
         } else if let CompType::Union(types) = self {
             types.contains(ty)
@@ -597,17 +596,11 @@ impl CompType {
     }
 
     pub fn is_str(&self) -> bool {
-        match self {
-            CompType::Str(_) => true,
-            _ => false,
-        }
+        matches!(self, CompType::Str(_))
     }
 
     pub fn is_union(&self) -> bool {
-        match self {
-            CompType::Union(_) => true,
-            _ => false,
-        }
+        matches!(self, CompType::Union(_))
     }
 
     pub fn is_callable(&self) -> bool {
@@ -621,6 +614,7 @@ impl CompType {
         match self {
             Type => Type,
             Ptr => Ptr,
+            Array(ty, len) => Array(ty.clone(), len.clone()),
             Int => Int,
             Float => Float,
             Str(len) => Str(*len),
@@ -655,6 +649,7 @@ impl CompType {
             Union(_) => 7,
             Ptr => 8,
             Generic(_) => 9,
+            Array(_, _) => 10,
         }
     }
 }
@@ -664,6 +659,7 @@ impl Display for CompType {
         use CompType::*;
         match self {
             Type => write!(f, "Type"),
+            Array(ty, len) => write!(f, "[{}, {}]", ty, len),
             Generic(name) => write!(f, "{}", name),
             Ptr => write!(f, "Ptr"),
             Int => write!(f, "Int"),
