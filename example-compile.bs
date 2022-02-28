@@ -34,6 +34,9 @@ let main=():Int => {
     } else{
         puts("Float")
     }
+    hello [x]  =65;
+    puts(hello)
+    newLine()
     0
     }
 }

@@ -366,6 +366,35 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         val
                     }
                 },
+                CompExpression::Index(arr, index) => match exp.as_ref() {
+                    CompExpression::Value(CompData::Func(func)) => {
+                        panic!("Cannot yet store functions in an array")
+                    }
+                    exp => {
+                        let arr = self
+                            .compile_expression(arr, variables, parent)
+                            .into_pointer_value();
+                        let index = self.compile_expression(index, variables, parent);
+                        let mut val = self.compile_expression(exp, variables, parent);
+                        let val = self
+                            .builder
+                            .build_int_cast(
+                                val.into_int_value(),
+                                self.context.i8_type(),
+                                "arr_cast",
+                            )
+                            .as_basic_value_enum();
+                        let index_ptr = unsafe {
+                            self.builder.build_in_bounds_gep(
+                                arr,
+                                &[self.context.i32_type().const_zero(), index.into_int_value()],
+                                "calc_pos",
+                            )
+                        };
+                        self.builder.build_store(index_ptr, val);
+                        val
+                    }
+                },
                 _ => panic!("{:?} not supported on lhs of assignment", var),
             },
             CompExpression::Value(val) => get_value(val, self, parent),
