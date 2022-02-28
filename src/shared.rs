@@ -116,34 +116,9 @@ fn transform_exp(
             ))
         }
         Expression::Assign(name, exp, loc) => {
-            if let Expression::Terminal(Symbol::Identifier(name), _) = name.as_ref() {
-                let exp = transform_exp(exp, scope)?;
-                if scope.constant_exists(name) {
-                    return Err(vec![CompError::ConstReassign(name.clone(), loc.clone())]);
-                }
-                let var = scope
-                    .get_variable(name)
-                    .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
-
-                let exp_ty = get_type_from_exp(&exp).map_err(|err| vec![err])?;
-                if var.typing.super_of(&exp_ty) {
-                    Ok(CompExpression::Assign(
-                        Box::new(CompExpression::Read(var)),
-                        Box::new(exp),
-                    ))
-                } else {
-                    Err(vec![CompError::InvalidAssignment(
-                        exp_ty,
-                        var.typing,
-                        loc.clone(),
-                    )])
-                }
-            } else {
-                Err(vec![CompError::InvalidLeftHandForAssignment(
-                    *name.clone(),
-                    loc.clone(),
-                )])
-            }
+            let rhs = transform_exp(name, scope)?;
+            let exp = transform_exp(exp, scope)?;
+            Ok(CompExpression::Assign(Box::new(rhs), Box::new(exp)))
         }
         Expression::IfElse(cond, left, right, _) => {
             let cond = transform_exp(cond, scope)?;
