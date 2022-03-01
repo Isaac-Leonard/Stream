@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 
 use std::{collections::HashMap, ops::Range};
 
+use inkwell::module::Linkage;
 use inkwell::{
     context::Context,
     types::{BasicType, BasicTypeEnum},

@@ -371,22 +371,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         panic!("Cannot yet store functions in an array")
                     }
                     exp => {
-                        let arr = self
+                        let comp_arr = self
                             .compile_expression(arr, variables, parent)
                             .into_pointer_value();
                         let index = self.compile_expression(index, variables, parent);
-                        let mut val = self.compile_expression(exp, variables, parent);
-                        let val = self
-                            .builder
-                            .build_int_cast(
-                                val.into_int_value(),
-                                self.context.i8_type(),
-                                "arr_cast",
-                            )
-                            .as_basic_value_enum();
+                        let val = self.compile_expression(exp, variables, parent);
+                        let val = match get_type_from_exp(arr.as_ref()).unwrap() {
+                            CompType::Str(_) => self
+                                .builder
+                                .build_int_cast(
+                                    val.into_int_value(),
+                                    self.context.i8_type(),
+                                    "arr_cast",
+                                )
+                                .as_basic_value_enum(),
+                            _ => val,
+                        };
                         let index_ptr = unsafe {
                             self.builder.build_in_bounds_gep(
-                                arr,
+                                comp_arr,
                                 &[self.context.i32_type().const_zero(), index.into_int_value()],
                                 "calc_pos",
                             )

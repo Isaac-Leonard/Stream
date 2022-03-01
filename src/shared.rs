@@ -380,7 +380,7 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
             let el_ty = get_type_from_exp(&elements[0])?;
             let non_allowed = collect_ok_or_err(elements.iter().map(get_type_from_exp))
                 .unwrap()
-                .map_err(|x| x.clone()[0].clone())?
+                .map_err(|x| x[0].clone())?
                 .iter()
                 .filter(|ty| ty != &&el_ty)
                 .cloned()
@@ -460,7 +460,7 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
         Index(arr, i) => {
             let arr_ty = get_type_from_exp(arr)?;
             let i_ty = get_type_from_exp(i)?;
-            if !arr_ty.is_str() {
+            if !arr_ty.is_str() && !arr_ty.is_array() {
                 Err(CompError::CannotIndexType(arr_ty, 0..0))
             } else if !i_ty.is_int() {
                 Err(CompError::InvalidIndexType(i_ty, 0..0))
