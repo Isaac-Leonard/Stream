@@ -3,7 +3,6 @@ use std::fmt::{self, Display, Formatter};
 
 use std::{collections::HashMap, ops::Range};
 
-use inkwell::module::Linkage;
 use inkwell::{
     context::Context,
     types::{BasicType, BasicTypeEnum},
@@ -95,6 +94,7 @@ impl Expression {
         }
     }
 }
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Function {
     pub generics: Vec<String>,
@@ -119,6 +119,7 @@ impl UseType {
         UseType { generics, name }
     }
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum CustomType {
     Callible(Vec<Self>, Box<Self>),
@@ -165,6 +166,7 @@ impl NewVariable {
         }
     }
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct CompVariable {
     pub name: String,
@@ -269,34 +271,6 @@ impl Prefix {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum CompExpression {
-    Value(CompData),
-    Array(Vec<CompExpression>),
-    Typeof(CompVariable),
-    BinOp(Op, Box<CompExpression>, Box<CompExpression>),
-    Read(CompVariable),
-    OneOp(Prefix, Box<CompExpression>),
-    Call(CompVariable, Vec<CompExpression>),
-    Assign(Box<CompExpression>, Box<CompExpression>),
-    IfOnly {
-        cond: Box<CompExpression>,
-        then: Box<CompExpression>,
-    },
-    IfElse {
-        cond: Box<CompExpression>,
-        then: Box<CompExpression>,
-        otherwise: Box<CompExpression>,
-    },
-    WhileLoop {
-        cond: Box<CompExpression>,
-        body: Box<CompExpression>,
-    },
-    Index(Box<CompExpression>, Box<CompExpression>),
-    List(Vec<CompExpression>),
-    Prog(Box<Program>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum CompData {
     Null,
     Bool(bool),
@@ -320,10 +294,47 @@ impl CompData {
         }
     }
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum CompExpression {
+    Value(CompData),
+    Array(Vec<ExpEnvironment>),
+    Typeof(CompVariable),
+    BinOp(Op, ExpEnvironment, ExpEnvironment),
+    Read(CompVariable),
+    OneOp(Prefix, ExpEnvironment),
+    Call(CompVariable, Vec<ExpEnvironment>),
+    Assign(ExpEnvironment, ExpEnvironment),
+    IfOnly {
+        cond: ExpEnvironment,
+        then: ExpEnvironment,
+    },
+    IfElse {
+        cond: ExpEnvironment,
+        then: ExpEnvironment,
+        otherwise: ExpEnvironment,
+    },
+    WhileLoop {
+        cond: ExpEnvironment,
+        body: ExpEnvironment,
+    },
+    Index(ExpEnvironment, ExpEnvironment),
+    List(Vec<ExpEnvironment>),
+    Prog(Program),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ExpEnvironment {
+    // Probably should be boxing where recursion actually occurs but this reduces the amount of code
+    pub expression: Box<CompExpression>,
+    pub var_types: HashMap<String, CompType>,
+    pub result_type: CompType,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
     pub scope: CompScope,
-    pub body: CompExpression,
+    pub body: ExpEnvironment,
 }
 impl Program {
     pub fn get_exported(&self) -> Vec<CompVariable> {
@@ -539,6 +550,10 @@ pub enum CompType {
     Type,
 }
 impl CompType {
+    fn is_primitive(&self) -> bool {
+        matches!(self, CompType::Str(_) | CompType::Array(_, _))
+    }
+
     pub fn get_str(&self) -> String {
         format!("{}", self)
     }

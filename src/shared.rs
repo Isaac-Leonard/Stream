@@ -64,32 +64,30 @@ fn bin_exp(
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
-    Ok(CompExpression::BinOp(op, Box::new(left), Box::new(right)))
+    Ok(CompExpression::BinOp(op, left, right))
 }
 
 fn transform_exp(
     exp: &Expression,
     mut scope: &mut TempScope,
-) -> Result<CompExpression, Vec<CompError>> {
-    match exp {
-        Expression::Array(elements, _) => Ok(CompExpression::Array(
+) -> Result<ExpEnvironment, Vec<CompError>> {
+    let expression = match exp {
+        Expression::Array(elements, _) => CompExpression::Array(
             collect_ok_or_err(elements.iter().map(|x| transform_exp(x, scope)))
-                .map(|x| x.map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>()))
-                .unwrap_or_else(|| Ok(Vec::new()))?,
-        )),
-        Expression::Typeof(name, loc) => {
-            Ok(CompExpression::Typeof(scope.get_variable(name).map_err(
-                |_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())],
-            )?))
-        }
+                .unwrap_or_else(|| Ok(Vec::new()))
+                .map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>())?,
+        ),
+        Expression::Typeof(name, loc) => CompExpression::Typeof(
+            scope
+                .get_variable(name)
+                .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
+        ),
         Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, scope)?;
             let index_exp = transform_exp(index, scope)?;
-            let exp = CompExpression::Index(Box::new(arr_exp), Box::new(index_exp));
-            get_type_from_exp(&exp).map_err(|x| vec![x])?;
-            Ok(exp)
+            CompExpression::Index(arr_exp, index_exp)
         }
-        Expression::TypeDeclaration(_, _, _) => Ok(CompExpression::List(Vec::new())),
+        Expression::TypeDeclaration(_, _, _) => CompExpression::List(Vec::new()),
         Expression::InitAssign(_, _, name, _, exp, loc) => {
             if scope.variable_initialised(name) {
                 return Err(vec![CompError::RedeclareInSameScope(
@@ -99,7 +97,7 @@ fn transform_exp(
             }
 
             let exp = transform_exp(exp, scope)?;
-            let exp_ty = get_type_from_exp(&exp).map_err(|x| vec![x])?;
+            let exp_ty = exp.result_type.clone();
             let has_type = scope.variable_has_type(name);
             if !has_type {
                 scope = scope.set_variable_type(name, &exp_ty);
@@ -115,53 +113,52 @@ fn transform_exp(
                     loc.clone(),
                 )]);
             }
-            Ok(CompExpression::Assign(
-                Box::new(CompExpression::Read(var)),
-                Box::new(exp),
-            ))
+            CompExpression::Assign(
+                ExpEnvironment {
+                    result_type: var.typing.clone(),
+                    expression: Box::new(CompExpression::Read(var)),
+                    var_types: HashMap::new(),
+                },
+                exp,
+            )
         }
         Expression::Assign(name, exp, loc) => {
             let rhs = transform_exp(name, scope)?;
             let exp = transform_exp(exp, scope)?;
-            Ok(CompExpression::Assign(Box::new(rhs), Box::new(exp)))
+            CompExpression::Assign(rhs, exp)
         }
         Expression::IfElse(cond, left, right, _) => {
             let cond = transform_exp(cond, scope)?;
-            let then = transform_ast(left, scope)?;
-            let alt = transform_ast(right, scope)?;
-            let exp = CompExpression::IfElse {
-                cond: Box::new(cond),
-                then: Box::new(CompExpression::Prog(Box::new(then))),
-                otherwise: Box::new(CompExpression::Prog(Box::new(alt))),
-            };
-            get_type_from_exp(&exp).map_err(|x| vec![x])?;
-            Ok(exp)
+            let then = transform_exp(left, scope)?;
+            let otherwise = transform_exp(right, scope)?;
+            CompExpression::IfElse {
+                cond,
+                then,
+                otherwise,
+            }
         }
         Expression::Loop(exp, body, _) => {
             let cond = transform_exp(exp, scope)?;
-            let body = Box::new(transform_exp(body, scope)?);
-            Ok(CompExpression::WhileLoop {
-                cond: Box::new(cond),
-                body,
-            })
+            let body = transform_exp(body, scope)?;
+            CompExpression::WhileLoop { cond, body }
         }
         Expression::Block(expressions, _) => {
             collect_ok_or_err(expressions.iter().map(|exp| transform_exp(exp, scope)))
                 .unwrap_or_else(|| Ok(Vec::new()))
                 .map(CompExpression::List)
-                .map_err(|x| x.iter().flatten().cloned().collect())
+                .map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>())?
         }
-        Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, scope),
-        Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, scope),
-        Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, scope),
-        Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, scope),
-        Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, scope),
-        Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, scope),
+        Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, scope)?,
+        Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, scope)?,
+        Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, scope)?,
+        Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, scope)?,
+        Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, scope)?,
+        Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, scope)?,
         Expression::FuncCall(name, args, loc) => {
             let args = args
                 .iter()
                 .map(|x| transform_exp(x, scope))
-                .collect::<Result<Vec<CompExpression>, Vec<CompError>>>();
+                .collect::<Result<Vec<_>, Vec<CompError>>>();
             let func = match scope.get_variable(name) {
                 Ok(var) => var,
                 Err(_) => {
@@ -172,19 +169,21 @@ fn transform_exp(
                 }
             };
             match args {
-                Ok(args) => Ok(CompExpression::Call(func, args)),
-                Err(message) => Err(message),
+                Ok(args) => CompExpression::Call(func, args),
+                Err(message) => return Err(message),
             }
         }
         Expression::Terminal(sym, loc) => match sym {
             Symbol::Identifier(name) => match scope.get_variable(name) {
-                Ok(var) => Ok(CompExpression::Read(var)),
-                Err(_) => Err(vec![CompError::CannotFindVariable(
-                    name.clone(),
-                    loc.clone(),
-                )]),
+                Ok(var) => CompExpression::Read(var),
+                Err(_) => {
+                    return Err(vec![CompError::CannotFindVariable(
+                        name.clone(),
+                        loc.clone(),
+                    )])
+                }
             },
-            Symbol::Data(data) => Ok(CompExpression::Value(match data.clone() {
+            Symbol::Data(data) => CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
                 RawData::Float(val) => CompData::Float(val),
                 RawData::Str(val) => CompData::Str(val),
@@ -241,10 +240,15 @@ fn transform_exp(
                         }),
                     }
                 }
-            })),
+            }),
         },
         Expression::Invalid(x) => panic!("invalid {:?}", x),
-    }
+    };
+    Ok(ExpEnvironment {
+        result_type: get_type_from_exp(&expression, HashMap::new()).map_err(|x| vec![x])?,
+        expression: Box::new(expression),
+        var_types: HashMap::new(),
+    })
 }
 
 fn resolve_scope<'a>(
@@ -330,60 +334,28 @@ pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Ve
     };
     let local_scope = resolve_scope(ast, &mut local_scope)?;
     let prog = transform_ast(ast, local_scope)?;
-    get_type_from_exp(&prog.body).map_err(|x| vec![x])?;
     Ok(prog)
-}
-
-pub fn flatten_action(action: CompExpression) -> Option<CompExpression> {
-    match action {
-        CompExpression::Prog(prog) => {
-            if prog.scope.variables.is_empty() && prog.scope.types.is_empty() {
-                flatten_action(prog.body)
-            } else {
-                Some(CompExpression::Prog(prog))
-            }
-        }
-        CompExpression::List(expressions) => {
-            if expressions.is_empty() {
-                None
-            } else {
-                Some(CompExpression::List(expressions))
-            }
-        }
-        CompExpression::IfElse {
-            cond,
-            then,
-            otherwise,
-        } => Some(match flatten_action(*otherwise) {
-            Some(otherwise) => CompExpression::IfElse {
-                cond,
-                then,
-                otherwise: Box::new(otherwise),
-            },
-            None => CompExpression::IfOnly { cond, then },
-        }),
-        x => Some(x),
-    }
 }
 
 pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
     func.clone()
 }
 
-pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
+pub fn get_type_from_exp(
+    exp: &CompExpression,
+    _var_types: HashMap<String, CompType>,
+) -> Result<CompType, CompError> {
     use CompExpression::*;
     match exp {
         Array(elements) => {
             if elements.is_empty() {
                 return Ok(CompType::Array(Box::new(CompType::Null), 0));
             }
-            let el_ty = get_type_from_exp(&elements[0])?;
-            let non_allowed = collect_ok_or_err(elements.iter().map(get_type_from_exp))
-                .unwrap()
-                .map_err(|x| x[0].clone())?
+            let el_ty = elements[0].result_type.clone();
+            let non_allowed = elements
                 .iter()
-                .filter(|ty| ty != &&el_ty)
-                .cloned()
+                .filter(|el| el.result_type != el_ty)
+                .map(|el| el.result_type.clone())
                 .collect::<Vec<_>>();
             if !non_allowed.is_empty() {
                 Err(CompError::MismatchedTypeInArray(el_ty, non_allowed, 0..0))
@@ -393,26 +365,16 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
         }
 
         Typeof(_) => Ok(CompType::Type),
-        Prog(prog) => get_type_from_exp(&prog.body),
-        List(exps) => {
-            let mut types = exps.iter().map(get_type_from_exp);
-            let err = types.find(|x| x.is_err());
-            if let Some(err) = err {
-                err
-            } else {
-                types.last().unwrap_or(Ok(CompType::Null))
-            }
-        }
+        Prog(prog) => Ok(prog.body.result_type.clone()),
+        List(exps) => Ok(exps
+            .last()
+            .map(|x| x.result_type.clone())
+            .unwrap_or(CompType::Null)),
         WhileLoop { cond, body } => {
-            let cond = get_type_from_exp(cond);
-            if let Ok(cond) = cond {
-                if cond.is_bool() {
-                    get_type_from_exp(body)
-                } else {
-                    Err(CompError::BoolInWhile(cond, 0..0))
-                }
+            if cond.result_type.is_bool() {
+                Ok(body.result_type.clone())
             } else {
-                cond
+                Err(CompError::BoolInWhile(cond.result_type.clone(), 0..0))
             }
         }
         IfElse {
@@ -420,46 +382,26 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
             then,
             otherwise,
         } => {
-            let cond = get_type_from_exp(cond);
-            if let Ok(cond) = cond {
-                if cond.is_bool() {
-                    let then_ty = get_type_from_exp(then);
-                    let other_ty = get_type_from_exp(otherwise);
-                    if then_ty.is_err() {
-                        then_ty
-                    } else if other_ty.is_err() {
-                        other_ty
-                    } else {
-                        Ok(CompType::Union(vec![then_ty.unwrap(), other_ty.unwrap()]).flatten())
-                    }
-                } else {
-                    Err(CompError::BoolInIf(cond, 0..0))
-                }
+            if cond.result_type.is_bool() {
+                let then_ty = then.result_type.clone();
+                let other_ty = otherwise.result_type.clone();
+                Ok(CompType::Union(vec![then_ty, other_ty]).flatten())
             } else {
-                cond
+                Err(CompError::BoolInIf(cond.result_type.clone(), 0..0))
             }
         }
-        IfOnly { cond, then } => {
-            let cond = get_type_from_exp(cond);
-            if let Ok(cond) = cond {
-                if cond.is_bool() {
-                    let then_ty = get_type_from_exp(then);
-                    if then_ty.is_err() {
-                        then_ty
-                    } else {
-                        Ok(CompType::Null)
-                    }
-                } else {
-                    Err(CompError::BoolInIf(cond, 0..0))
-                }
+        IfOnly { cond, then: _ } => {
+            if cond.result_type.is_bool() {
+                Ok(CompType::Null)
             } else {
-                cond
+                Err(CompError::BoolInIf(cond.result_type.clone(), 0..0))
             }
         }
         Value(data) => Ok(data.get_type()),
         Index(arr, i) => {
-            let arr_ty = get_type_from_exp(arr)?;
-            let i_ty = get_type_from_exp(i)?;
+            let arr_ty = arr.result_type.clone();
+            let i_ty = i.result_type.clone();
+            // TODO: Move to use an is_indexable method
             if !arr_ty.is_str() && !arr_ty.is_array() {
                 Err(CompError::CannotIndexType(arr_ty, 0..0))
             } else if !i_ty.is_int() {
@@ -469,41 +411,20 @@ pub fn get_type_from_exp(exp: &CompExpression) -> Result<CompType, CompError> {
             }
         }
         Assign(var, exp) => {
-            let exp = get_type_from_exp(exp);
-            if let Ok(ty) = exp {
-                let ty = ty.flatten();
-                let var_ty = get_type_from_exp(var)?;
-                if var_ty.super_of(&ty) {
-                    Ok(var_ty)
-                } else {
-                    Err(CompError::InvalidAssignment(var_ty, ty, 0..0))
-                }
+            let exp = exp.result_type.clone();
+            let var_ty = var.result_type.clone();
+            if var_ty.super_of(&exp) {
+                Ok(var_ty)
             } else {
-                exp
+                Err(CompError::InvalidAssignment(var_ty, exp, 0..0))
             }
         }
-        BinOp(op, a, b) => {
-            let a = get_type_from_exp(a);
-            let b = get_type_from_exp(b);
-            if let Ok(a) = a {
-                if let Ok(b) = b {
-                    op.resulting_type(&a, &b)
-                } else {
-                    b
-                }
-            } else {
-                a
-            }
-        }
-        OneOp(_, val) => get_type_from_exp(val),
+        BinOp(op, a, b) => op.resulting_type(&a.result_type, &b.result_type),
+        OneOp(_, val) => Ok(val.result_type.clone()),
         Read(var) => Ok(var.typing.clone()),
         Call(var, args) => {
             let var = var.clone();
-            let mut arg_types = args.iter().map(get_type_from_exp);
-            if let Some(msg) = arg_types.find(|x| x.is_err()) {
-                return msg;
-            }
-            let arg_types = arg_types.map(|x| x.unwrap());
+            let arg_types = args.iter().map(|x| x.result_type.clone());
             if let CompType::Callible(args, ret) = var.typing {
                 let mismatched_args = args
                     .iter()
