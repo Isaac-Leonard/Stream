@@ -284,6 +284,25 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    fn calc_pos(
+        &self,
+        arr: &ExpEnvironment,
+        index: &ExpEnvironment,
+        variables: &HashMap<String, PointerValue<'ctx>>,
+        parent: Option<&FunctionValue<'ctx>>,
+    ) -> PointerValue<'ctx> {
+        let comp_arr = self
+            .compile_expression(arr, variables, parent)
+            .into_pointer_value();
+        let index = self.compile_expression(index, variables, parent);
+        unsafe {
+            self.builder.build_in_bounds_gep(
+                comp_arr,
+                &[self.context.i32_type().const_zero(), index.into_int_value()],
+                "calc_pos",
+            )
+        }
+    }
     fn compile_expression(
         &self,
         exp: &ExpEnvironment,
@@ -296,7 +315,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let compiled_args = args
                     .iter()
                     .map(|arg| {
-                        let val = self.compile_expression(&arg, variables, parent);
+                        let val = self.compile_expression(arg, variables, parent);
                         match val {
                             BasicValueEnum::PointerValue(x) => self.builder.build_bitcast(
                                 x,
@@ -370,29 +389,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         panic!("Cannot yet store functions in an array")
                     }
                     _ => {
-                        let comp_arr = self
-                            .compile_expression(&arr, variables, parent)
-                            .into_pointer_value();
-                        let index = self.compile_expression(&index, variables, parent);
-                        let val = self.compile_expression(&exp, variables, parent);
-                        let val = match arr.result_type {
-                            CompType::Str(_) => self
+                        let mut val = self.compile_expression(&exp, variables, parent);
+                        if arr.result_type.is_str() {
+                            val = self
                                 .builder
                                 .build_int_cast(
                                     val.into_int_value(),
                                     self.context.i8_type(),
                                     "arr_cast",
                                 )
-                                .as_basic_value_enum(),
-                            _ => val,
+                                .as_basic_value_enum();
                         };
-                        let index_ptr = unsafe {
-                            self.builder.build_in_bounds_gep(
-                                comp_arr,
-                                &[self.context.i32_type().const_zero(), index.into_int_value()],
-                                "calc_pos",
-                            )
-                        };
+                        let index_ptr = self.calc_pos(&arr, &index, variables, parent);
                         self.builder.build_store(index_ptr, val);
                         val
                     }
@@ -467,33 +475,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             }
             CompExpression::List(expressions) => expressions
                 .iter()
-                .map(|x| self.compile_expression(&x, variables, parent))
+                .map(|x| self.compile_expression(x, variables, parent))
                 .last()
                 .unwrap_or_else(|| self.context.i32_type().const_zero().as_basic_value_enum()),
             CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent),
-            CompExpression::Index(arr, index) => unsafe {
-                let ptr = self
-                    .compile_expression(&arr, variables, parent)
-                    .into_pointer_value();
-                let val = self
-                    .builder
-                    .build_load(
-                        self.builder.build_in_bounds_gep(
-                            ptr,
-                            &[
-                                self.context.i32_type().const_zero(),
-                                self.compile_expression(&index, variables, parent)
-                                    .into_int_value(),
-                            ],
-                            "calc_pos",
-                        ),
-                        "indexing",
-                    )
-                    .into_int_value();
+            CompExpression::Index(arr, index) => {
+                let ptr = self.calc_pos(&arr, &index, variables, parent);
+                let val = self.builder.build_load(ptr, "indexing").into_int_value();
                 self.builder
                     .build_int_cast(val, self.context.i32_type(), "int_cast")
                     .as_basic_value_enum()
-            },
+            }
             CompExpression::Typeof(var) => {
                 if var.typing.is_union() {
                     self.builder
