@@ -9,9 +9,12 @@ use inkwell::passes::PassManager;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
 };
-use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicType, FunctionType};
+use inkwell::types::{
+    AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
+};
 use inkwell::values::{
-    BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, PointerValue,
+    AggregateValue, ArrayValue, BasicMetadataValueEnum, BasicValueEnum, FloatMathValue,
+    IntMathValue, IntValue, PointerValue,
 };
 /// Some parts of this file have been directly taken from the collider scope example from inkwell
 use inkwell::values::{BasicValue, FunctionValue};
@@ -284,6 +287,32 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    fn cast_to_i32(&self, int: IntValue<'ctx>) -> IntValue<'ctx> {
+        self.builder
+            .build_int_cast(int, self.context.i32_type(), "int_cast")
+    }
+
+    fn cast_to_i8(&self, int: IntValue<'ctx>) -> IntValue<'ctx> {
+        self.builder
+            .build_int_cast(int, self.context.i8_type(), "int_cast")
+    }
+
+    fn load_variable(
+        &self,
+        variables: &HashMap<String, PointerValue<'ctx>>,
+        var: &str,
+    ) -> BasicValueEnum<'ctx> {
+        let error = format!("Tried to load nonexistent variable {}", var);
+        let var = variables.get(var).expect(&error);
+        self.builder.build_load(*var, "load")
+    }
+
+    fn extract_element(&self, agg: impl AggregateValue<'ctx>, i: u32) -> BasicValueEnum<'ctx> {
+        self.builder
+            .build_extract_value(agg, i, "extract_element")
+            .expect("Tried to extract non existent element from struct")
+    }
+
     fn calc_pos(
         &self,
         arr: &ExpEnvironment,
@@ -303,6 +332,35 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             )
         }
     }
+
+    fn create_array(
+        &self,
+        arr_ty: ArrayType<'ctx>,
+        elements: Vec<BasicValueEnum<'ctx>>,
+    ) -> ArrayValue<'ctx> {
+        let elements = elements.iter();
+        match arr_ty.get_element_type() {
+            BasicTypeEnum::IntType(el) => {
+                el.const_array(&elements.map(|x| x.into_int_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::FloatType(el) => {
+                el.const_array(&elements.map(|x| x.into_float_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::PointerType(el) => {
+                el.const_array(&elements.map(|x| x.into_pointer_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::ArrayType(el) => {
+                el.const_array(&elements.map(|x| x.into_array_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::StructType(el) => {
+                el.const_array(&elements.map(|x| x.into_struct_value()).collect::<Vec<_>>())
+            }
+            BasicTypeEnum::VectorType(el) => {
+                el.const_array(&elements.map(|x| x.into_vector_value()).collect::<Vec<_>>())
+            }
+        }
+    }
+
     fn compile_expression(
         &self,
         exp: &ExpEnvironment,
@@ -347,10 +405,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let rhs = self.compile_expression(&right, variables, parent);
                 comp_bin_op(&op, lhs, rhs, self, parent)
             }
-            CompExpression::Read(var) => {
-                let var = variables.get(&var.name).unwrap();
-                self.builder.build_load(*var, "load").as_basic_value_enum()
-            }
+            CompExpression::Read(var) => self.load_variable(variables, &var.name),
             CompExpression::Assign(var, exp) => match *var.expression {
                 CompExpression::Read(var) => match *exp.expression {
                     CompExpression::Value(CompData::Func(func)) => {
@@ -385,20 +440,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     }
                 },
                 CompExpression::Index(arr, index) => match *exp.expression {
-                    CompExpression::Value(CompData::Func(func)) => {
+                    CompExpression::Value(CompData::Func(_)) => {
                         panic!("Cannot yet store functions in an array")
                     }
                     _ => {
                         let mut val = self.compile_expression(&exp, variables, parent);
                         if arr.result_type.is_str() {
-                            val = self
-                                .builder
-                                .build_int_cast(
-                                    val.into_int_value(),
-                                    self.context.i8_type(),
-                                    "arr_cast",
-                                )
-                                .as_basic_value_enum();
+                            val = self.cast_to_i8(val.into_int_value()).as_basic_value_enum();
                         };
                         let index_ptr = self.calc_pos(&arr, &index, variables, parent);
                         self.builder.build_store(index_ptr, val);
@@ -482,21 +530,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Index(arr, index) => {
                 let ptr = self.calc_pos(&arr, &index, variables, parent);
                 let val = self.builder.build_load(ptr, "indexing").into_int_value();
-                self.builder
-                    .build_int_cast(val, self.context.i32_type(), "int_cast")
-                    .as_basic_value_enum()
+                self.cast_to_i32(val).as_basic_value_enum()
             }
             CompExpression::Typeof(var) => {
                 if var.typing.is_union() {
-                    self.builder
-                        .build_extract_value(
-                            self.builder
-                                .build_load(*variables.get(&var.name).unwrap(), "type_load")
-                                .into_struct_value(),
-                            0,
-                            "get_type",
-                        )
-                        .unwrap()
+                    let union = self.load_variable(variables, &var.name).into_struct_value();
+                    self.extract_element(union, 0)
                 } else {
                     self.context
                         .i8_type()
@@ -507,27 +546,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Array(elements) => {
                 let var = self.add_variable_to_block(
                     "array",
-                    elements[0]
-                        .result_type
-                        .get_compiler_type(self.context)
-                        .array_type(elements.len() as u32),
+                    exp.result_type.get_compiler_type(self.context),
                     parent.unwrap(),
                 );
-                let arr = elements[0]
+                let elements = elements
+                    .iter()
+                    .map(|x| self.compile_expression(x, variables, parent))
+                    .collect::<Vec<_>>();
+                let arr_ty = exp
                     .result_type
                     .get_compiler_type(self.context)
-                    .into_int_type()
-                    .const_array(
-                        elements
-                            .iter()
-                            .map(|x| {
-                                self.compile_expression(&x, variables, parent)
-                                    .into_int_value()
-                            })
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                    )
-                    .as_basic_value_enum();
+                    .into_array_type();
+                let arr = self.create_array(arr_ty, elements).as_basic_value_enum();
                 self.builder.build_store(var, arr);
                 var.as_basic_value_enum()
             }
@@ -558,7 +588,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             variables.insert(arg_name.to_string(), var);
         }
         let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
-        let str_name = &"string".to_string();
         func.body
             .clone()
             .unwrap()
@@ -570,16 +599,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let ty = x.1.typing.clone();
                 let comp_type = ty.get_compiler_type(self.context);
                 let name = x.0.to_string();
-                if ty.is_str() || ty.is_array() {
-                    let raw = self.add_variable_to_block(str_name, comp_type, &fn_val);
+                let var = if !ty.is_primitive() {
                     let ptr_ty = comp_type.ptr_type(inkwell::AddressSpace::Generic);
-                    let var = self.add_variable_to_block(&name, ptr_ty, &fn_val);
-                    self.builder.build_store(var, raw);
-                    variables.insert(name, var);
+                    self.add_variable_to_block(&name, ptr_ty, &fn_val)
                 } else {
-                    let var = self.add_variable_to_block(&name, comp_type, &fn_val);
-                    variables.insert(name, var);
-                }
+                    self.add_variable_to_block(&name, comp_type, &fn_val)
+                };
+                variables.insert(name, var);
             });
         // compile body
         let body =

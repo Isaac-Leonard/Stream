@@ -550,8 +550,8 @@ pub enum CompType {
     Type,
 }
 impl CompType {
-    fn is_primitive(&self) -> bool {
-        matches!(self, CompType::Str(_) | CompType::Array(_, _))
+    pub fn is_primitive(&self) -> bool {
+        !matches!(self, CompType::Str(_) | CompType::Array(_, _))
     }
 
     pub fn get_str(&self) -> String {
