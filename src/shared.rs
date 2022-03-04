@@ -118,6 +118,7 @@ fn transform_exp(
                     result_type: var.typing.clone(),
                     expression: Box::new(CompExpression::Read(var)),
                     var_types: HashMap::new(),
+                    located: loc.start..exp.located.start,
                 },
                 exp,
             )
@@ -248,6 +249,7 @@ fn transform_exp(
         result_type: get_type_from_exp(&expression, HashMap::new()).map_err(|x| vec![x])?,
         expression: Box::new(expression),
         var_types: HashMap::new(),
+        located: exp.get_range(),
     })
 }
 

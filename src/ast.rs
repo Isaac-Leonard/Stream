@@ -329,6 +329,7 @@ pub struct ExpEnvironment {
     pub expression: Box<CompExpression>,
     pub var_types: HashMap<String, CompType>,
     pub result_type: CompType,
+    pub located: Range<usize>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
