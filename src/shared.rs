@@ -431,7 +431,7 @@ pub fn get_type_from_exp(
                     .zip(arg_types)
                     .map(|(x, y)| {
                         if !x.super_of(&y) {
-                            Some(CompError::InvalidAssignment(x.clone(), y, 0..0))
+                            Some(CompError::InvalidAssignment(y, x.clone(), 0..0))
                         } else {
                             None
                         }
