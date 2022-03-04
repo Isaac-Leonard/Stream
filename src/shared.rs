@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::errors::*;
 use std::collections::HashMap;
+use std::ops::Range;
 
 fn collect_ok_or_err<T, E>(
     iter: impl IntoIterator<Item = Result<T, E>>,
@@ -246,7 +247,8 @@ fn transform_exp(
         Expression::Invalid(x) => panic!("invalid {:?}", x),
     };
     Ok(ExpEnvironment {
-        result_type: get_type_from_exp(&expression, HashMap::new()).map_err(|x| vec![x])?,
+        result_type: get_type_from_exp(&expression, HashMap::new(), exp.get_range())
+            .map_err(|x| vec![x])?,
         expression: Box::new(expression),
         var_types: HashMap::new(),
         located: exp.get_range(),
@@ -346,6 +348,7 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
 pub fn get_type_from_exp(
     exp: &CompExpression,
     _var_types: HashMap<String, CompType>,
+    located: Range<usize>,
 ) -> Result<CompType, CompError> {
     use CompExpression::*;
     match exp {
@@ -360,7 +363,11 @@ pub fn get_type_from_exp(
                 .map(|el| el.result_type.clone())
                 .collect::<Vec<_>>();
             if !non_allowed.is_empty() {
-                Err(CompError::MismatchedTypeInArray(el_ty, non_allowed, 0..0))
+                Err(CompError::MismatchedTypeInArray(
+                    el_ty,
+                    non_allowed,
+                    located,
+                ))
             } else {
                 Ok(CompType::Array(Box::new(el_ty), elements.len()))
             }
@@ -376,7 +383,10 @@ pub fn get_type_from_exp(
             if cond.result_type.is_bool() {
                 Ok(body.result_type.clone())
             } else {
-                Err(CompError::BoolInWhile(cond.result_type.clone(), 0..0))
+                Err(CompError::BoolInWhile(
+                    cond.result_type.clone(),
+                    cond.located.clone(),
+                ))
             }
         }
         IfElse {
@@ -389,14 +399,20 @@ pub fn get_type_from_exp(
                 let other_ty = otherwise.result_type.clone();
                 Ok(CompType::Union(vec![then_ty, other_ty]).flatten())
             } else {
-                Err(CompError::BoolInIf(cond.result_type.clone(), 0..0))
+                Err(CompError::BoolInIf(
+                    cond.result_type.clone(),
+                    cond.located.clone(),
+                ))
             }
         }
         IfOnly { cond, then: _ } => {
             if cond.result_type.is_bool() {
                 Ok(CompType::Null)
             } else {
-                Err(CompError::BoolInIf(cond.result_type.clone(), 0..0))
+                Err(CompError::BoolInIf(
+                    cond.result_type.clone(),
+                    cond.located.clone(),
+                ))
             }
         }
         Value(data) => Ok(data.get_type()),
@@ -405,9 +421,9 @@ pub fn get_type_from_exp(
             let i_ty = i.result_type.clone();
             // TODO: Move to use an is_indexable method
             if !arr_ty.is_str() && !arr_ty.is_array() {
-                Err(CompError::CannotIndexType(arr_ty, 0..0))
+                Err(CompError::CannotIndexType(arr_ty, i.located.clone()))
             } else if !i_ty.is_int() {
-                Err(CompError::InvalidIndexType(i_ty, 0..0))
+                Err(CompError::InvalidIndexType(i_ty, i.located.clone()))
             } else {
                 Ok(CompType::Int)
             }
@@ -418,7 +434,7 @@ pub fn get_type_from_exp(
             if var_ty.super_of(&exp) {
                 Ok(var_ty)
             } else {
-                Err(CompError::InvalidAssignment(var_ty, exp, 0..0))
+                Err(CompError::InvalidAssignment(var_ty, exp, located))
             }
         }
         BinOp(op, a, b) => op.resulting_type(&a.result_type, &b.result_type),
@@ -426,14 +442,17 @@ pub fn get_type_from_exp(
         Read(var) => Ok(var.typing.clone()),
         Call(var, args) => {
             let var = var.clone();
-            let arg_types = args.iter().map(|x| x.result_type.clone());
-            if let CompType::Callible(args, ret) = var.typing {
-                let mismatched_args = args
+            if let CompType::Callible(arg_types, ret) = var.typing {
+                let mismatched_args = arg_types
                     .iter()
-                    .zip(arg_types)
+                    .zip(args)
                     .map(|(x, y)| {
-                        if !x.super_of(&y) {
-                            Some(CompError::InvalidAssignment(y, x.clone(), 0..0))
+                        if !x.super_of(&y.result_type) {
+                            Some(CompError::InvalidAssignment(
+                                y.result_type.clone(),
+                                x.clone(),
+                                y.located.clone(),
+                            ))
                         } else {
                             None
                         }
@@ -446,7 +465,7 @@ pub fn get_type_from_exp(
                     Ok(*ret)
                 }
             } else {
-                Err(CompError::NonfunctionCall(var.name, var.typing, 0..0))
+                Err(CompError::NonfunctionCall(var.name, var.typing, located))
             }
         }
     }
