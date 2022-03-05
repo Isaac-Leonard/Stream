@@ -12,7 +12,7 @@ $ cargo run -- example-compile.bs
 #+end_src
 then run the produced binary
 #+begin_src:
-./testing/
+./testing
 #+end_src
 ** Dependencies
 The only current dependencies iare the Chumsky package for parsing found at https://github.com/zesterer/chumsky and inkwell for ergonomically interfacing  with LLVM found at https://github.com/TheDan64/inkwell.
