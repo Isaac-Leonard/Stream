@@ -486,3 +486,24 @@ pub fn get_type_from_exp(
         }
     }
 }
+
+fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
+    use CompType::*;
+    if let Union(types) = from {
+        if types.contains(not) {
+            Union(types.iter().filter(|ty| ty != &not).cloned().collect()).flatten()
+        } else {
+            from.clone()
+        }
+    } else if not.is_primitive() && from.is_primitive() {
+        if not == from {
+            Union(Vec::new())
+        } else {
+            from.clone()
+        }
+    } else {
+        // ToDO: Actually match all cases, this should not be reached if correct code is written but still technically reachable and so needs to be handled properly
+        unreachable!();
+        Vec::Union(Vec::new())
+    }
+}
