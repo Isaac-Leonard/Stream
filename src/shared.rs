@@ -55,13 +55,14 @@ fn bin_exp(
     op: Op,
     left: &Expression,
     right: &Expression,
+    env: &ExpEnvironment,
     scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
-    let left = match transform_exp(left, scope) {
+    let left = match transform_exp(left, env, scope) {
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
-    let right = match transform_exp(right, scope) {
+    let right = match transform_exp(right, env, scope) {
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
@@ -70,11 +71,12 @@ fn bin_exp(
 
 fn transform_exp(
     exp: &Expression,
+    env: &ExpEnvironment,
     mut scope: &mut TempScope,
 ) -> Result<ExpEnvironment, Vec<CompError>> {
     let expression = match exp {
         Expression::Array(elements, _) => CompExpression::Array(
-            collect_ok_or_err(elements.iter().map(|x| transform_exp(x, scope)))
+            collect_ok_or_err(elements.iter().map(|x| transform_exp(x, env, scope)))
                 .unwrap_or_else(|| Ok(Vec::new()))
                 .map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>())?,
         ),
@@ -84,8 +86,8 @@ fn transform_exp(
                 .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
         ),
         Expression::Index(arr, index, _loc) => {
-            let arr_exp = transform_exp(arr, scope)?;
-            let index_exp = transform_exp(index, scope)?;
+            let arr_exp = transform_exp(arr, env, scope)?;
+            let index_exp = transform_exp(index, env, scope)?;
             CompExpression::Index(arr_exp, index_exp)
         }
         Expression::TypeDeclaration(_, _, _) => CompExpression::List(Vec::new()),
@@ -97,7 +99,7 @@ fn transform_exp(
                 )]);
             }
 
-            let exp = transform_exp(exp, scope)?;
+            let exp = transform_exp(exp, env, scope)?;
             let exp_ty = exp.result_type.clone();
             let has_type = scope.variable_has_type(name);
             if !has_type {
@@ -125,14 +127,14 @@ fn transform_exp(
             )
         }
         Expression::Assign(name, exp, loc) => {
-            let rhs = transform_exp(name, scope)?;
-            let exp = transform_exp(exp, scope)?;
+            let rhs = transform_exp(name, env, scope)?;
+            let exp = transform_exp(exp, env, scope)?;
             CompExpression::Assign(rhs, exp)
         }
         Expression::IfElse(cond, left, right, _) => {
-            let cond = transform_exp(cond, scope)?;
-            let then = transform_exp(left, scope)?;
-            let otherwise = transform_exp(right, scope)?;
+            let cond = transform_exp(cond, env, scope)?;
+            let then = transform_exp(left, env, scope)?;
+            let otherwise = transform_exp(right, env, scope)?;
             CompExpression::IfElse {
                 cond,
                 then,
@@ -140,26 +142,30 @@ fn transform_exp(
             }
         }
         Expression::Loop(exp, body, _) => {
-            let cond = transform_exp(exp, scope)?;
-            let body = transform_exp(body, scope)?;
+            let cond = transform_exp(exp, env, scope)?;
+            let body = transform_exp(body, env, scope)?;
             CompExpression::WhileLoop { cond, body }
         }
         Expression::Block(expressions, _) => {
-            collect_ok_or_err(expressions.iter().map(|exp| transform_exp(exp, scope)))
-                .unwrap_or_else(|| Ok(Vec::new()))
-                .map(CompExpression::List)
-                .map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>())?
+            let mut env = env.clone();
+            collect_ok_or_err(expressions.iter().map(|exp| {
+                env = transform_exp(exp, &env, scope)?;
+                Ok(env.clone())
+            }))
+            .unwrap_or_else(|| Ok(Vec::new()))
+            .map(CompExpression::List)
+            .map_err(|x: Vec<Vec<_>>| x.iter().flatten().cloned().collect::<Vec<_>>())?
         }
-        Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, scope)?,
-        Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, scope)?,
-        Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, scope)?,
-        Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, scope)?,
-        Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, scope)?,
-        Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, scope)?,
+        Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, env, scope)?,
+        Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, env, scope)?,
+        Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, env, scope)?,
+        Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, env, scope)?,
+        Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, env, scope)?,
+        Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, env, scope)?,
         Expression::FuncCall(name, args, loc) => {
             let args = args
                 .iter()
-                .map(|x| transform_exp(x, scope))
+                .map(|x| transform_exp(x, env, scope))
                 .collect::<Result<Vec<_>, Vec<CompError>>>();
             let func = match scope.get_variable(name) {
                 Ok(var) => var,
@@ -247,8 +253,7 @@ fn transform_exp(
         Expression::Invalid(x) => panic!("invalid {:?}", x),
     };
     Ok(ExpEnvironment {
-        result_type: get_type_from_exp(&expression, HashMap::new(), exp.get_range())
-            .map_err(|x| vec![x])?,
+        result_type: get_type_from_exp(&expression, env, exp.get_range()).map_err(|x| vec![x])?,
         expression: Box::new(expression),
         var_types: HashMap::new(),
         located: exp.get_range(),
@@ -322,7 +327,18 @@ fn resolve_scope<'a>(
 }
 
 fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
-    let expression = transform_exp(ast, scope)?;
+    let env = ExpEnvironment {
+        var_types: scope
+            .variables
+            .iter()
+            .filter_map(|(name, var)| Some((name.clone(), var.typing.clone()?)))
+            .clone()
+            .collect(),
+        result_type: CompType::Null,
+        located: 0..0,
+        expression: Box::new(CompExpression::List(Vec::new())),
+    };
+    let expression = transform_exp(ast, &env, scope)?;
     Ok(Program {
         scope: scope.to_comp_scope_so_far(),
         body: expression,
@@ -347,7 +363,7 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
 
 pub fn get_type_from_exp(
     exp: &CompExpression,
-    _var_types: HashMap<String, CompType>,
+    _env: &ExpEnvironment,
     located: Range<usize>,
 ) -> Result<CompType, CompError> {
     use CompExpression::*;
