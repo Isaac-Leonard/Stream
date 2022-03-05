@@ -536,8 +536,10 @@ impl TempScope {
         }
     }
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompType {
+    Not(Box<Self>),
     Callible(Vec<Self>, Box<Self>),
     Union(Vec<Self>),
     Array(Box<CompType>, usize),
@@ -632,17 +634,21 @@ impl CompType {
     }
 
     pub fn is_callable(&self) -> bool {
-        match self {
-            CompType::Callible(_, _) => true,
-            _ => false,
-        }
+        matches!(self, CompType::Callible(_, _))
     }
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Not(ty) => {
+                if let Not(ty) = &**ty {
+                    ty.flatten()
+                } else {
+                    Not(Box::new(ty.flatten()))
+                }
+            }
             Type => Type,
             Ptr => Ptr,
-            Array(ty, len) => Array(ty.clone(), len.clone()),
+            Array(ty, len) => Array(ty.clone(), *len),
             Int => Int,
             Float => Float,
             Str(len) => Str(*len),
@@ -674,7 +680,8 @@ impl CompType {
             Str(_) => 4,
             Callible(_, _) => 5,
             Type => 6,
-            Union(_) => 7,
+            Union(_) => 7, // Treat as the same for now
+            Not(_) => 7,
             Ptr => 8,
             Generic(_) => 9,
             Array(_, _) => 10,
@@ -686,6 +693,7 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Not(ty) => write!(f, "Not<{}>", ty),
             Type => write!(f, "Type"),
             Array(ty, len) => write!(f, "[{}, {}]", ty, len),
             Generic(name) => write!(f, "{}", name),
