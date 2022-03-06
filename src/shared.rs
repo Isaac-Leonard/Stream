@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::errors::*;
+use crate::map_vec;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -126,7 +127,7 @@ fn transform_exp(
                 exp,
             )
         }
-        Expression::Assign(name, exp, loc) => {
+        Expression::Assign(name, exp, _) => {
             let rhs = transform_exp(name, env, scope)?;
             let exp = transform_exp(exp, env, scope)?;
             CompExpression::Assign(rhs, exp)
@@ -252,12 +253,7 @@ fn transform_exp(
         },
         Expression::Invalid(x) => panic!("invalid {:?}", x),
     };
-    Ok(ExpEnvironment {
-        result_type: get_type_from_exp(&expression, env, exp.get_range()).map_err(|x| vec![x])?,
-        expression: Box::new(expression),
-        var_types: HashMap::new(),
-        located: exp.get_range(),
-    })
+    get_env(&expression, env, exp.get_range()).map_err(|x| vec![x])
 }
 
 fn resolve_scope<'a>(
@@ -361,43 +357,77 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
     func.clone()
 }
 
-pub fn get_type_from_exp(
+pub fn get_env(
     exp: &CompExpression,
     _env: &ExpEnvironment,
     located: Range<usize>,
-) -> Result<CompType, CompError> {
+) -> Result<ExpEnvironment, CompError> {
     use CompExpression::*;
     match exp {
         Array(elements) => {
             if elements.is_empty() {
-                return Ok(CompType::Array(Box::new(CompType::Null), 0));
+                return Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: CompType::Array(Box::new(CompType::Null), 0),
+                    located,
+                    .._env.clone()
+                });
             }
             let el_ty = elements[0].result_type.clone();
             let non_allowed = elements
                 .iter()
                 .filter(|el| el.result_type != el_ty)
-                .map(|el| el.result_type.clone())
                 .collect::<Vec<_>>();
             if !non_allowed.is_empty() {
                 Err(CompError::MismatchedTypeInArray(
                     el_ty,
-                    non_allowed,
-                    located,
+                    map_vec!(non_allowed, |el| el.result_type.clone()),
+                    non_allowed[0].located.start..non_allowed.last().unwrap().located.end,
                 ))
             } else {
-                Ok(CompType::Array(Box::new(el_ty), elements.len()))
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: CompType::Array(Box::new(el_ty), elements.len()),
+                    located,
+                    .._env.clone()
+                })
             }
         }
 
-        Typeof(_) => Ok(CompType::Type),
-        Prog(prog) => Ok(prog.body.result_type.clone()),
+        Typeof(_) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: CompType::Type,
+            located,
+            .._env.clone()
+        }),
+        Prog(prog) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: prog.body.result_type.clone(),
+            located,
+            .._env.clone()
+        }),
         List(exps) => Ok(exps
             .last()
-            .map(|x| x.result_type.clone())
-            .unwrap_or(CompType::Null)),
+            .map(|x| ExpEnvironment {
+                expression: Box::new(exp.clone()),
+                result_type: x.result_type.clone(),
+                located: located.clone(),
+                .._env.clone()
+            })
+            .unwrap_or(ExpEnvironment {
+                expression: Box::new(exp.clone()),
+                result_type: CompType::Null,
+                located,
+                .._env.clone()
+            })),
         WhileLoop { cond, body } => {
             if cond.result_type.is_bool() {
-                Ok(body.result_type.clone())
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: body.result_type.clone(),
+                    located,
+                    .._env.clone()
+                })
             } else {
                 Err(CompError::BoolInWhile(
                     cond.result_type.clone(),
@@ -413,7 +443,12 @@ pub fn get_type_from_exp(
             if cond.result_type.is_bool() {
                 let then_ty = then.result_type.clone();
                 let other_ty = otherwise.result_type.clone();
-                Ok(CompType::Union(vec![then_ty, other_ty]).flatten())
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: CompType::Union(vec![then_ty, other_ty]).flatten(),
+                    located,
+                    .._env.clone()
+                })
             } else {
                 Err(CompError::BoolInIf(
                     cond.result_type.clone(),
@@ -423,7 +458,12 @@ pub fn get_type_from_exp(
         }
         IfOnly { cond, then: _ } => {
             if cond.result_type.is_bool() {
-                Ok(CompType::Null)
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: CompType::Null,
+                    located,
+                    .._env.clone()
+                })
             } else {
                 Err(CompError::BoolInIf(
                     cond.result_type.clone(),
@@ -431,7 +471,12 @@ pub fn get_type_from_exp(
                 ))
             }
         }
-        Value(data) => Ok(data.get_type()),
+        Value(data) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: data.get_type(),
+            located,
+            .._env.clone()
+        }),
         Index(arr, i) => {
             let arr_ty = arr.result_type.clone();
             let i_ty = i.result_type.clone();
@@ -440,22 +485,57 @@ pub fn get_type_from_exp(
                 Err(CompError::CannotIndexType(arr_ty, i.located.clone()))
             } else if !i_ty.is_int() {
                 Err(CompError::InvalidIndexType(i_ty, i.located.clone()))
+            } else if let CompType::Array(elements, _) = arr_ty {
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: *elements,
+                    located,
+                    .._env.clone()
+                })
+            } else if arr_ty.is_str() {
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: CompType::Int,
+                    located,
+                    .._env.clone()
+                })
             } else {
-                Ok(CompType::Int)
+                panic!("Here");
+                unreachable!()
             }
         }
-        Assign(var, exp) => {
-            let exp = exp.result_type.clone();
+        Assign(var, lhs) => {
+            let exp_ty = lhs.result_type.clone();
             let var_ty = var.result_type.clone();
-            if var_ty.super_of(&exp) {
-                Ok(var_ty)
+            if var_ty.super_of(&exp_ty) {
+                Ok(ExpEnvironment {
+                    expression: Box::new(exp.clone()),
+                    result_type: exp_ty,
+                    located,
+                    .._env.clone()
+                })
             } else {
-                Err(CompError::InvalidAssignment(var_ty, exp, located))
+                Err(CompError::InvalidAssignment(var_ty, exp_ty, located))
             }
         }
-        BinOp(op, a, b) => op.resulting_type(&a.result_type, &b.result_type),
-        OneOp(_, val) => Ok(val.result_type.clone()),
-        Read(var) => Ok(var.typing.clone()),
+        BinOp(op, a, b) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: op.resulting_type(&a.result_type, &b.result_type)?,
+            located,
+            .._env.clone()
+        }),
+        OneOp(_, val) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: val.result_type.clone(),
+            located,
+            .._env.clone()
+        }),
+        Read(var) => Ok(ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: var.typing.clone(),
+            located,
+            .._env.clone()
+        }),
         Call(var, args) => {
             let var = var.clone();
             if let CompType::Callible(arg_types, ret) = var.typing {
@@ -478,7 +558,12 @@ pub fn get_type_from_exp(
                 if let Some(err) = mismatched_args {
                     Err(err)
                 } else {
-                    Ok(*ret)
+                    Ok(ExpEnvironment {
+                        expression: Box::new(exp.clone()),
+                        result_type: *ret,
+                        located,
+                        .._env.clone()
+                    })
                 }
             } else {
                 Err(CompError::NonfunctionCall(var.name, var.typing, located))
@@ -504,6 +589,6 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
     } else {
         // ToDO: Actually match all cases, this should not be reached if correct code is written but still technically reachable and so needs to be handled properly
         unreachable!();
-        Vec::Union(Vec::new())
+        Union(Vec::new())
     }
 }
