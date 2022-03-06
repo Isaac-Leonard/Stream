@@ -226,7 +226,7 @@ fn transform_exp(
                     match func.body {
                         Some(body) => {
                             let mut local_scope = TempScope {
-                                parent: Some(Box::new(scope.to_comp_scope_so_far())),
+                                parent: Some(Box::new(scope.clone())),
                                 preset_variables: local_variables,
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
@@ -322,8 +322,8 @@ fn resolve_scope<'a>(
     }
 }
 
-fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
-    let env = ExpEnvironment {
+fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
+    ExpEnvironment {
         var_types: scope
             .variables
             .iter()
@@ -333,23 +333,21 @@ fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec
         result_type: CompType::Null,
         located: 0..0,
         expression: Box::new(CompExpression::List(Vec::new())),
-    };
+    }
+}
+
+fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
+    let env = get_env_from_scope(scope);
     let expression = transform_exp(ast, &env, scope)?;
     Ok(Program {
-        scope: scope.to_comp_scope_so_far(),
+        scope: scope.clone(),
         body: expression,
     })
 }
 
-pub fn create_program(ast: &Expression, scope: &CompScope) -> Result<Program, Vec<CompError>> {
-    let mut local_scope = TempScope {
-        parent: Some(Box::new(scope.clone())),
-        variables: HashMap::new(),
-        preset_variables: HashMap::new(),
-        types: HashMap::new(),
-    };
-    let local_scope = resolve_scope(ast, &mut local_scope)?;
-    let prog = transform_ast(ast, local_scope)?;
+pub fn create_program(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
+    resolve_scope(ast, scope)?;
+    let prog = transform_ast(ast, scope)?;
     Ok(prog)
 }
 

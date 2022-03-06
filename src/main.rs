@@ -24,7 +24,7 @@ fn calc_lines(file: &str) -> Vec<i32> {
     positions
 }
 
-fn get_global_scope() -> CompScope {
+fn get_global_scope() -> TempScope {
     let mut types = HashMap::new();
     types.insert("Int".to_string(), CompType::Int);
     types.insert("Float".to_string(), CompType::Float);
@@ -32,7 +32,8 @@ fn get_global_scope() -> CompScope {
     types.insert("Bool".to_string(), CompType::Bool);
     types.insert("Null".to_string(), CompType::Null);
     let variables = HashMap::new();
-    CompScope {
+    TempScope {
+        preset_variables: HashMap::new(),
         variables,
         types,
         parent: None,
@@ -100,13 +101,12 @@ fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
         if let Some(prog) = &programs.get(&import.file).unwrap().program {
             println!("here");
             prog.get_exported().iter().for_each(|x| {
-                println!("{}", x.name);
                 global_scope.variables.insert(x.name.clone(), x.clone());
             });
         }
     }
     let mut program = programs.get_mut(name).unwrap();
-    let prog = create_program(program.ast.as_ref().unwrap(), &global_scope);
+    let prog = create_program(program.ast.as_ref().unwrap(), &mut global_scope);
     match prog {
         Ok(prog) => {
             compile::compile(&prog, program.settings.clone());

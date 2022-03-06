@@ -334,82 +334,26 @@ pub struct ExpEnvironment {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
-    pub scope: CompScope,
+    pub scope: TempScope,
     pub body: ExpEnvironment,
 }
 impl Program {
-    pub fn get_exported(&self) -> Vec<CompVariable> {
+    pub fn get_exported(&self) -> Vec<NewVariable> {
         self.scope
             .variables
             .iter()
             .filter(|x| x.1.external)
-            .map(|x| x.1)
-            .cloned()
+            .map(|x| x.1.clone())
             .collect()
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CompScope {
-    pub types: HashMap<String, CompType>,
-    pub variables: HashMap<String, CompVariable>,
-    pub parent: Option<Box<CompScope>>,
-}
-impl CompScope {
-    fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
-        if let Some(var) = self.variables.get(name) {
-            Ok(var.clone())
-        } else {
-            match &self.parent {
-                Some(parent) => (*parent).get_variable(name),
-                None => Err(format!("Cannot find variable '{}'", name)),
-            }
-        }
-    }
-
-    pub fn get_type(&self, name: &String) -> Result<CompType, CompError> {
-        if let Some(ty) = self.types.get(name) {
-            Ok(ty.clone())
-        } else {
-            match &self.parent {
-                Some(parent) => (*parent).get_type(name),
-                None => Err(CompError::CannotFindType(name.clone(), 0..0)),
-            }
-        }
-    }
-
-    pub fn variable_exists(&self, name: &String) -> bool {
-        if self.variables.contains_key(name) {
-            true
-        } else {
-            match &self.parent {
-                Some(parent) => (*parent).variable_exists(name),
-                None => false,
-            }
-        }
-    }
-
-    pub fn constant_exists(&self, name: &String) -> bool {
-        if let Some(var) = self.variables.get(name) {
-            var.constant
-        } else {
-            match &self.parent {
-                Some(parent) => (*parent).constant_exists(name),
-                None => false,
-            }
-        }
-    }
-
-    pub fn is_global(&self) -> bool {
-        self.parent.is_none()
-    }
-}
-
 pub struct TempScope {
     pub types: HashMap<String, CompType>,
     pub variables: HashMap<String, NewVariable>,
     pub preset_variables: HashMap<String, CompVariable>,
-    pub parent: Option<Box<CompScope>>,
+    pub parent: Option<Box<Self>>,
 }
 impl TempScope {
     pub fn variable_exists(&self, name: &String) -> bool {
@@ -442,42 +386,6 @@ impl TempScope {
             .get_mut(name)
             .map(|v| v.typing = Some(ty.clone()));
         self
-    }
-
-    fn to_comp_scope(&self) -> Result<CompScope, Vec<String>> {
-        let variables = self
-            .variables
-            .iter()
-            .map(|v| v.1.get_final())
-            .chain(self.preset_variables.values().map(|x| Ok(x.clone())));
-        if variables.clone().any(|x| x.is_err()) {
-            Err(variables.filter_map(|x| x.err()).collect())
-        } else {
-            Ok(CompScope {
-                variables: variables
-                    .map(|x| x.map(|x| (x.name.clone(), x)))
-                    .collect::<Result<HashMap<_, _>, _>>()
-                    .expect("Something went wrong"),
-                types: self.types.clone(),
-                parent: self.parent.clone(),
-            })
-        }
-    }
-
-    pub fn to_comp_scope_so_far(&self) -> CompScope {
-        let variables = self
-            .variables
-            .iter()
-            .filter(|v| v.1.initialised)
-            .map(|v| (v.0.clone(), v.1.get_final().unwrap()))
-            .chain(self.preset_variables.clone().into_iter())
-            .collect::<HashMap<String, CompVariable>>();
-
-        CompScope {
-            variables,
-            types: self.types.clone(),
-            parent: self.parent.clone(),
-        }
     }
 
     pub fn get_variable(&self, name: &String) -> Result<CompVariable, String> {

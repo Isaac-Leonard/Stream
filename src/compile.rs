@@ -565,13 +565,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
     fn create_function(&'a self, func: &FunctionAst, name: &str) -> FunctionValue<'ctx> {
-        let fn_val = self.create_function_shape(&func.as_type());
+        let fn_val = self.module.get_function(name).expect(&format!(
+            "Expected function {} to have been added to module before compiling",
+            name
+        ));
         if func.body == None {
-            return self
-                .module
-                .add_function(name, fn_val, Some(Linkage::AvailableExternally));
+            return fn_val;
         }
-        let fn_val = self.module.add_function(name, fn_val, None);
 
         let entry = self.context.append_basic_block(fn_val, "entry");
 
@@ -597,9 +597,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .filter(|x| !arg_names.contains(x.0))
             .for_each(|x| {
                 let ty = x.1.typing.clone();
-                let comp_type = ty.get_compiler_type(self.context);
+                let comp_type = ty.as_ref().unwrap().get_compiler_type(self.context);
                 let name = x.0.to_string();
-                let var = if !ty.is_primitive() {
+                let var = if !ty.unwrap().is_primitive() {
                     let ptr_ty = comp_type.ptr_type(inkwell::AddressSpace::Generic);
                     self.add_variable_to_block(&name, ptr_ty, &fn_val)
                 } else {
@@ -698,16 +698,13 @@ pub fn compile(ast: &Program, settings: Settings) {
         fpm: &fpm,
         module: &module,
     };
-    ast.scope
-        .clone()
-        .parent
-        .unwrap()
-        .variables
-        .iter()
-        .for_each(|(name, var)| {
-            let fn_val = compiler.create_function_shape(&var.typing);
+    ast.scope.clone().variables.iter().for_each(|(name, var)| {
+        if var.typing.as_ref().unwrap().is_callable() {
+            let fn_val = compiler.create_function_shape(&var.typing.clone().unwrap());
             compiler.module.add_function(name, fn_val, None);
-        });
+        }
+    });
+
     compiler.compile_expression(&ast.body, &HashMap::new(), None);
 
     Target::initialize_x86(&InitializationConfig::default());
