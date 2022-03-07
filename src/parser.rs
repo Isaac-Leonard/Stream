@@ -100,6 +100,10 @@ fn raw(string: &str) -> impl Parser<char, (), Error = Cheap<char>> {
     seq(string.chars())
 }
 
+fn op_parser(op: Op) -> impl Parser<char, Op, Error = Cheap<char>> {
+    raw(&op.get_str()).to(op)
+}
+
 fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
     use Expression::*;
     recursive(|exp: Recursive<'_, char, Expression, Cheap<char>>| {
@@ -175,62 +179,48 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
 
         let mult_parser = (primary_exp.clone())
             .then(
-                one_of(['*', '/'])
+                op_parser(Op::Mult)
+                    .or(op_parser(Op::Div))
                     .padded()
-                    .then(primary_exp.clone())
+                    .then(primary_exp.clone().map(Box::new))
                     .repeated(),
             )
             .map(|(l, t)| {
-                t.iter().fold(l, |left, (op, right)| match op {
-                    '*' => Expression::Multiplication(
+                t.iter().fold(l, |left, (op, right)| {
+                    Expression::BinOp(
+                        op.clone(),
                         Box::new(left.clone()),
-                        Box::new(right.clone()),
-                        left.get_range().start..right.get_range().end,
-                    ),
-                    '/' => Expression::Division(
-                        Box::new(left.clone()),
-                        Box::new(right.clone()),
-                        left.get_range().start..right.get_range().end,
-                    ),
-                    _ => panic!("Unexpected operator {}", op),
-                })
-            })
-            .boxed();
-
-        let compare_parser = (mult_parser.clone().map(Box::new))
-            .then_ignore(just('<').padded())
-            .then(mult_parser.clone().map(Box::new))
-            .map_with_span(|x, span| Expression::LessThan(x.0, x.1, span));
-
-        let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-            .then_ignore(raw("==").padded())
-            .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-            .map_with_span(|x, span| Expression::Equal(x.0, x.1, span));
-
-        let addition_parser = (mult_parser.clone())
-            .then(
-                just('+')
-                    .padded()
-                    .ignore_then(mult_parser.clone())
-                    .repeated(),
-            )
-            .map(|x| {
-                x.1.iter().fold(x.0, |left, right| {
-                    Addition(
-                        Box::new(left.clone()),
-                        Box::new(right.clone()),
+                        right.clone(),
                         left.get_range().start..right.get_range().end,
                     )
                 })
             })
             .boxed();
-        let subtraction_parser = (mult_parser.clone())
-            .then(just('-').padded().ignore_then(mult_parser).repeated())
+
+        let compare_parser = (mult_parser.clone().map(Box::new))
+            .then(op_parser(Op::Le).padded())
+            .then(mult_parser.clone().map(Box::new))
+            .map_with_span(|x, span| Expression::BinOp(x.0 .1, x.0 .0, x.1, span))
+            .boxed();
+
+        let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
+            .then(op_parser(Op::Eq).padded())
+            .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
+            .map_with_span(|x, span| Expression::BinOp(x.0 .1, x.0 .0, x.1, span));
+
+        let add_sub_parser = (mult_parser.clone())
+            .then(
+                (op_parser(Op::Add).or(op_parser(Op::Sub)))
+                    .padded()
+                    .then(mult_parser.clone().map(Box::new))
+                    .repeated(),
+            )
             .map(|x| {
-                x.1.iter().fold(x.0, |left, right| {
-                    Subtraction(
+                x.1.iter().fold(x.0, |left, (op, right)| {
+                    BinOp(
+                        op.clone(),
                         Box::new(left.clone()),
-                        Box::new(right.clone()),
+                        right.clone(),
                         left.get_range().start..right.get_range().end,
                     )
                 })
@@ -300,7 +290,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .or(equal_parser)
             .or(compare_parser)
             .or(index_parser)
-            .or(addition_parser.or(subtraction_parser))
+            .or(add_sub_parser)
             .or(array_parser)
             .then_ignore(whitespace().then(just(';')).or_not())
             .boxed();

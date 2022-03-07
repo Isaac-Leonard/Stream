@@ -53,7 +53,7 @@ pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Ve
 }
 
 fn bin_exp(
-    op: Op,
+    op: &Op,
     left: &Expression,
     right: &Expression,
     env: &ExpEnvironment,
@@ -67,7 +67,7 @@ fn bin_exp(
         Ok(exp) => exp,
         Err(msg) => return Err(msg),
     };
-    Ok(CompExpression::BinOp(op, left, right))
+    Ok(CompExpression::BinOp(op.clone(), left, right))
 }
 
 fn transform_exp(
@@ -157,12 +157,7 @@ fn transform_exp(
             .map(CompExpression::List)
             .map_err(|x: Vec<Vec<_>>| x.iter().flatten().cloned().collect::<Vec<_>>())?
         }
-        Expression::LessThan(l, r, _) => bin_exp(Op::Le, l, r, env, scope)?,
-        Expression::Addition(l, r, _) => bin_exp(Op::Add, l, r, env, scope)?,
-        Expression::Multiplication(l, r, _) => bin_exp(Op::Mult, l, r, env, scope)?,
-        Expression::Subtraction(l, r, _) => bin_exp(Op::Sub, l, r, env, scope)?,
-        Expression::Division(l, r, _) => bin_exp(Op::Div, l, r, env, scope)?,
-        Expression::Equal(l, r, _) => bin_exp(Op::Eq, l, r, env, scope)?,
+        Expression::BinOp(op, l, r, _) => bin_exp(op, l, r, env, scope)?,
         Expression::FuncCall(name, args, loc) => {
             let args = args
                 .iter()

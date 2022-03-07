@@ -41,12 +41,7 @@ pub enum Expression {
     TypeDeclaration(String, CustomType, Range<usize>),
     Typeof(String, Range<usize>),
     Array(Vec<Expression>, Range<usize>),
-    Addition(Box<Expression>, Box<Expression>, Range<usize>),
-    Subtraction(Box<Expression>, Box<Expression>, Range<usize>),
-    Multiplication(Box<Expression>, Box<Expression>, Range<usize>),
-    Division(Box<Expression>, Box<Expression>, Range<usize>),
-    Equal(Box<Expression>, Box<Expression>, Range<usize>),
-    LessThan(Box<Expression>, Box<Expression>, Range<usize>),
+    BinOp(Op, Box<Expression>, Box<Expression>, Range<usize>),
     Terminal(Symbol, Range<usize>),
     FuncCall(String, Vec<Expression>, Range<usize>),
     Block(Vec<Expression>, Range<usize>),
@@ -77,12 +72,7 @@ impl Expression {
             | Typeof(_, range)
             | Index(_, _, range)
             | TypeDeclaration(_, _, range)
-            | Addition(_, _, range)
-            | Subtraction(_, _, range)
-            | Multiplication(_, _, range)
-            | Division(_, _, range)
-            | LessThan(_, _, range)
-            | Equal(_, _, range)
+            | BinOp(_, _, _, range)
             | FuncCall(_, _, range)
             | IfElse(_, _, _, range)
             | Loop(_, _, range)
