@@ -189,6 +189,7 @@ pub enum Op {
     Mult,
     Eq,
     Le,
+    Ge,
 }
 impl Op {
     pub fn get_str(&self) -> String {
@@ -199,7 +200,7 @@ impl Op {
         use Op::*;
         match self {
             Eq => Ok(Bool),
-            Le => match (a, b) {
+            Le | Ge => match (a, b) {
                 (Float, Float) | (Int, Int) => Ok(Bool),
                 _ => Err(self.invalid_comparison_msg(a, b)),
             },
@@ -244,6 +245,7 @@ impl Display for Op {
                 Div => "/",
                 Eq => "==",
                 Le => "<",
+                Ge => ">",
             }
         )
     }

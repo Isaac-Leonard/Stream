@@ -15,7 +15,7 @@ let main=():Int => {
     hello=world	
     puts		  (world)
     puts(hello+" galaxy")
-    while x<5{
+    while 5>x{
         puts("abc")
 	x=x+1
     }    	

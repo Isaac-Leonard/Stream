@@ -177,6 +177,9 @@ fn comp_bin_op_float<'ctx, T: FloatMathValue<'ctx>>(
         Le => builder
             .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "Lessthan")
             .as_basic_value_enum(),
+        Ge => builder
+            .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "Lessthan")
+            .as_basic_value_enum(),
     }
 }
 
@@ -205,6 +208,9 @@ fn comp_bin_op_int<'ctx, T: IntMathValue<'ctx>>(
             .as_basic_value_enum(),
         Le => builder
             .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "Lessthan")
+            .as_basic_value_enum(),
+        Ge => builder
+            .build_int_compare(inkwell::IntPredicate::SGT, lhs, rhs, "Lessthan")
             .as_basic_value_enum(),
     }
 }
