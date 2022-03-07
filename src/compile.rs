@@ -174,6 +174,9 @@ fn comp_bin_op_float<'ctx, T: FloatMathValue<'ctx>>(
         Eq => builder
             .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "equal")
             .as_basic_value_enum(),
+        Neq => builder
+            .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "equal")
+            .as_basic_value_enum(),
         Le => builder
             .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "Lessthan")
             .as_basic_value_enum(),
@@ -205,6 +208,9 @@ fn comp_bin_op_int<'ctx, T: IntMathValue<'ctx>>(
             .as_basic_value_enum(),
         Eq => builder
             .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "equal")
+            .as_basic_value_enum(),
+        Neq => builder
+            .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "equal")
             .as_basic_value_enum(),
         Le => builder
             .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "Lessthan")

@@ -204,7 +204,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .boxed();
 
         let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-            .then(op_parser(Op::Eq).padded())
+            .then(op_parser(Op::Eq).or(op_parser(Op::Neq)).padded())
             .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
             .map_with_span(|x, span| Expression::BinOp(x.0 .1, x.0 .0, x.1, span));
 

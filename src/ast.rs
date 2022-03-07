@@ -188,6 +188,7 @@ pub enum Op {
     Div,
     Mult,
     Eq,
+    Neq,
     Le,
     Ge,
 }
@@ -199,7 +200,7 @@ impl Op {
         use CompType::*;
         use Op::*;
         match self {
-            Eq => Ok(Bool),
+            Eq | Neq => Ok(Bool),
             Le | Ge => match (a, b) {
                 (Float, Float) | (Int, Int) => Ok(Bool),
                 _ => Err(self.invalid_comparison_msg(a, b)),
@@ -244,6 +245,7 @@ impl Display for Op {
                 Mult => "*",
                 Div => "/",
                 Eq => "==",
+                Neq => "!=",
                 Le => "<",
                 Ge => ">",
             }
