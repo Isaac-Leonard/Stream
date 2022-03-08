@@ -259,7 +259,7 @@ pub enum Prefix {
 impl Prefix {
     pub fn get_str(&self) -> &str {
         match self {
-            Prefix::Neg => "-",
+            Self::Neg => "-",
         }
     }
 }
@@ -624,5 +624,68 @@ impl Display for CompType {
                 ret.get_str()
             ),
         }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PlainScope {
+    parents: Vec<usize>,
+    child_count: usize,
+}
+impl PlainScope {
+    pub fn new() -> Self {
+        Self {
+            parents: Vec::new(),
+            child_count: 0,
+        }
+    }
+
+    pub fn create_child(&mut self) -> Self {
+        let mut parents = self.parents.clone();
+        parents.push(self.child_count);
+        self.child_count += 1;
+        Self {
+            parents,
+            child_count: 0,
+        }
+    }
+}
+
+pub struct VariableTracker<'a> {
+    occurs: usize,
+    scope: &'a PlainScope,
+}
+pub struct VariableMap<'a> {
+    occurs: usize,
+    writes: HashMap<(String, &'a PlainScope), Vec<VariableTracker<'a>>>,
+    reads: HashMap<(String, &'a PlainScope), Vec<VariableTracker<'a>>>,
+}
+impl<'a> VariableMap<'a> {
+    pub fn read(&mut self, name: &str, scope: &'a PlainScope) {
+        self.occurs += 1;
+        let tracker = VariableTracker {
+            scope,
+            occurs: self.occurs,
+        };
+        let key = (name.to_string(), scope);
+        if let Some(trackers) = self.reads.get_mut(&key) {
+            trackers.push(tracker);
+        } else {
+            self.reads.insert(key, vec![tracker]);
+        };
+    }
+
+    pub fn write(&mut self, name: &str, scope: &'a PlainScope) {
+        self.occurs += 1;
+        let tracker = VariableTracker {
+            scope,
+            occurs: self.occurs,
+        };
+        let key = (name.to_string(), scope);
+        if let Some(trackers) = self.writes.get_mut(&key) {
+            trackers.push(tracker);
+        } else {
+            self.writes.insert(key, vec![tracker]);
+        };
     }
 }
