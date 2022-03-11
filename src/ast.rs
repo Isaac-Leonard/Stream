@@ -1,6 +1,9 @@
 use crate::errors::CompError;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter};
 
+use std::rc::Rc;
 use std::{collections::HashMap, ops::Range};
 
 use inkwell::{
@@ -372,13 +375,15 @@ impl TempScope {
     }
 
     pub fn set_variable_initialised(&mut self, name: &String) {
-        self.variables.get_mut(name).map(|v| v.initialised = true);
+        if let Some(var) = self.variables.get_mut(name) {
+            var.initialised = true;
+        }
     }
 
     pub fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut TempScope {
-        self.variables
-            .get_mut(name)
-            .map(|v| v.typing = Some(ty.clone()));
+        if let Some(v) = self.variables.get_mut(name) {
+            v.typing = Some(ty.clone());
+        }
         self
     }
 
@@ -627,65 +632,154 @@ impl Display for CompType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlainScope {
     parents: Vec<usize>,
     child_count: usize,
+    children: Vec<PlainScopeRef>,
 }
 impl PlainScope {
     pub fn new() -> Self {
         Self {
             parents: Vec::new(),
             child_count: 0,
+            children: Vec::new(),
         }
     }
 
-    pub fn create_child(&mut self) -> Self {
+    pub fn create_child(&mut self) -> PlainScopeRef {
         let mut parents = self.parents.clone();
         parents.push(self.child_count);
         self.child_count += 1;
-        Self {
+        let mut child = PlainScopeRef::from(Self {
             parents,
             child_count: 0,
+            children: Vec::new(),
+        });
+        self.children.push(child.clone());
+        child
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum VariableOptions {
+    Read,
+    Write,
+    Declare,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlainScopeRef(Rc<RefCell<PlainScope>>);
+impl PlainScopeRef {
+    pub fn parents(&self) -> Vec<usize> {
+        self.0.as_ref().borrow().parents.clone()
+    }
+    pub fn new() -> Self {
+        Self(Rc::new(RefCell::new(PlainScope::new())))
+    }
+
+    fn from(scope: PlainScope) -> Self {
+        Self(Rc::new(RefCell::new(scope)))
+    }
+
+    pub fn create_child(&self) -> Self {
+        self.0.as_ref().borrow_mut().create_child()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct VariableTracker {
+    occurs: usize,
+    scope: PlainScopeRef,
+    access_type: VariableOptions,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct VariableMap {
+    occurs: usize,
+    writes: HashMap<(String, Vec<usize>), Vec<VariableTracker>>,
+    reads: HashMap<(String, Vec<usize>), Vec<VariableTracker>>,
+}
+impl VariableMap {
+    pub fn new() -> Self {
+        Self {
+            occurs: 0,
+            writes: HashMap::new(),
+            reads: HashMap::new(),
+        }
+    }
+    pub fn read(&mut self, name: &str, scope: &PlainScopeRef) {
+        self.occurs += 1;
+        let tracker = VariableTracker {
+            scope: scope.clone(),
+            occurs: self.occurs,
+            access_type: VariableOptions::Read,
+        };
+        let mut parent = scope.parents();
+        loop {
+            let key = (name.to_string(), parent.clone());
+            if let Some(trackers) = self.writes.get_mut(&key) {
+                return trackers.push(tracker);
+            }
+            if parent.pop().is_none() {
+                panic!("Attempted to read variable without declaration in counting code");
+            };
+        }
+    }
+
+    pub fn write(&mut self, name: &str, scope: &PlainScopeRef) {
+        self.occurs += 1;
+        let tracker = VariableTracker {
+            scope: scope.clone(),
+            occurs: self.occurs,
+            access_type: VariableOptions::Write,
+        };
+        let mut parent = scope.parents();
+        loop {
+            let key = (name.to_string(), parent.clone());
+            if let Some(trackers) = self.writes.get_mut(&key) {
+                return trackers.push(tracker);
+            }
+            if parent.pop().is_none() {
+                panic!("Attempted to write variable without declaration in counting code");
+            };
+        }
+    }
+    pub fn declare(&mut self, name: &str, scope: &PlainScopeRef) {
+        self.occurs += 1;
+        let tracker = VariableTracker {
+            scope: scope.clone(),
+            occurs: self.occurs,
+            access_type: VariableOptions::Declare,
+        };
+        let key = (name.to_string(), scope.parents());
+        if let std::collections::hash_map::Entry::Vacant(e) = self.writes.entry(key) {
+            e.insert(vec![tracker]);
+        } else {
+            panic!("Attempted to redeclare variable in counting scopes");
         }
     }
 }
 
-pub struct VariableTracker<'a> {
-    occurs: usize,
-    scope: &'a PlainScope,
-}
-pub struct VariableMap<'a> {
-    occurs: usize,
-    writes: HashMap<(String, &'a PlainScope), Vec<VariableTracker<'a>>>,
-    reads: HashMap<(String, &'a PlainScope), Vec<VariableTracker<'a>>>,
-}
-impl<'a> VariableMap<'a> {
-    pub fn read(&mut self, name: &str, scope: &'a PlainScope) {
-        self.occurs += 1;
-        let tracker = VariableTracker {
-            scope,
-            occurs: self.occurs,
-        };
-        let key = (name.to_string(), scope);
-        if let Some(trackers) = self.reads.get_mut(&key) {
-            trackers.push(tracker);
-        } else {
-            self.reads.insert(key, vec![tracker]);
-        };
+#[derive(Clone, Debug, PartialEq)]
+pub struct SymbolTable(Rc<RefCell<VariableMap>>);
+impl SymbolTable {
+    pub fn new() -> Self {
+        Self(Rc::new(RefCell::new(VariableMap {
+            occurs: 0,
+            writes: HashMap::new(),
+            reads: HashMap::new(),
+        })))
     }
 
-    pub fn write(&mut self, name: &str, scope: &'a PlainScope) {
-        self.occurs += 1;
-        let tracker = VariableTracker {
-            scope,
-            occurs: self.occurs,
-        };
-        let key = (name.to_string(), scope);
-        if let Some(trackers) = self.writes.get_mut(&key) {
-            trackers.push(tracker);
-        } else {
-            self.writes.insert(key, vec![tracker]);
-        };
+    pub fn read(&self, name: &str, scope: &PlainScopeRef) {
+        self.0.as_ref().borrow_mut().read(name, scope)
+    }
+
+    pub fn write(&mut self, name: &str, scope: &PlainScopeRef) {
+        self.0.as_ref().borrow_mut().read(name, scope)
+    }
+    pub fn declare(&self, name: &str, scope: &PlainScopeRef) {
+        self.0.as_ref().borrow_mut().declare(name, scope)
     }
 }
