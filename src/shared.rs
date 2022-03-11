@@ -59,14 +59,8 @@ fn bin_exp(
     env: &ExpEnvironment,
     scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
-    let left = match transform_exp(left, env, scope) {
-        Ok(exp) => exp,
-        Err(msg) => return Err(msg),
-    };
-    let right = match transform_exp(right, env, scope) {
-        Ok(exp) => exp,
-        Err(msg) => return Err(msg),
-    };
+    let left = transform_exp(left, env, scope)?;
+    let right = transform_exp(right, env, scope)?;
     Ok(CompExpression::BinOp(op.clone(), left, right))
 }
 
@@ -76,16 +70,32 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> Result<ExpEnvironment, Vec<CompError>> {
     let expression = match exp {
-        Expression::Array(elements, _) => CompExpression::Array(
-            collect_ok_or_err(elements.iter().map(|x| transform_exp(x, env, scope)))
-                .unwrap_or_else(|| Ok(Vec::new()))
-                .map_err(|x| x.iter().flatten().cloned().collect::<Vec<_>>())?,
-        ),
-        Expression::Typeof(name, loc) => CompExpression::Typeof(
-            scope
-                .get_variable(name)
-                .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
-        ),
+        Expression::Array(elements, _) => {
+            let mut errors = Vec::new();
+            let mut oks = Vec::new();
+            let mut env = env.clone();
+            for exp in elements {
+                env = match transform_exp(exp, &env, scope) {
+                    Ok(env) => {
+                        oks.push(env.clone());
+                        env
+                    }
+                    Err(err) => {
+                        errors.push(err);
+                        env
+                    }
+                };
+            }
+            if errors.is_empty() {
+                CompExpression::Array(oks)
+            } else {
+                return Err(errors.iter().flatten().cloned().collect());
+            }
+        }
+        Expression::Typeof(name, loc) => scope
+            .get_variable(name)
+            .map(CompExpression::Typeof)
+            .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
         Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, env, scope)?;
             let index_exp = transform_exp(index, env, scope)?;
@@ -128,9 +138,9 @@ fn transform_exp(
             )
         }
         Expression::Assign(name, exp, _) => {
-            let rhs = transform_exp(name, env, scope)?;
+            let lhs = transform_exp(name, env, scope)?;
             let exp = transform_exp(exp, env, scope)?;
-            CompExpression::Assign(rhs, exp)
+            CompExpression::Assign(lhs, exp)
         }
         Expression::IfElse(cond, left, right, _) => {
             let cond = transform_exp(cond, env, scope)?;
@@ -149,44 +159,57 @@ fn transform_exp(
         }
         Expression::Block(expressions, _) => {
             let mut env = env.clone();
-            collect_ok_or_err(expressions.iter().map(|exp| {
-                env = transform_exp(exp, &env, scope)?;
-                Ok(env.clone())
-            }))
-            .unwrap_or_else(|| Ok(Vec::new()))
-            .map(CompExpression::List)
-            .map_err(|x: Vec<Vec<_>>| x.iter().flatten().cloned().collect::<Vec<_>>())?
-        }
-        Expression::BinOp(op, l, r, _) => bin_exp(op, l, r, env, scope)?,
-        Expression::FuncCall(name, args, loc) => {
-            let args = args
-                .iter()
-                .map(|x| transform_exp(x, env, scope))
-                .collect::<Result<Vec<_>, Vec<CompError>>>();
-            let func = match scope.get_variable(name) {
-                Ok(var) => var,
-                Err(_) => {
-                    return Err(vec![CompError::CannotFindVariable(
-                        name.clone(),
-                        loc.clone(),
-                    )])
-                }
-            };
-            match args {
-                Ok(args) => CompExpression::Call(func, args),
-                Err(message) => return Err(message),
+            let mut errors = Vec::new();
+            let mut oks = Vec::new();
+            for exp in expressions {
+                env = match transform_exp(exp, &env, scope) {
+                    Ok(env) => {
+                        oks.push(env.clone());
+                        env
+                    }
+                    Err(err) => {
+                        errors.push(err);
+                        env
+                    }
+                };
+            }
+            if errors.is_empty() {
+                CompExpression::List(oks)
+            } else {
+                return Err(errors.iter().flatten().cloned().collect());
             }
         }
+        Expression::BinOp(op, l, r, _) => bin_exp(op, l, r, env, scope)?,
+        Expression::FuncCall(name, arguments, loc) => {
+            let mut errors = Vec::new();
+            let mut args = Vec::new();
+            let mut env = env.clone();
+            for exp in arguments {
+                let res = transform_exp(exp, &env, scope);
+                env = match res {
+                    Ok(env) => {
+                        args.push(env.clone());
+                        env
+                    }
+                    Err(err) => {
+                        errors.push(err);
+                        env
+                    }
+                };
+            }
+            if !errors.is_empty() {
+                return Err(errors.iter().flatten().cloned().collect());
+            }
+            let func = scope
+                .get_variable(name)
+                .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
+            CompExpression::Call(func, args)
+        }
         Expression::Terminal(sym, loc) => match sym {
-            Symbol::Identifier(name) => match scope.get_variable(name) {
-                Ok(var) => CompExpression::Read(var),
-                Err(_) => {
-                    return Err(vec![CompError::CannotFindVariable(
-                        name.clone(),
-                        loc.clone(),
-                    )])
-                }
-            },
+            Symbol::Identifier(name) => scope
+                .get_variable(name)
+                .map(CompExpression::Read)
+                .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
             Symbol::Data(data) => CompExpression::Value(match data.clone() {
                 RawData::Int(val) => CompData::Int(val),
                 RawData::Float(val) => CompData::Float(val),
