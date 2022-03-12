@@ -13,8 +13,8 @@ use inkwell::types::{
     AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
 use inkwell::values::{
-    AggregateValue, ArrayValue, BasicMetadataValueEnum, BasicValueEnum, FloatMathValue,
-    IntMathValue, IntValue, PointerValue,
+    AggregateValue, BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, IntValue,
+    PointerValue,
 };
 /// Some parts of this file have been directly taken from the collider scope example from inkwell
 use inkwell::values::{BasicValue, FunctionValue};
@@ -239,9 +239,7 @@ fn comp_bin_op_str<'a, 'ctx>(
 
     match op {
         Add => {
-            let strcat = if let Some(strcat) = compiler.module.get_function("strcat") {
-                strcat
-            } else {
+            let strcat = compiler.module.get_function("strcat").unwrap_or_else(|| {
                 let fn_type = compiler.create_function_shape(&CompType::Callible(
                     vec![CompType::Ptr, CompType::Ptr],
                     Box::new(CompType::Int),
@@ -249,7 +247,7 @@ fn comp_bin_op_str<'a, 'ctx>(
                 compiler
                     .module
                     .add_function("strcat", fn_type, Some(Linkage::AvailableExternally))
-            };
+            });
             let target_type = compiler
                 .context
                 .i8_type()
@@ -299,6 +297,32 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    fn alloc_heap(&self, bytes: usize) -> PointerValue<'ctx> {
+        let malloc = self.module.get_function("malloc").unwrap_or_else(|| {
+            let fn_val = self
+                .context
+                .i8_type()
+                .ptr_type(inkwell::AddressSpace::Generic)
+                .fn_type(
+                    &[BasicMetadataTypeEnum::from(self.context.i64_type())],
+                    false,
+                );
+            self.module
+                .add_function("malloc", fn_val, Some(Linkage::External))
+        });
+        self.builder
+            .build_call(
+                malloc,
+                &[BasicMetadataValueEnum::from(
+                    self.context.i64_type().const_int(bytes as u64, false),
+                )],
+                "malloc",
+            )
+            .try_as_basic_value()
+            .unwrap_left()
+            .into_pointer_value()
+    }
+
     fn cast_to_i32(&self, int: IntValue<'ctx>) -> IntValue<'ctx> {
         self.builder
             .build_int_cast(int, self.context.i32_type(), "int_cast")
@@ -329,7 +353,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         &self,
         arr: &ExpEnvironment,
         index: &ExpEnvironment,
-        variables: &HashMap<String, PointerValue<'ctx>>,
+        variables: &mut HashMap<String, PointerValue<'ctx>>,
         parent: Option<&FunctionValue<'ctx>>,
     ) -> PointerValue<'ctx> {
         let comp_arr = self
@@ -349,34 +373,70 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         &self,
         arr_ty: ArrayType<'ctx>,
         elements: Vec<BasicValueEnum<'ctx>>,
-    ) -> ArrayValue<'ctx> {
+    ) -> PointerValue<'ctx> {
         let elements = elements.iter();
-        match arr_ty.get_element_type() {
-            BasicTypeEnum::IntType(el) => {
-                el.const_array(&elements.map(|x| x.into_int_value()).collect::<Vec<_>>())
-            }
-            BasicTypeEnum::FloatType(el) => {
-                el.const_array(&elements.map(|x| x.into_float_value()).collect::<Vec<_>>())
-            }
-            BasicTypeEnum::PointerType(el) => {
-                el.const_array(&elements.map(|x| x.into_pointer_value()).collect::<Vec<_>>())
-            }
-            BasicTypeEnum::ArrayType(el) => {
-                el.const_array(&elements.map(|x| x.into_array_value()).collect::<Vec<_>>())
-            }
-            BasicTypeEnum::StructType(el) => {
-                el.const_array(&elements.map(|x| x.into_struct_value()).collect::<Vec<_>>())
-            }
-            BasicTypeEnum::VectorType(el) => {
-                el.const_array(&elements.map(|x| x.into_vector_value()).collect::<Vec<_>>())
-            }
+        let mem = match arr_ty.get_element_type() {
+            BasicTypeEnum::IntType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * el.get_bit_width() as usize),
+                el.array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+            BasicTypeEnum::FloatType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * 32),
+                el.array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+            BasicTypeEnum::PointerType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * 64),
+                el.array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+            BasicTypeEnum::ArrayType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * 64),
+                el.ptr_type(inkwell::AddressSpace::Generic)
+                    .array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+            BasicTypeEnum::StructType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * 64),
+                el.ptr_type(inkwell::AddressSpace::Generic)
+                    .array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+            BasicTypeEnum::VectorType(el) => self.builder.build_pointer_cast(
+                self.alloc_heap(elements.len() * 64),
+                el.ptr_type(inkwell::AddressSpace::Generic)
+                    .array_type(elements.len() as u32)
+                    .ptr_type(inkwell::AddressSpace::Generic),
+                "",
+            ),
+        };
+        for (i, element) in elements.enumerate() {
+            let ptr = unsafe {
+                println!("Looping unsafe calculation");
+                self.builder.build_in_bounds_gep(
+                    mem,
+                    &[
+                        self.context.i64_type().const_zero(),
+                        self.context.i32_type().const_int(i as u64, false),
+                    ],
+                    "array_initialise",
+                )
+            };
+            self.builder.build_store(ptr, *element);
         }
+        mem
     }
 
     fn compile_expression(
         &self,
         exp: &ExpEnvironment,
-        variables: &HashMap<String, PointerValue<'ctx>>,
+        variables: &mut HashMap<String, PointerValue<'ctx>>,
         parent: Option<&FunctionValue<'ctx>>,
     ) -> BasicValueEnum<'ctx> {
         match *exp.expression.clone() {
@@ -417,7 +477,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let rhs = self.compile_expression(&right, variables, parent);
                 comp_bin_op(&op, lhs, rhs, self, parent)
             }
-            CompExpression::Read(var) => self.load_variable(variables, &var.name),
+            CompExpression::Read(var) => {
+                if var.typing.is_primitive() {
+                    self.load_variable(variables, &var.name)
+                } else {
+                    variables.get(&var.name).unwrap().as_basic_value_enum()
+                }
+            }
             CompExpression::Assign(var, exp) => match *var.expression {
                 CompExpression::Read(var) => match *exp.expression {
                     CompExpression::Value(CompData::Func(func)) => {
@@ -447,7 +513,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                                     .as_basic_value_enum();
                             }
                         }
-                        self.builder.build_store(var_ptr, val);
+                        if val.is_pointer_value() {
+                            variables.insert(var.name, val.into_pointer_value());
+                        } else {
+                            self.builder.build_store(var_ptr, val);
+                        };
                         val
                     }
                 },
@@ -556,11 +626,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
             }
             CompExpression::Array(elements) => {
-                let var = self.add_variable_to_block(
-                    "array",
-                    exp.result_type.get_compiler_type(self.context),
-                    parent.unwrap(),
-                );
                 let elements = elements
                     .iter()
                     .map(|x| self.compile_expression(x, variables, parent))
@@ -569,9 +634,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .result_type
                     .get_compiler_type(self.context)
                     .into_array_type();
-                let arr = self.create_array(arr_ty, elements).as_basic_value_enum();
-                self.builder.build_store(var, arr);
-                var.as_basic_value_enum()
+                self.create_array(arr_ty, elements).as_basic_value_enum()
             }
             other => panic!("Not implemented '{:?}'", other),
         }
@@ -620,8 +683,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 variables.insert(name, var);
             });
         // compile body
-        let body =
-            self.compile_expression(&func.body.clone().unwrap().body, &variables, Some(&fn_val));
+        let body = self.compile_expression(
+            &func.body.clone().unwrap().body,
+            &mut variables,
+            Some(&fn_val),
+        );
         match func.return_type {
             CompType::Null => self.builder.build_return(Some(
                 &self
@@ -634,6 +700,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         };
 
         // return the whole thing after verification and optimization
+
         if !fn_val.verify(true) {
             self.module.print_to_stderr();
             panic!("Invalid generated function.")
@@ -717,7 +784,7 @@ pub fn compile(ast: &Program, settings: Settings) {
         }
     });
 
-    compiler.compile_expression(&ast.body, &HashMap::new(), None);
+    compiler.compile_expression(&ast.body, &mut HashMap::new(), None);
 
     Target::initialize_x86(&InitializationConfig::default());
     let opt = OptimizationLevel::Default;

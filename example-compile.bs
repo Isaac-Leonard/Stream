@@ -36,7 +36,10 @@ let main=():Int => {
     }
     hello [x]  =65;
     let arr=[4,8,7]
+    let arr2 = [[1,2,3],[4,5,6],[7,8,9]]
     arr[1]=30
+arr2[2]=arr;
+arr2[0]=[4,3,2]
     puts(hello)
     newLine()
     0
