@@ -444,7 +444,7 @@ impl TempScope {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum CompType {
     Not(Box<Self>),
     Callible(Vec<Self>, Box<Self>),
@@ -574,24 +574,6 @@ impl CompType {
                 }
             }
             Generic(name) => Generic(name.clone()),
-        }
-    }
-
-    pub fn get_discriminant(&self) -> i8 {
-        use CompType::*;
-        match self {
-            Null => 0,
-            Bool => 1,
-            Int => 2,
-            Float => 3,
-            Str(_) => 4,
-            Callible(_, _) => 5,
-            Type => 6,
-            Union(_) => 7, // Treat as the same for now
-            Not(_) => 7,
-            Ptr => 8,
-            Generic(_) => 9,
-            Array(_, _) => 10,
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::settings::Settings;
+use fxhash::hash32;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 
@@ -80,15 +81,15 @@ fn get_value<'a, 'ctx>(
             };
             let struct_ty = compiler.context.struct_type(
                 &[
-                    compiler.context.i8_type().as_basic_type_enum(),
+                    compiler.context.i32_type().as_basic_type_enum(),
                     compiler.context.i32_type().as_basic_type_enum(),
                 ],
                 false,
             );
-            let discriminant = current.get_type().get_discriminant();
+            let discriminant = get_discriminant(&current.get_type());
             let discriminant = compiler
                 .context
-                .i8_type()
+                .i32_type()
                 .const_int(discriminant as u64, false)
                 .as_basic_value_enum();
             let val = match *current.to_owned() {
@@ -288,6 +289,10 @@ fn comp_bin_op_str<'a, 'ctx>(
         }
         x => panic!("Operator '{}' is not supported for strings", x.get_str()),
     }
+}
+
+fn get_discriminant(ty: &CompType) -> u32 {
+    hash32(ty)
 }
 
 pub struct Compiler<'a, 'ctx> {
@@ -506,7 +511,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                                     .const_named_struct(&[
                                         self.context
                                             .i8_type()
-                                            .const_int(ty.get_discriminant() as u64, false)
+                                            .const_int(get_discriminant(&ty) as u64, false)
                                             .as_basic_value_enum(),
                                         val,
                                     ])
@@ -621,7 +626,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 } else {
                     self.context
                         .i8_type()
-                        .const_int(var.typing.get_discriminant() as u64, false)
+                        .const_int(get_discriminant(&var.typing) as u64, false)
                         .as_basic_value_enum()
                 }
             }
@@ -639,7 +644,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             other => panic!("Not implemented '{:?}'", other),
         }
     }
-    fn create_function(&'a self, func: &FunctionAst, name: &str) -> FunctionValue<'ctx> {
+    fn create_function(&self, func: &FunctionAst, name: &str) -> FunctionValue<'ctx> {
         let fn_val = self.module.get_function(name).expect(&format!(
             "Expected function {} to have been added to module before compiling",
             name
