@@ -483,7 +483,7 @@ impl CompType {
                 .get_compiler_type(context)
                 .array_type(len as u32)
                 .as_basic_type_enum(),
-            Type => context.i8_type().as_basic_type_enum(),
+            Type => context.i32_type().as_basic_type_enum(),
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
@@ -496,7 +496,7 @@ impl CompType {
             Union(_) => context
                 .struct_type(
                     &[
-                        context.i8_type().as_basic_type_enum(),
+                        context.i32_type().as_basic_type_enum(),
                         context.i32_type().as_basic_type_enum(),
                     ],
                     false,

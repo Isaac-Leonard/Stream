@@ -29,26 +29,10 @@ fn get_value<'a, 'ctx>(
     fn_val: Option<&FunctionValue<'ctx>>,
 ) -> BasicValueEnum<'ctx> {
     match val {
-        CompData::Int(int) => compiler
-            .context
-            .i32_type()
-            .const_int(*int as u64, false)
-            .as_basic_value_enum(),
-        CompData::Bool(bool) => compiler
-            .context
-            .bool_type()
-            .const_int(*bool as u64, false)
-            .as_basic_value_enum(),
-        CompData::Float(float) => compiler
-            .context
-            .f32_type()
-            .const_float(*float as f64)
-            .as_basic_value_enum(),
-        CompData::Null => compiler
-            .context
-            .custom_width_int_type(1)
-            .const_int(0, false)
-            .as_basic_value_enum(),
+        CompData::Int(int) => compiler.i32(*int),
+        CompData::Bool(bool) => compiler.custom_int(1, *bool as i8),
+        CompData::Float(float) => compiler.f32(*float),
+        CompData::Null => compiler.custom_int(1, 0),
         CompData::Str(str) => {
             let var = compiler.add_variable_to_block(
                 "string",
@@ -61,7 +45,7 @@ fn get_value<'a, 'ctx>(
                 .const_array(
                     str.chars()
                         .chain(['\0'])
-                        .map(|x| compiler.context.i8_type().const_int(x as u64, false))
+                        .map(|x| compiler.i8(x as i8).into_int_value())
                         .collect::<Vec<_>>()
                         .as_slice(),
                 )
@@ -73,7 +57,15 @@ fn get_value<'a, 'ctx>(
             let compilable = allowed
                 .get_variants()
                 .iter()
-                .filter(|x| !vec![CompType::Int, CompType::Float].contains(x))
+                .filter(|x| {
+                    !vec![
+                        CompType::Int,
+                        CompType::Float,
+                        CompType::Null,
+                        CompType::Bool,
+                    ]
+                    .contains(x)
+                })
                 .count()
                 == 0;
             if !compilable {
@@ -87,31 +79,15 @@ fn get_value<'a, 'ctx>(
                 false,
             );
             let discriminant = get_discriminant(&current.get_type());
-            let discriminant = compiler
-                .context
-                .i32_type()
-                .const_int(discriminant as u64, false)
-                .as_basic_value_enum();
+            let discriminant = compiler.i32(discriminant as i32);
             let val = match *current.to_owned() {
-                CompData::Int(val) => compiler
-                    .context
-                    .i32_type()
-                    .const_int(val as u64, false)
-                    .as_basic_value_enum(),
+                CompData::Int(val) => compiler.i32(val),
                 CompData::Float(val) => compiler.builder.build_bitcast(
-                    compiler
-                        .context
-                        .f32_type()
-                        .const_float(val as f64)
-                        .as_basic_value_enum(),
+                    compiler.f32(val),
                     compiler.context.i32_type().as_basic_type_enum(),
                     "union_cast",
                 ),
-                CompData::Null => compiler
-                    .context
-                    .i32_type()
-                    .const_zero()
-                    .as_basic_value_enum(),
+                CompData::Null => compiler.i32(0),
                 other => panic!("value {:?} not allowed in {}", other, allowed),
             };
             struct_ty
@@ -302,6 +278,28 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    fn i32(&self, val: i32) -> BasicValueEnum<'ctx> {
+        (self.context.i32_type().const_int(val as u64, false)).as_basic_value_enum()
+    }
+
+    fn i64(&self, val: i64) -> BasicValueEnum<'ctx> {
+        (self.context.i64_type().const_int(val as u64, false)).as_basic_value_enum()
+    }
+
+    fn custom_int(&self, width: u8, val: i8) -> BasicValueEnum<'ctx> {
+        (self.context.custom_width_int_type(width as u32))
+            .const_int(val as u64, false)
+            .as_basic_value_enum()
+    }
+
+    fn i8(&self, val: i8) -> BasicValueEnum<'ctx> {
+        (self.context.i8_type().const_int(val as u64, false)).as_basic_value_enum()
+    }
+
+    fn f32(&self, val: f32) -> BasicValueEnum<'ctx> {
+        (self.context.f32_type().const_float(val as f64)).as_basic_value_enum()
+    }
+
     fn alloc_heap(&self, bytes: usize) -> PointerValue<'ctx> {
         let malloc = self.module.get_function("malloc").unwrap_or_else(|| {
             let fn_val = self
@@ -318,9 +316,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         self.builder
             .build_call(
                 malloc,
-                &[BasicMetadataValueEnum::from(
-                    self.context.i64_type().const_int(bytes as u64, false),
-                )],
+                &[BasicMetadataValueEnum::from(self.i64(bytes as i64))],
                 "malloc",
             )
             .try_as_basic_value()
@@ -368,7 +364,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         unsafe {
             self.builder.build_in_bounds_gep(
                 comp_arr,
-                &[self.context.i32_type().const_zero(), index.into_int_value()],
+                &[self.i32(0).into_int_value(), index.into_int_value()],
                 "calc_pos",
             )
         }
@@ -427,8 +423,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.builder.build_in_bounds_gep(
                     mem,
                     &[
-                        self.context.i64_type().const_zero(),
-                        self.context.i32_type().const_int(i as u64, false),
+                        self.i64(0).into_int_value(),
+                        self.i32(i as i32).into_int_value(),
                     ],
                     "array_initialise",
                 )
@@ -493,10 +489,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 CompExpression::Read(var) => match *exp.expression {
                     CompExpression::Value(CompData::Func(func)) => {
                         self.create_function(&func, &var.name);
-                        self.context
-                            .custom_width_int_type(1)
-                            .const_int(0, false)
-                            .as_basic_value_enum()
+                        self.custom_int(1, 0)
                     }
                     _ => {
                         let mut val = self.compile_expression(&exp, variables, parent);
@@ -509,10 +502,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                                     .get_compiler_type(self.context)
                                     .into_struct_type()
                                     .const_named_struct(&[
-                                        self.context
-                                            .i8_type()
-                                            .const_int(get_discriminant(&ty) as u64, false)
-                                            .as_basic_value_enum(),
+                                        self.i32(get_discriminant(&ty) as i32),
                                         val,
                                     ])
                                     .as_basic_value_enum();
@@ -576,9 +566,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 // emit merge block
                 self.builder.position_at_end(cont_bb);
 
-                let phi = self
-                    .builder
-                    .build_phi(self.context.custom_width_int_type(32), "iftmp");
+                let phi = self.builder.build_phi(self.context.i32_type(), "iftmp");
 
                 phi.add_incoming(&[(&then_val, then_bb), (&else_val, else_bb)]);
 
@@ -606,13 +594,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.builder
                     .build_conditional_branch(end_cond, loop_bb, after_bb);
                 self.builder.position_at_end(after_bb);
-                self.context.i64_type().const_zero().as_basic_value_enum()
+                self.i64(0)
             }
             CompExpression::List(expressions) => expressions
                 .iter()
                 .map(|x| self.compile_expression(x, variables, parent))
                 .last()
-                .unwrap_or_else(|| self.context.i32_type().const_zero().as_basic_value_enum()),
+                .unwrap_or_else(|| self.i32(0)),
             CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent),
             CompExpression::Index(arr, index) => {
                 let ptr = self.calc_pos(&arr, &index, variables, parent);
@@ -624,10 +612,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     let union = self.load_variable(variables, &var.name).into_struct_value();
                     self.extract_element(union, 0)
                 } else {
-                    self.context
-                        .i8_type()
-                        .const_int(get_discriminant(&var.typing) as u64, false)
-                        .as_basic_value_enum()
+                    self.i32(get_discriminant(&var.typing) as i32)
                 }
             }
             CompExpression::Array(elements) => {
@@ -694,13 +679,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             Some(&fn_val),
         );
         match func.return_type {
-            CompType::Null => self.builder.build_return(Some(
-                &self
-                    .context
-                    .custom_width_int_type(1)
-                    .const_int(0, false)
-                    .as_basic_value_enum(),
-            )),
+            CompType::Null => self.builder.build_return(Some(&self.custom_int(1, 0))),
             _ => self.builder.build_return(Some(&body)),
         };
 
