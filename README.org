@@ -17,7 +17,7 @@ then run the produced binary
 ** Dependencies
 The only current dependencies iare the Chumsky package for parsing found at https://github.com/zesterer/chumsky and inkwell for ergonomically interfacing  with LLVM found at https://github.com/TheDan64/inkwell.
 Initially I explored using parser generators that took EBNF as input however could not find any that did what I wanted and had as much control as chomsky.
-
+I also use the fxhash crate for deterministic hashing of types for run time matching of tagged unions.
 ** Road map
 The following is a list of features I intend to implement in the short term (next three months) however my time is limited and some features may require others to be implemented first or may require major rewrites in the compiler internals so this is currently still unreliable.
 In order of likely implementation:
