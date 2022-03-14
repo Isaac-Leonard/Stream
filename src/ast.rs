@@ -1,5 +1,4 @@
 use crate::errors::CompError;
-use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter};
 
@@ -450,6 +449,7 @@ pub enum CompType {
     Callible(Vec<Self>, Box<Self>),
     Union(Vec<Self>),
     Array(Box<CompType>, usize),
+    Struct(Vec<(String, CompType)>),
     Null,
     Bool,
     Int,
@@ -546,6 +546,14 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Struct(keys) => {
+                let mut keys = keys
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.flatten()))
+                    .collect::<Vec<_>>();
+                keys.sort_by(|a, b| a.0.cmp(&b.0));
+                Struct(keys)
+            }
             Not(ty) => {
                 if let Not(ty) = &**ty {
                     ty.flatten()
@@ -582,6 +590,13 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Struct(keys) => write!(
+                f,
+                "{{{}}}",
+                keys.iter()
+                    .map(|(k, v)| format!("{}: {};", k, v))
+                    .fold(String::from(""), |a, b| format!("{};\n{}", a, b))
+            ),
             Not(ty) => write!(f, "Not<{}>", ty),
             Type => write!(f, "Type"),
             Array(ty, len) => write!(f, "[{}, {}]", ty, len),
