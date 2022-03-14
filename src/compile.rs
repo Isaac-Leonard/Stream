@@ -475,7 +475,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         variables: &mut HashMap<String, PointerValue<'ctx>>,
         parent: Option<&FunctionValue<'ctx>>,
     ) -> BasicValueEnum<'ctx> {
-        match *exp.expression.clone() {
+        match exp.expression.as_ref() {
             CompExpression::Call(var, args) => {
                 let func = self.module.get_function(&var.name).unwrap();
                 let compiled_args = args
@@ -509,9 +509,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
             }
             CompExpression::BinOp(op, left, right) => {
-                let lhs = self.compile_expression(&left, variables, parent);
-                let rhs = self.compile_expression(&right, variables, parent);
-                comp_bin_op(&op, lhs, rhs, self, parent)
+                let lhs = self.compile_expression(left, variables, parent);
+                let rhs = self.compile_expression(right, variables, parent);
+                comp_bin_op(op, lhs, rhs, self, parent)
             }
             CompExpression::Read(var) => {
                 if var.typing.is_primitive() {
@@ -520,31 +520,31 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     variables.get(&var.name).unwrap().as_basic_value_enum()
                 }
             }
-            CompExpression::Assign(var, exp) => match *var.expression {
-                CompExpression::Read(var) => match *exp.expression {
+            CompExpression::Assign(var, exp) => match var.expression.as_ref() {
+                CompExpression::Read(var) => match exp.expression.as_ref() {
                     CompExpression::Value(CompData::Func(func)) => {
-                        self.create_function(&func, &var.name);
+                        self.create_function(func, &var.name);
                         self.custom_int(1, 0)
                     }
                     _ => {
-                        let mut val = self.compile_expression(&exp, variables, parent);
+                        let mut val = self.compile_expression(exp, variables, parent);
                         let var_ptr = *variables.get(&var.name).unwrap();
                         if var.typing.is_union() {
-                            let ty = exp.result_type;
+                            let ty = &exp.result_type;
                             if !ty.is_union() {
                                 val = var
                                     .typing
                                     .get_compiler_type(self.context)
                                     .into_struct_type()
                                     .const_named_struct(&[
-                                        self.i32(get_discriminant(&ty) as i32),
+                                        self.i32(get_discriminant(ty) as i32),
                                         val,
                                     ])
                                     .as_basic_value_enum();
                             }
                         }
                         if val.is_pointer_value() {
-                            variables.insert(var.name, val.into_pointer_value());
+                            variables.insert(var.name.clone(), val.into_pointer_value());
                         } else {
                             self.builder.build_store(var_ptr, val);
                         };
@@ -556,25 +556,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         panic!("Cannot yet store functions in an array")
                     }
                     _ => {
-                        let mut val = self.compile_expression(&exp, variables, parent);
+                        let mut val = self.compile_expression(exp, variables, parent);
                         if arr.result_type.is_str() {
                             val = self.cast_to_i8(val.into_int_value()).as_basic_value_enum();
                         };
-                        let index_ptr = self.calc_pos(&arr, &index, variables, parent);
+                        let index_ptr = self.calc_pos(arr, index, variables, parent);
                         self.builder.build_store(index_ptr, val);
                         val
                     }
                 },
                 _ => panic!("{:?} not supported on lhs of assignment", var),
             },
-            CompExpression::Value(val) => get_value(&val, self, parent),
+            CompExpression::Value(val) => get_value(val, self, parent),
             CompExpression::IfElse {
                 cond,
                 then,
                 otherwise,
             } => {
                 let cond = self
-                    .compile_expression(&cond, variables, parent)
+                    .compile_expression(cond, variables, parent)
                     .into_int_value();
 
                 let then_bb = self.context.append_basic_block(*parent.unwrap(), "then");
@@ -586,14 +586,14 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                 // build then block
                 self.builder.position_at_end(then_bb);
-                let then_val = self.compile_expression(&then, variables, parent);
+                let then_val = self.compile_expression(then, variables, parent);
                 self.builder.build_unconditional_branch(cont_bb);
 
                 let then_bb = self.builder.get_insert_block().unwrap();
 
                 // build else block
                 self.builder.position_at_end(else_bb);
-                let else_val = self.compile_expression(&otherwise, variables, parent);
+                let else_val = self.compile_expression(otherwise, variables, parent);
                 self.builder.build_unconditional_branch(cont_bb);
 
                 let else_bb = self.builder.get_insert_block().unwrap();
@@ -615,11 +615,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 self.builder.position_at_end(loop_bb);
 
                 // emit body
-                self.compile_expression(&body, variables, parent);
+                self.compile_expression(body, variables, parent);
 
                 // compile end condition
                 let end_cond = self
-                    .compile_expression(&cond, variables, parent)
+                    .compile_expression(cond, variables, parent)
                     .into_int_value();
 
                 let after_bb = self
@@ -638,7 +638,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 .unwrap_or_else(|| self.i32(0)),
             CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent),
             CompExpression::Index(arr, index) => {
-                let ptr = self.calc_pos(&arr, &index, variables, parent);
+                let ptr = self.calc_pos(arr, index, variables, parent);
                 let val = self.builder.build_load(ptr, "indexing").into_int_value();
                 self.cast_to_i32(val).as_basic_value_enum()
             }
