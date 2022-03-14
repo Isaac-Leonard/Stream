@@ -26,13 +26,11 @@ let main=():Int => {
 	x=x+1
     }
     newLine();
-    let union:Int|Float=4.0;
-    let unionType=typeof union;
-    let intType=(typeof x);
-    if unionType==intType {
-        puts("Int");
+    let union:Int|Null=null;
+    if (typeof union)==(typeof null){
+        puts("null");
     } else{
-        puts("Float")
+        puts("int")
     }
     hello [x]  =65;
     let arr=[4,8,7]

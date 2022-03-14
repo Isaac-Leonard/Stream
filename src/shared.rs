@@ -92,10 +92,9 @@ fn transform_exp(
                 return Err(errors.iter().flatten().cloned().collect());
             }
         }
-        Expression::Typeof(name, loc) => scope
-            .get_variable(name)
-            .map(CompExpression::Typeof)
-            .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?,
+        Expression::Typeof(exp, loc) => {
+            transform_exp(exp, env, scope).map(CompExpression::Typeof)?
+        }
         Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, env, scope)?;
             let index_exp = transform_exp(index, env, scope)?;

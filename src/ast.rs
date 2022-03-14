@@ -36,7 +36,7 @@ pub struct ImportFrom {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     TypeDeclaration(String, CustomType, Range<usize>),
-    Typeof(String, Range<usize>),
+    Typeof(Box<Expression>, Range<usize>),
     Array(Vec<Expression>, Range<usize>),
     BinOp(Op, Box<Expression>, Box<Expression>, Range<usize>),
     Terminal(Symbol, Range<usize>),
@@ -290,7 +290,7 @@ impl CompData {
 pub enum CompExpression {
     Value(CompData),
     Array(Vec<ExpEnvironment>),
-    Typeof(CompVariable),
+    Typeof(ExpEnvironment),
     BinOp(Op, ExpEnvironment, ExpEnvironment),
     Read(CompVariable),
     OneOp(Prefix, ExpEnvironment),

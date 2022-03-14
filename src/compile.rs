@@ -68,16 +68,11 @@ fn get_value<'a, 'ctx>(
             );
             let discriminant = get_discriminant(&current.get_type());
             let discriminant = compiler.i32(discriminant as i32);
-            let val = match *current.to_owned() {
-                CompData::Int(val) => compiler.i32(val),
-                CompData::Float(val) => compiler.builder.build_bitcast(
-                    compiler.f32(val),
-                    compiler.context.i32_type().as_basic_type_enum(),
-                    "union_cast",
-                ),
-                CompData::Null => compiler.i32(0),
-                other => panic!("value {:?} not allowed in {}", other, allowed),
-            };
+            let val = compiler.builder.build_bitcast(
+                get_value(current, compiler, fn_val),
+                compiler.context.i32_type().as_basic_type_enum(),
+                "union_cast",
+            );
             struct_ty
                 .const_named_struct(&[discriminant, val])
                 .as_basic_value_enum()
@@ -630,12 +625,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let val = self.builder.build_load(ptr, "indexing").into_int_value();
                 self.cast_to_i32(val).as_basic_value_enum()
             }
-            CompExpression::Typeof(var) => {
-                if var.typing.is_union() {
-                    let union = self.load_variable(variables, &var.name).into_struct_value();
-                    self.extract_element(union, 0)
+            CompExpression::Typeof(exp) => {
+                // TODO: Optimise away once we introduce purity specifiers
+                let res_exp = self.compile_expression(exp, variables, parent);
+                if exp.result_type.is_union() {
+                    self.extract_element(res_exp.into_struct_value(), 0)
                 } else {
-                    self.i32(get_discriminant(&var.typing) as i32)
+                    self.i32(get_discriminant(&exp.result_type) as i32)
                 }
             }
             CompExpression::Array(elements) => {

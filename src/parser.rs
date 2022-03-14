@@ -229,7 +229,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
 
         let typeof_check = raw("typeof")
             .then(whitespace())
-            .ignore_then(ident().map(String::from))
+            .ignore_then(exp.clone().map(Box::new))
             .map_with_span(Typeof);
 
         let if_parser = raw("if")
