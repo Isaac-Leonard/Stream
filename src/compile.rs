@@ -266,13 +266,25 @@ impl CompType {
             Array(ty, len) => ty
                 .get_compiler_type(context)
                 .array_type(len as u32)
+                .ptr_type(inkwell::AddressSpace::Generic)
                 .as_basic_type_enum(),
             Type => context.i32_type().as_basic_type_enum(),
             Int => context.i32_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
             Bool => context.custom_width_int_type(1).as_basic_type_enum(),
-            Str(len) => context.i8_type().array_type(len + 1).as_basic_type_enum(),
+            Str(len) => context
+                .i8_type()
+                .array_type(len + 1)
+                .ptr_type(inkwell::AddressSpace::Generic)
+                .as_basic_type_enum(),
+            Struct(keys) => context
+                .struct_type(
+                    map_vec!(keys, |(_, ty)| ty.get_compiler_type(context)).as_slice(),
+                    false,
+                )
+                .ptr_type(inkwell::AddressSpace::Generic)
+                .as_basic_type_enum(),
             Ptr => context
                 .i8_type()
                 .ptr_type(inkwell::AddressSpace::Generic)
@@ -632,6 +644,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let arr_ty = exp
                     .result_type
                     .get_compiler_type(self.context)
+                    .into_pointer_type()
+                    .get_element_type()
                     .into_array_type();
                 self.create_array(arr_ty, elements).as_basic_value_enum()
             }
