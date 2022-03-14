@@ -1,5 +1,5 @@
-use crate::ast::*;
 use crate::settings::Settings;
+use crate::{ast::*, map_vec};
 use fxhash::hash32;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -478,35 +478,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         match exp.expression.as_ref() {
             CompExpression::Call(var, args) => {
                 let func = self.module.get_function(&var.name).unwrap();
-                let compiled_args = args
-                    .iter()
-                    .map(|arg| {
-                        let val = self.compile_expression(arg, variables, parent);
-                        match val {
-                            BasicValueEnum::PointerValue(x) => self.builder.build_bitcast(
-                                x,
-                                self.context
-                                    .i8_type()
-                                    .ptr_type(inkwell::AddressSpace::Generic),
-                                "cast",
-                            ),
-                            x => x,
-                        }
-                    })
-                    .collect::<Vec<BasicValueEnum>>();
-                let argv = compiled_args
-                    .iter()
-                    .map(|x| BasicMetadataValueEnum::from(*x))
-                    .collect::<Vec<BasicMetadataValueEnum>>();
-                match self
-                    .builder
+                let compiled_args = map_vec!(args, |arg| {
+                    let val = self.compile_expression(arg, variables, parent);
+                    match val {
+                        BasicValueEnum::PointerValue(x) => self.builder.build_bitcast(
+                            x,
+                            self.context
+                                .i8_type()
+                                .ptr_type(inkwell::AddressSpace::Generic),
+                            "cast",
+                        ),
+                        x => x,
+                    }
+                });
+                let argv = map_vec!(compiled_args, |x| BasicMetadataValueEnum::from(*x));
+                self.builder
                     .build_call(func, argv.as_slice(), &var.name)
                     .try_as_basic_value()
                     .left()
-                {
-                    Some(value) => value,
-                    None => panic!("Invalid call produced."),
-                }
+                    .expect("Invalid call produced.")
             }
             CompExpression::BinOp(op, left, right) => {
                 let lhs = self.compile_expression(left, variables, parent);
@@ -532,14 +522,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         if var.typing.is_union() {
                             let ty = &exp.result_type;
                             if !ty.is_union() {
+                                let discriminant = self.i32(get_discriminant(ty) as i32);
                                 val = var
                                     .typing
                                     .get_compiler_type(self.context)
                                     .into_struct_type()
-                                    .const_named_struct(&[
-                                        self.i32(get_discriminant(ty) as i32),
-                                        val,
-                                    ])
+                                    .const_named_struct(&[discriminant, val])
                                     .as_basic_value_enum();
                             }
                         }
@@ -651,10 +639,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
             }
             CompExpression::Array(elements) => {
-                let elements = elements
-                    .iter()
-                    .map(|x| self.compile_expression(x, variables, parent))
-                    .collect::<Vec<_>>();
+                let elements =
+                    map_vec!(elements, |x| self.compile_expression(x, variables, parent));
                 let arr_ty = exp
                     .result_type
                     .get_compiler_type(self.context)
@@ -664,22 +650,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             other => panic!("Not implemented '{:?}'", other),
         }
     }
+
     fn create_function(&self, func: &FunctionAst, name: &str) -> FunctionValue<'ctx> {
-        let fn_val = self.module.get_function(name).expect(&format!(
-            "Expected function {} to have been added to module before compiling",
-            name
-        ));
+        let error = format!("Expected fn {} to have been added before compiling", name);
+        let fn_val = self.module.get_function(name).expect(&error);
         if func.body == None {
             return fn_val;
         }
 
         let entry = self.context.append_basic_block(fn_val, "entry");
-
         self.builder.position_at_end(entry);
-
         // build variables map
         let mut variables: HashMap<String, PointerValue<'ctx>> = HashMap::new();
-
         for (i, arg) in fn_val.get_param_iter().enumerate() {
             let arg_name = func.arguments[i].name.as_str();
             let ty = func.arguments[i].typing.get_compiler_type(self.context);
@@ -688,12 +670,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             variables.insert(arg_name.to_string(), var);
         }
         let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
-        func.body
-            .clone()
-            .unwrap()
-            .scope
-            .variables
-            .iter()
+        (func.body.clone().unwrap().scope.variables.iter())
             .filter(|x| !arg_names.contains(x.0))
             .for_each(|x| {
                 let ty = x.1.typing.clone();
@@ -745,20 +722,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         builder.build_alloca(ty, name)
     }
+
     pub fn create_function_shape(&self, func: &CompType) -> FunctionType<'ctx> {
         if let CompType::Callible(arguments, return_type) = func {
-            let args_types = arguments
-                .iter()
-                .map(|x| {
-                    match x.get_compiler_type(self.context) {
-                        inkwell::types::BasicTypeEnum::ArrayType(x) => x
-                            .ptr_type(inkwell::AddressSpace::Generic)
-                            .as_basic_type_enum(),
-                        x => x,
-                    }
-                    .into()
-                })
-                .collect::<Vec<BasicMetadataTypeEnum>>();
+            let args_types = map_vec!(arguments, |x| {
+                match x.get_compiler_type(self.context) {
+                    inkwell::types::BasicTypeEnum::ArrayType(x) => x
+                        .ptr_type(inkwell::AddressSpace::Generic)
+                        .as_basic_type_enum(),
+                    x => x,
+                }
+                .into()
+            });
             let args_types = args_types.as_slice();
 
             return_type
