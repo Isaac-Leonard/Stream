@@ -5,11 +5,6 @@ use std::fmt::{self, Display, Formatter};
 use std::rc::Rc;
 use std::{collections::HashMap, ops::Range};
 
-use inkwell::{
-    context::Context,
-    types::{BasicType, BasicTypeEnum},
-};
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
     Data(RawData),
@@ -476,38 +471,6 @@ impl CompType {
         }
     }
 
-    pub fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
-        use CompType::*;
-        match self.clone() {
-            Array(ty, len) => ty
-                .get_compiler_type(context)
-                .array_type(len as u32)
-                .as_basic_type_enum(),
-            Type => context.i32_type().as_basic_type_enum(),
-            Int => context.i32_type().as_basic_type_enum(),
-            Float => context.f32_type().as_basic_type_enum(),
-            Null => context.custom_width_int_type(1).as_basic_type_enum(),
-            Bool => context.custom_width_int_type(1).as_basic_type_enum(),
-            Str(len) => context.i8_type().array_type(len + 1).as_basic_type_enum(),
-            Ptr => context
-                .i8_type()
-                .ptr_type(inkwell::AddressSpace::Generic)
-                .as_basic_type_enum(),
-            Union(_) => context
-                .struct_type(
-                    &[
-                        context.i32_type().as_basic_type_enum(),
-                        context.i32_type().as_basic_type_enum(),
-                    ],
-                    false,
-                )
-                .as_basic_type_enum(),
-            _ => panic!(
-                "get_compiler_type not implemented for type '{}'",
-                self.get_str()
-            ),
-        }
-    }
     pub fn super_of(&self, ty: &CompType) -> bool {
         if self == ty || (self == &CompType::Ptr && ty.is_str()) {
             true

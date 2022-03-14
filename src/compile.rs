@@ -271,6 +271,41 @@ fn get_discriminant(ty: &CompType) -> u32 {
     hash32(ty)
 }
 
+impl CompType {
+    fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
+        use CompType::*;
+        match self.clone() {
+            Array(ty, len) => ty
+                .get_compiler_type(context)
+                .array_type(len as u32)
+                .as_basic_type_enum(),
+            Type => context.i32_type().as_basic_type_enum(),
+            Int => context.i32_type().as_basic_type_enum(),
+            Float => context.f32_type().as_basic_type_enum(),
+            Null => context.custom_width_int_type(1).as_basic_type_enum(),
+            Bool => context.custom_width_int_type(1).as_basic_type_enum(),
+            Str(len) => context.i8_type().array_type(len + 1).as_basic_type_enum(),
+            Ptr => context
+                .i8_type()
+                .ptr_type(inkwell::AddressSpace::Generic)
+                .as_basic_type_enum(),
+            Union(_) => context
+                .struct_type(
+                    &[
+                        context.i32_type().as_basic_type_enum(),
+                        context.i32_type().as_basic_type_enum(),
+                    ],
+                    false,
+                )
+                .as_basic_type_enum(),
+            _ => panic!(
+                "get_compiler_type not implemented for type '{}'",
+                self.get_str()
+            ),
+        }
+    }
+}
+
 pub struct Compiler<'a, 'ctx> {
     pub context: &'ctx Context,
     pub builder: &'a Builder<'ctx>,
