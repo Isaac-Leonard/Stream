@@ -33,26 +33,14 @@ fn get_value<'a, 'ctx>(
         CompData::Bool(bool) => compiler.custom_int(1, *bool as i8),
         CompData::Float(float) => compiler.f32(*float),
         CompData::Null => compiler.custom_int(1, 0),
-        CompData::Str(str) => {
-            let var = compiler.add_variable_to_block(
-                "string",
-                val.get_type().get_compiler_type(compiler.context),
-                fn_val.unwrap(),
-            );
-            let string = compiler
-                .context
-                .i8_type()
-                .const_array(
-                    str.chars()
-                        .chain(['\0'])
-                        .map(|x| compiler.i8(x as i8).into_int_value())
-                        .collect::<Vec<_>>()
-                        .as_slice(),
-                )
-                .as_basic_value_enum();
-            compiler.builder.build_store(var, string);
-            var.as_basic_value_enum()
-        }
+        CompData::Str(str) => compiler
+            .create_array(
+                compiler.context.i8_type().array_type(str.len() as u32 + 1),
+                (str.chars().chain(['\0']))
+                    .map(|x| compiler.i8(x as i8))
+                    .collect::<Vec<_>>(),
+            )
+            .as_basic_value_enum(),
         CompData::Multi(allowed, current) => {
             let compilable = allowed
                 .get_variants()
