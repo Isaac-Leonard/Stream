@@ -41,6 +41,9 @@ arr2[0]=[4,3,2]
     puts(hello)
     newLine()
     let point = {x:4, y:3+8};
+    let area = (point.x)*(point . y);
+    putchar(area+65);
+    newLine()
     0
     }
 }

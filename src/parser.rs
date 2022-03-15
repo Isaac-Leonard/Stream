@@ -304,7 +304,11 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .or(array_parser)
             .then_ignore(whitespace().then(just(';')).or_not())
             .boxed();
-
+        let expression = (expression.clone().map(Box::new))
+            .then_ignore(raw(".").padded())
+            .then(ident().map(String::from))
+            .map_with_span(|exp, range| DotAccess(exp.0, exp.1, range))
+            .or(expression);
         expression.or(block_exp)
     })
 }

@@ -35,6 +35,7 @@ pub struct ImportFrom {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
+    DotAccess(Box<Expression>, String, Range<usize>),
     Struct(Vec<(String, Expression)>, Range<usize>),
     TypeDeclaration(String, CustomType, Range<usize>),
     Typeof(Box<Expression>, Range<usize>),
@@ -66,7 +67,8 @@ impl Expression {
     pub fn get_range(&self) -> Range<usize> {
         use Expression::*;
         match &self {
-            Struct(_, range)
+            DotAccess(_, _, range)
+            | Struct(_, range)
             | Array(_, range)
             | Typeof(_, range)
             | Index(_, _, range)
@@ -460,7 +462,8 @@ pub enum CompType {
 }
 impl CompType {
     pub fn is_primitive(&self) -> bool {
-        !matches!(self, CompType::Str(_) | CompType::Array(_, _))
+        use CompType::*;
+        !matches!(self, Str(_) | Array(_, _) | Struct(_))
     }
 
     pub fn get_str(&self) -> String {

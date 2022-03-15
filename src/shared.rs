@@ -99,9 +99,10 @@ fn transform_exp(
                 return Err(errors.iter().flatten().cloned().collect());
             }
         }
-        Expression::Typeof(exp, loc) => {
-            transform_exp(exp, env, scope).map(CompExpression::Typeof)?
+        Expression::DotAccess(val, key, _) => {
+            CompExpression::DotAccess(transform_exp(val, env, scope)?, key.clone())
         }
+        Expression::Typeof(exp, _) => transform_exp(exp, env, scope).map(CompExpression::Typeof)?,
         Expression::Index(arr, index, _loc) => {
             let arr_exp = transform_exp(arr, env, scope)?;
             let index_exp = transform_exp(index, env, scope)?;
