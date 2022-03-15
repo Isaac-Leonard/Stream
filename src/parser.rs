@@ -3,7 +3,7 @@ use chumsky::{
     error::Cheap,
     prelude::*,
     recursive::Recursive,
-    text::{ident, whitespace},
+    text::{ident, keyword, whitespace},
 };
 
 fn integer() -> impl Parser<char, i32, Error = Cheap<char>> {
@@ -62,9 +62,9 @@ fn symbol_parser() -> impl Parser<char, Symbol, Error = Cheap<char>> {
         .map(RawData::Str)
         .or(float().map(RawData::Float))
         .or(integer().map(RawData::Int))
-        .or(raw("null").to(RawData::Null))
-        .or(raw("true").to(RawData::Bool(true)))
-        .or(raw("false").to(RawData::Bool(false)))
+        .or(keyword("null").to(RawData::Null))
+        .or(keyword("true").to(RawData::Bool(true)))
+        .or(keyword("false").to(RawData::Bool(false)))
         .map(Symbol::Data)
         .or(ident().map(String::from).map(Symbol::Identifier))
         .labelled("Symbol")
@@ -103,12 +103,8 @@ fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
     })
 }
 
-fn raw(string: &str) -> impl Parser<char, (), Error = Cheap<char>> {
-    seq(string.chars())
-}
-
-fn op_parser(op: Op) -> impl Parser<char, Op, Error = Cheap<char>> {
-    raw(&op.get_str()).to(op)
+fn op_parser(op: Op) -> impl Parser<char, Op, Error = Cheap<char>> + 'static {
+    just(op.get_str()).to(op)
 }
 
 fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
@@ -149,7 +145,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
                     .then_ignore(whitespace())
                     .then(just(':').ignore_then(type_parser().padded()).or_not())
                     .then(
-                        (raw("=>").then(whitespace()))
+                        (just("=>").then(whitespace()))
                             .ignore_then(exp.clone().map(Box::new))
                             .or_not(),
                     ),
@@ -179,14 +175,14 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
 
         let struct_exp = ident()
             .map(String::from)
-            .then_ignore(raw(":").padded())
+            .then_ignore(just(":").padded())
             .then(exp.clone())
-            .separated_by(raw(",").padded())
+            .separated_by(just(",").padded())
             .allow_trailing()
             .delimited_by('{', '}')
             .map_with_span(Struct);
 
-        let typeof_check = raw("typeof")
+        let typeof_check = keyword("typeof")
             .then(whitespace())
             .ignore_then(exp.clone().map(Box::new))
             .map_with_span(Typeof)
@@ -250,10 +246,10 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             })
             .boxed();
 
-        let if_parser = raw("if")
+        let if_parser = keyword("if")
             .ignore_then(exp.clone().map(Box::new).padded())
             .then(block_exp.clone().map(Box::new))
-            .then_ignore(raw("else").padded())
+            .then_ignore(keyword("else").padded())
             .then(block_exp.clone().map(Box::new))
             .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
         let index_parser = primary_exp
@@ -261,12 +257,12 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then_ignore(whitespace())
             .then(primary_exp.clone().padded().delimited_by('[', ']'))
             .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
-        let loop_parser = raw("while")
+        let loop_parser = just("while")
             .ignore_then(exp.clone().padded())
             .then(block_exp.clone())
             .map_with_span(|x, span| Loop(Box::new(x.0), Box::new(x.1), span));
 
-        let type_declaration = raw("type")
+        let type_declaration = keyword("type")
             .then_ignore(whitespace())
             .ignore_then(ident().map(String::from))
             .then_ignore(just('=').padded())
@@ -286,10 +282,15 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then(exp.clone().map(Box::new))
             .map_with_span(|x, span| Assign(x.0, x.1, span));
 
-        let is_external = raw("extern").or_not().map(|x| x.is_some());
+        let is_external = just("extern").or_not().map(|x| x.is_some());
 
         let declaration = is_external
-            .then(raw("let").to(false).or(raw("const").to(true)).padded())
+            .then(
+                keyword("let")
+                    .to(false)
+                    .or(keyword("const").to(true))
+                    .padded(),
+            )
             .then(ident().map(String::from))
             .then(just(':').padded().ignore_then(type_parser()).or_not())
             .then_ignore(just('=').padded())
@@ -314,7 +315,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then_ignore(whitespace().then(just(';')).or_not())
             .boxed();
         let expression = (expression.clone().map(Box::new))
-            .then_ignore(raw(".").padded())
+            .then_ignore(just(".").padded())
             .then(ident().map(String::from))
             .map_with_span(|exp, range| DotAccess(exp.0, exp.1, range))
             .or(expression);
@@ -323,14 +324,14 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
 }
 
 pub fn parser() -> impl Parser<char, (Vec<ImportFrom>, Expression), Error = Cheap<char>> {
-    let as_name = raw("as")
+    let as_name = just("as")
         .then(whitespace())
         .ignore_then(ident())
         .or_not()
         .boxed();
-    let imports = raw("from")
+    let imports = just("from")
         .ignore_then(string().padded())
-        .then_ignore(raw("import"))
+        .then_ignore(just("import"))
         .then_ignore(whitespace())
         .then(
             (just('*').ignore_then(as_name.clone().padded()))
