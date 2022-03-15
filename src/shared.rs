@@ -386,6 +386,57 @@ pub fn get_env(
 ) -> Result<ExpEnvironment, CompError> {
     use CompExpression::*;
     match exp {
+        DotAccess(val, key) => {
+            if let CompType::Union(types) = &val.result_type {
+                let union = types
+                    .clone()
+                    .iter()
+                    .filter_map(|x| match x {
+                        CompType::Struct(keys) => keys
+                            .clone()
+                            .iter()
+                            .find(|x| &x.0 == key)
+                            .map(|x| x.1.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                if union.len() == types.len() {
+                    Ok(ExpEnvironment {
+                        expression: Box::new(exp.clone()),
+                        result_type: CompType::Union(union),
+                        located,
+                        ..env.clone()
+                    })
+                } else {
+                    Err(CompError::MissingPropertyInUnion(
+                        key.clone(),
+                        val.result_type.clone(),
+                        located,
+                    ))
+                }
+            } else if let CompType::Struct(keys) = &val.result_type {
+                if let Some(ty) = &keys.clone().iter().find(|x| &x.0 == key) {
+                    Ok(ExpEnvironment {
+                        result_type: ty.1.clone(),
+                        expression: Box::new(exp.clone()),
+                        located,
+                        ..env.clone()
+                    })
+                } else {
+                    Err(CompError::PropertyDoesNotExistOnType(
+                        key.clone(),
+                        val.result_type.clone(),
+                        located,
+                    ))
+                }
+            } else {
+                Err(CompError::PropertyDoesNotExistOnType(
+                    key.clone(),
+                    val.result_type.clone(),
+                    located,
+                ))
+            }
+        }
         Struct(keys) => Ok(ExpEnvironment {
             located,
             expression: Box::new(exp.clone()),

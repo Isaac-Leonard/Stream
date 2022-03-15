@@ -290,6 +290,7 @@ impl CompData {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
+    DotAccess(ExpEnvironment, String),
     Value(CompData),
     Array(Vec<ExpEnvironment>),
     Typeof(ExpEnvironment),

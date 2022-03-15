@@ -625,6 +625,19 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let val = self.builder.build_load(ptr, "indexing").into_int_value();
                 self.cast_to_i32(val).as_basic_value_enum()
             }
+            CompExpression::DotAccess(val, key) => {
+                let keys = match &val.result_type {
+                    CompType::Struct(data) => data,
+                    _ => unreachable!(),
+                };
+                let index = keys.clone().iter().position(|x| &x.0 == key).unwrap();
+                let val = self.compile_expression(val, variables, parent);
+                let ptr = self
+                    .builder
+                    .build_struct_gep(val.into_pointer_value(), index as u32, "")
+                    .unwrap();
+                self.builder.build_load(ptr, "")
+            }
             CompExpression::Typeof(exp) => {
                 // TODO: Optimise away once we introduce purity specifiers
                 let res_exp = self.compile_expression(exp, variables, parent);

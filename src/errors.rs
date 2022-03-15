@@ -99,5 +99,7 @@ errors!(
     (15, CannotIndexType(ty:CompType), "Cannot access elements of type '{}'"),
     (16, InvalidIndexType(ty:CompType), "Cannot index array with '{}'"),
     (17, InvalidLeftHandForAssignment(found:Expression), "Cannot assign to expression {:?}, can only assign to variables"),
-    (18, MismatchedTypeInArray(expected:CompType, found:Vec<CompType>), "Found multiple types in array, array starts with {} but also contains the following types: {:?}")
+    (18, MismatchedTypeInArray(expected:CompType, found:Vec<CompType>), "Found multiple types in array, array starts with {} but also contains the following types: {:?}"),
+    (19, MissingPropertyInUnion(key:String, ty:CompType), "The property '{}' does not exist for all variants of {}"),
+    (20, PropertyDoesNotExistOnType(key:String, ty:CompType), "The property '{}' does not exist on type '{}'")
 );
