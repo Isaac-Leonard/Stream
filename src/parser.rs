@@ -179,7 +179,14 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .delimited_by('{', '}')
             .map_with_span(Struct);
 
+        let typeof_check = raw("typeof")
+            .then(whitespace())
+            .ignore_then(exp.clone().map(Box::new))
+            .map_with_span(Typeof)
+            .boxed();
+
         let primary_exp = func_call
+            .or(typeof_check.clone())
             .or(symbol_parser().map_with_span(Terminal))
             .or(func_declaration.map_with_span(Terminal))
             .or(exp.clone().padded().delimited_by('(', ')'))
@@ -235,11 +242,6 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
                 })
             })
             .boxed();
-
-        let typeof_check = raw("typeof")
-            .then(whitespace())
-            .ignore_then(exp.clone().map(Box::new))
-            .map_with_span(Typeof);
 
         let if_parser = raw("if")
             .ignore_then(exp.clone().map(Box::new).padded())

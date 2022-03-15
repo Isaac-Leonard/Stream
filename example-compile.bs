@@ -27,7 +27,7 @@ let main=():Int => {
     }
     newLine();
     let union:Int|Null=null;
-    if (typeof union)==(typeof null){
+    if typeof union == typeof null {
         puts("null");
     } else{
         puts("int")
