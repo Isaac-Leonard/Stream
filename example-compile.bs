@@ -27,14 +27,14 @@ let main=():Int => {
     }
     newLine();
     let union:Int|Null=null;
-    if typeof union == typeof null {
+    if (typeof union) == typeof null {
         puts("null");
     } else{
         puts("int")
     }
     hello [x]  =65;
-    let arr=[4,8,7]
-    let arr2 = [[1,2,3],[4,5,6],[7,8,9]]
+    let arr:[Int; 3]=[4,8,7]
+    let arr2:[[Int; 3]; 3] = [[1,2,3],[4,5,6],[7,8,9]]
     arr[1]=30
 arr2[2]=arr;
 arr2[0]=[4,3,2]

@@ -92,7 +92,14 @@ fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
             .separated_by(just('|').padded())
             .at_least(2)
             .map(CustomType::Union);
-        (callible).or(union).or(singular)
+        let array = ty
+            .clone()
+            .map(Box::new)
+            .then_ignore(just(";").padded())
+            .then(integer())
+            .delimited_by('[', ']')
+            .map(|x| CustomType::Array(x.0, x.1));
+        (callible).or(union).or(singular).or(array)
     })
 }
 

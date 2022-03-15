@@ -116,6 +116,7 @@ pub enum CustomType {
     Callible(Vec<Self>, Box<Self>),
     Union(Vec<Self>),
     Lone(UseType),
+    Array(Box<Self>, i32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
