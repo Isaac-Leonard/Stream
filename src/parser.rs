@@ -184,7 +184,6 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
 
         let primary_exp = func_call
             .or(symbol_parser().map_with_span(Terminal))
-            .or(func_declaration.map_with_span(Terminal))
             .or(exp.clone().padded().delimited_by('(', ')'))
             .boxed()
             .labelled("Primary");
@@ -194,6 +193,13 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .ignore_then(primary_exp.clone().map(Box::new))
             .map_with_span(Typeof)
             .boxed();
+        let index_parser = primary_exp
+            .clone()
+            .then_ignore(whitespace())
+            .then(primary_exp.clone().padded().delimited_by('[', ']'))
+            .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
+
+        let primary_exp = index_parser.clone().or(primary_exp.clone());
         let primary_exp = typeof_check.clone().or(primary_exp.clone());
 
         let mult_parser = (primary_exp.clone())
@@ -252,11 +258,6 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then_ignore(keyword("else").padded())
             .then(block_exp.clone().map(Box::new))
             .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
-        let index_parser = primary_exp
-            .clone()
-            .then_ignore(whitespace())
-            .then(primary_exp.clone().padded().delimited_by('[', ']'))
-            .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
         let loop_parser = just("while")
             .ignore_then(exp.clone().padded())
             .then(block_exp.clone())
@@ -308,7 +309,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .or(declaration)
             .or(equal_parser)
             .or(compare_parser)
-            .or(index_parser)
+            .or(func_declaration.map_with_span(Terminal))
             .or(add_sub_parser)
             .or(array_parser)
             .then_ignore(whitespace().then(just(';')).or_not())

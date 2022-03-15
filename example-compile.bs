@@ -1,6 +1,6 @@
 from "stdlib.bs" import *;
-
-let addArr=(arr:[Int; 2]):Int=> (arr[0])+(arr[1])
+     
+let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
 let main=():Int => {
     let hello="Hello"
