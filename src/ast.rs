@@ -291,6 +291,7 @@ pub enum CompExpression {
     Value(CompData),
     Array(Vec<ExpEnvironment>),
     Typeof(ExpEnvironment),
+    Struct(HashMap<String, ExpEnvironment>),
     BinOp(Op, ExpEnvironment, ExpEnvironment),
     Read(CompVariable),
     OneOp(Prefix, ExpEnvironment),
@@ -611,7 +612,7 @@ impl PlainScope {
         let mut parents = self.parents.clone();
         parents.push(self.child_count);
         self.child_count += 1;
-        let mut child = PlainScopeRef::from(Self {
+        let child = PlainScopeRef::from(Self {
             parents,
             child_count: 0,
             children: Vec::new(),

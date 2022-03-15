@@ -374,18 +374,28 @@ pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
 
 pub fn get_env(
     exp: &CompExpression,
-    _env: &ExpEnvironment,
+    env: &ExpEnvironment,
     located: Range<usize>,
 ) -> Result<ExpEnvironment, CompError> {
     use CompExpression::*;
     match exp {
+        Struct(keys) => Ok(ExpEnvironment {
+            located,
+            expression: Box::new(exp.clone()),
+            result_type: CompType::Struct(map_vec!(keys, |(k, v)| (
+                k.clone(),
+                v.result_type.clone()
+            )))
+            .flatten(),
+            ..env.clone()
+        }),
         Array(elements) => {
             if elements.is_empty() {
                 return Ok(ExpEnvironment {
                     expression: Box::new(exp.clone()),
                     result_type: CompType::Array(Box::new(CompType::Null), 0),
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 });
             }
             let el_ty = elements[0].result_type.clone();
@@ -404,7 +414,7 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: CompType::Array(Box::new(el_ty), elements.len()),
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             }
         }
@@ -413,13 +423,13 @@ pub fn get_env(
             expression: Box::new(exp.clone()),
             result_type: CompType::Type,
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         Prog(prog) => Ok(ExpEnvironment {
             expression: Box::new(exp.clone()),
             result_type: prog.body.result_type.clone(),
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         List(exps) => Ok(exps
             .last()
@@ -427,13 +437,13 @@ pub fn get_env(
                 expression: Box::new(exp.clone()),
                 result_type: x.result_type.clone(),
                 located: located.clone(),
-                .._env.clone()
+                ..env.clone()
             })
             .unwrap_or(ExpEnvironment {
                 expression: Box::new(exp.clone()),
                 result_type: CompType::Null,
                 located,
-                .._env.clone()
+                ..env.clone()
             })),
         WhileLoop { cond, body } => {
             if cond.result_type.is_bool() {
@@ -441,7 +451,7 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: body.result_type.clone(),
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else {
                 Err(CompError::BoolInWhile(
@@ -462,7 +472,7 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: CompType::Union(vec![then_ty, other_ty]).flatten(),
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else {
                 Err(CompError::BoolInIf(
@@ -477,7 +487,7 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: CompType::Null,
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else {
                 Err(CompError::BoolInIf(
@@ -490,7 +500,7 @@ pub fn get_env(
             expression: Box::new(exp.clone()),
             result_type: data.get_type(),
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         Index(arr, i) => {
             let arr_ty = arr.result_type.clone();
@@ -505,14 +515,14 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: *elements,
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else if arr_ty.is_str() {
                 Ok(ExpEnvironment {
                     expression: Box::new(exp.clone()),
                     result_type: CompType::Int,
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else {
                 panic!("Here");
@@ -527,7 +537,7 @@ pub fn get_env(
                     expression: Box::new(exp.clone()),
                     result_type: exp_ty,
                     located,
-                    .._env.clone()
+                    ..env.clone()
                 })
             } else {
                 Err(CompError::InvalidAssignment(var_ty, exp_ty, located))
@@ -537,19 +547,19 @@ pub fn get_env(
             expression: Box::new(exp.clone()),
             result_type: op.resulting_type(&a.result_type, &b.result_type)?,
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         OneOp(_, val) => Ok(ExpEnvironment {
             expression: Box::new(exp.clone()),
             result_type: val.result_type.clone(),
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         Read(var) => Ok(ExpEnvironment {
             expression: Box::new(exp.clone()),
             result_type: var.typing.clone(),
             located,
-            .._env.clone()
+            ..env.clone()
         }),
         Call(var, args) => {
             let var = var.clone();
@@ -577,7 +587,7 @@ pub fn get_env(
                         expression: Box::new(exp.clone()),
                         result_type: *ret,
                         located,
-                        .._env.clone()
+                        ..env.clone()
                     })
                 }
             } else {

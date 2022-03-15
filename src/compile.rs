@@ -634,6 +634,35 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     self.i32(get_discriminant(&exp.result_type) as i32)
                 }
             }
+            CompExpression::Struct(data) => {
+                let ptr = self.builder.build_pointer_cast(
+                    // TODO: Actually calculate it instead of guessing
+                    self.alloc_heap(data.len() * 4),
+                    exp.result_type
+                        .get_compiler_type(self.context)
+                        .into_pointer_type(),
+                    "",
+                );
+                if let CompType::Struct(keys) = &exp.result_type {
+                    let raw_data = map_vec!(keys, |(k, _)| self.compile_expression(
+                        data.get(k).unwrap(),
+                        variables,
+                        parent
+                    ));
+                    self.builder.build_store(
+                        ptr,
+                        exp.result_type
+                            .get_compiler_type(self.context)
+                            .into_pointer_type()
+                            .get_element_type()
+                            .into_struct_type()
+                            .const_named_struct(raw_data.as_slice()),
+                    );
+                    ptr.as_basic_value_enum()
+                } else {
+                    unreachable!()
+                }
+            }
             CompExpression::Array(elements) => {
                 let elements =
                     map_vec!(elements, |x| self.compile_expression(x, variables, parent));
