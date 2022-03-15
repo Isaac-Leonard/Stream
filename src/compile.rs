@@ -475,15 +475,18 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let func = self.module.get_function(&var.name).unwrap();
                 let compiled_args = map_vec!(args, |arg| {
                     let val = self.compile_expression(arg, variables, parent);
-                    match val {
-                        BasicValueEnum::PointerValue(x) => self.builder.build_bitcast(
-                            x,
-                            self.context
-                                .i8_type()
-                                .ptr_type(inkwell::AddressSpace::Generic),
-                            "cast",
-                        ),
-                        x => x,
+                    if arg.result_type.is_str() {
+                        self.builder
+                            .build_pointer_cast(
+                                val.into_pointer_value(),
+                                self.context
+                                    .i8_type()
+                                    .ptr_type(inkwell::AddressSpace::Generic),
+                                "cast",
+                            )
+                            .as_basic_value_enum()
+                    } else {
+                        val
                     }
                 });
                 let argv = map_vec!(compiled_args, |x| BasicMetadataValueEnum::from(*x));
@@ -706,8 +709,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             let arg_name = func.arguments[i].name.as_str();
             let ty = func.arguments[i].typing.get_compiler_type(self.context);
             let var = self.add_variable_to_block(arg_name, ty, &fn_val);
-            self.builder.build_store(var, arg);
-            variables.insert(arg_name.to_string(), var);
+            if func.arguments[i].typing.is_primitive() {
+                self.builder.build_store(var, arg);
+                variables.insert(arg_name.to_string(), var);
+            } else {
+                variables.insert(arg_name.to_string(), arg.into_pointer_value());
+            }
         }
         let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
         (func.body.clone().unwrap().scope.variables.iter())
@@ -716,12 +723,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let ty = x.1.typing.clone();
                 let comp_type = ty.as_ref().unwrap().get_compiler_type(self.context);
                 let name = x.0.to_string();
-                let var = if !ty.unwrap().is_primitive() {
-                    let ptr_ty = comp_type.ptr_type(inkwell::AddressSpace::Generic);
-                    self.add_variable_to_block(&name, ptr_ty, &fn_val)
-                } else {
-                    self.add_variable_to_block(&name, comp_type, &fn_val)
-                };
+                let var = self.add_variable_to_block(&name, comp_type, &fn_val);
                 variables.insert(name, var);
             });
         // compile body
@@ -765,15 +767,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
     pub fn create_function_shape(&self, func: &CompType) -> FunctionType<'ctx> {
         if let CompType::Callible(arguments, return_type) = func {
-            let args_types = map_vec!(arguments, |x| {
-                match x.get_compiler_type(self.context) {
-                    inkwell::types::BasicTypeEnum::ArrayType(x) => x
-                        .ptr_type(inkwell::AddressSpace::Generic)
-                        .as_basic_type_enum(),
-                    x => x,
-                }
-                .into()
-            });
+            let args_types = map_vec!(arguments, |x| { x.get_compiler_type(self.context).into() });
             let args_types = args_types.as_slice();
 
             return_type

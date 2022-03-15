@@ -1,4 +1,9 @@
 from "stdlib.bs" import *;
+
+let addArr=(arr:[Int; 2]):Int=> {
+    (arr[0])+(arr[1])
+
+}
 let main=():Int => {
     let hello="Hello"
     let world="World"
@@ -44,6 +49,8 @@ arr2[0]=[4,3,2]
     let area = (point.x)*(point . y);
     putchar(area+65);
     newLine()
+    let touple=[1,2]
+    addArr(touple)
     0
     }
 }
