@@ -35,6 +35,7 @@ pub struct ImportFrom {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
+    Struct(Vec<(String, Expression)>, Range<usize>),
     TypeDeclaration(String, CustomType, Range<usize>),
     Typeof(Box<Expression>, Range<usize>),
     Array(Vec<Expression>, Range<usize>),
@@ -65,7 +66,8 @@ impl Expression {
     pub fn get_range(&self) -> Range<usize> {
         use Expression::*;
         match &self {
-            Array(_, range)
+            Struct(_, range)
+            | Array(_, range)
             | Typeof(_, range)
             | Index(_, _, range)
             | TypeDeclaration(_, _, range)

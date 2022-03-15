@@ -70,6 +70,13 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> Result<ExpEnvironment, Vec<CompError>> {
     let expression = match exp {
+        Expression::Struct(data, _) => collect_ok_or_err(
+            data.iter()
+                .map(|(k, v)| Ok((k.clone(), transform_exp(v, env, scope)?))),
+        )
+        .unwrap_or_else(|| Ok(Vec::new()))
+        .map(|x: Vec<_>| CompExpression::Struct(x.iter().cloned().collect()))
+        .map_err(|x: Vec<Vec<CompError>>| x.iter().flatten().cloned().collect::<Vec<_>>())?,
         Expression::Array(elements, _) => {
             let mut errors = Vec::new();
             let mut oks = Vec::new();

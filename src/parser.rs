@@ -170,6 +170,15 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .map_with_span(|(name, args), span| FuncCall(name, args, span))
             .labelled("Call");
 
+        let struct_exp = ident()
+            .map(String::from)
+            .then_ignore(raw(":").padded())
+            .then(exp.clone())
+            .separated_by(raw(",").padded())
+            .allow_trailing()
+            .delimited_by('{', '}')
+            .map_with_span(Struct);
+
         let primary_exp = func_call
             .or(symbol_parser().map_with_span(Terminal))
             .or(func_declaration.map_with_span(Terminal))
@@ -281,7 +290,8 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             })
             .labelled("Declaration");
 
-        let expression = (if_parser)
+        let expression = struct_exp
+            .or(if_parser)
             .or(typeof_check)
             .or(loop_parser)
             .or(reassign)
