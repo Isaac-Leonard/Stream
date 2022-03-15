@@ -4,6 +4,7 @@ mod errors;
 mod linker;
 mod macros;
 mod parser;
+mod reference_counting;
 mod settings;
 mod shared;
 use ast::*;
