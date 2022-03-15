@@ -1,9 +1,7 @@
 from "stdlib.bs" import *;
 
-let addArr=(arr:[Int; 2]):Int=> {
-    (arr[0])+(arr[1])
+let addArr=(arr:[Int; 2]):Int=> (arr[0])+(arr[1])
 
-}
 let main=():Int => {
     let hello="Hello"
     let world="World"
@@ -32,7 +30,7 @@ let main=():Int => {
     }
     newLine();
     let union:Int|Null=null;
-    if (typeof union) == typeof null {
+    if typeof union == typeof null {
         puts("null");
     } else{
         puts("int")
