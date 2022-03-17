@@ -21,18 +21,17 @@ I also use the fxhash crate for deterministic hashing of types for run time matc
 ** Road map
 The following is a list of features I intend to implement in the short term (next three months) however my time is limited and some features may require others to be implemented first or may require major rewrites in the compiler internals so this is currently still unreliable.
 In order of likely implementation:
-- Automatic memory management.
-  This is needed for most future features such as nested arrays or complex structs as well as closures and useful unions and so is now a priority.
-- Add structs and nested arrays.
+- Proper type narrowing on unions.
 - Full generics support in the compiler.
+- Improved error checking and reporting.
 - More extensive options for controlling compilation including:
   - Specifying an output binary name,
   - multiple levels of optimization,
   - using precompiled binaries when linking allowing for full interoperability with existing compiled binaries (Note that Stubs would still have to be written to tell  the compiler what they should be called like such like is currently done with puts and getchar),
   - and better debugging.
-- Improved error checking and reporting.
-- Proper type narrowing on unions.
 - Publish code to cargo and split it up into modules.
 - Limited lsp support and formatter.
 - Come up with a suitable name.
+- Automatic memory management.
+  This is needed for most future features such as nested arrays or complex structs as well as closures and useful unions and so is now a priority.
 In the long term (next 6 months to a year) I intend to make the compiler completely bootstrappable and start writing some projects using it as well as working on multithreading support.
