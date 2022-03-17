@@ -14,7 +14,17 @@ then run the produced binary
 #+begin_src:
 ./testing
 #+end_src
+** Features
+- JS / TS style syntax.
+- Int, Float, Boolean and Null Primitives.
+- Structs, arrays and String Objects.
+- Objects are pass by reference / pointer.
+- Primitives are pass by value.
+- Tagged union types.
+- while Loops and if else expressions.
 ** Dependencies
+
+
 The only current dependencies iare the Chumsky package for parsing found at https://github.com/zesterer/chumsky and inkwell for ergonomically interfacing  with LLVM found at https://github.com/TheDan64/inkwell.
 Initially I explored using parser generators that took EBNF as input however could not find any that did what I wanted and had as much control as chomsky.
 I also use the fxhash crate for deterministic hashing of types for run time matching of tagged unions.
