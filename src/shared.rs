@@ -26,6 +26,13 @@ fn collect_ok_or_err<T, E>(
 
 pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Vec<CompError>> {
     match ty {
+        CustomType::Struct(data) => collect_ok_or_err(
+            data.iter()
+                .map(|x| Ok((x.0.clone(), transform_type(&x.1, scope)?))),
+        )
+        .unwrap_or_else(|| Ok(Vec::new()))
+        .map(CompType::Struct)
+        .map_err(|x: Vec<Vec<_>>| x.iter().flatten().cloned().collect()),
         CustomType::Array(el_ty, len) => Ok(CompType::Array(
             Box::new(transform_type(el_ty, scope)?),
             *len as usize,

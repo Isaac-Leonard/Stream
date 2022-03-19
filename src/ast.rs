@@ -117,6 +117,7 @@ pub enum CustomType {
     Union(Vec<Self>),
     Lone(UseType),
     Array(Box<Self>, i32),
+    Struct(Vec<(String, Self)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

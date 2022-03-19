@@ -99,7 +99,21 @@ fn type_parser() -> impl Parser<char, CustomType, Error = Cheap<char>> {
             .then(integer())
             .delimited_by('[', ']')
             .map(|x| CustomType::Array(x.0, x.1));
-        (callible).or(union).or(singular).or(array)
+
+        let struct_parser = ident()
+            .map(String::from)
+            .then_ignore(just(":").padded())
+            .then(ty.clone())
+            .separated_by(just(";").padded())
+            .allow_trailing()
+            .padded()
+            .delimited_by('{', '}')
+            .map(CustomType::Struct);
+        (callible)
+            .or(union)
+            .or(singular)
+            .or(array)
+            .or(struct_parser)
     })
 }
 
@@ -179,6 +193,7 @@ fn exp_parser<'a>() -> impl Parser<char, Expression, Error = Cheap<char>> + 'a {
             .then(exp.clone())
             .separated_by(just(",").padded())
             .allow_trailing()
+            .padded()
             .delimited_by('{', '}')
             .map_with_span(Struct);
 
