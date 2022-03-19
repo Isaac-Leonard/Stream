@@ -651,7 +651,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
             }
             CompExpression::Struct(data) => {
-                let ptr = self.builder.build_pointer_cast(
+                let mem = self.builder.build_pointer_cast(
                     // TODO: Actually calculate it instead of guessing
                     self.alloc_heap(data.len() * 4),
                     exp.result_type
@@ -665,16 +665,14 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         variables,
                         parent
                     ));
-                    self.builder.build_store(
-                        ptr,
-                        exp.result_type
-                            .get_compiler_type(self.context)
-                            .into_pointer_type()
-                            .get_element_type()
-                            .into_struct_type()
-                            .const_named_struct(raw_data.as_slice()),
-                    );
-                    ptr.as_basic_value_enum()
+                    for (i, element) in raw_data.iter().enumerate() {
+                        let ptr = self
+                            .builder
+                            .build_struct_gep(mem, i as u32, "struct_initialise")
+                            .unwrap();
+                        self.builder.build_store(ptr, *element);
+                    }
+                    mem.as_basic_value_enum()
                 } else {
                     unreachable!()
                 }
