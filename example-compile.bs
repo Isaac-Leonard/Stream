@@ -43,9 +43,11 @@ arr2[2]=arr;
 arr2[0]=[4,3,2]
     puts(hello)
     newLine()
-    let point = {x:4, y:3+8};
-    let area = (point.x)*(point . y);
-    putchar(area+65);
+    let f=30.0;
+    let p1= {x:4.0, y:3.0+f};
+    let p2={x:0.0, y:100.0}
+    midPoint(p1,p2)
+    let div=((p1.x)+(p2.x))/2.0;
     newLine()
     let touple=[1,2]
     addArr(touple)
