@@ -50,7 +50,10 @@ arr2[0]=[4,3,2]
     let div=((p1.x)+(p2.x))/2.0;
     newLine()
     let touple=[1,2]
-    addArr(touple)
+    addArr(touple);
+    type Point={x:Float;y:Float}
+    let union2:Int|Point={x:9.0,y:3.0};
+    union2=3;
     0
     }
 }

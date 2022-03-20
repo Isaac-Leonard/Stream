@@ -475,25 +475,45 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         self.custom_int(1, 0)
                     }
                     _ => {
-                        let mut val = self.compile_expression(exp, variables, parent);
+                        let val = self.compile_expression(exp, variables, parent);
                         let var_ptr = *variables.get(&var.name).unwrap();
+                        if val.is_pointer_value() && !var.typing.is_union() {
+                            variables.insert(var.name.clone(), val.into_pointer_value());
+                            return val;
+                        }
                         if var.typing.is_union() {
                             let ty = &exp.result_type;
                             if !ty.is_union() {
                                 let discriminant = self.i32(get_discriminant(ty) as i32);
-                                val = var
-                                    .typing
-                                    .get_compiler_type(self.context)
-                                    .into_struct_type()
-                                    .const_named_struct(&[discriminant, val])
-                                    .as_basic_value_enum();
+                                let val = if val.is_pointer_value() {
+                                    self.builder
+                                        .build_ptr_to_int(
+                                            val.into_pointer_value(),
+                                            self.context.i32_type(),
+                                            "",
+                                        )
+                                        .as_basic_value_enum()
+                                } else {
+                                    self.builder.build_bitcast(
+                                        val,
+                                        self.context.i32_type().as_basic_type_enum(),
+                                        "",
+                                    )
+                                };
+                                self.builder.build_store(
+                                    self.builder.build_struct_gep(var_ptr, 0, "").unwrap(),
+                                    discriminant,
+                                );
+                                self.builder.build_store(
+                                    self.builder.build_struct_gep(var_ptr, 1, "").unwrap(),
+                                    val,
+                                );
+                            } else {
+                                self.builder.build_store(var_ptr, val);
                             }
-                        }
-                        if val.is_pointer_value() {
-                            variables.insert(var.name.clone(), val.into_pointer_value());
                         } else {
                             self.builder.build_store(var_ptr, val);
-                        };
+                        }
                         val
                     }
                 },
