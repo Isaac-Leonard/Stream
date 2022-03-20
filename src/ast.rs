@@ -275,7 +275,6 @@ pub enum CompData {
     Float(f32),
     Str(String),
     Func(FunctionAst),
-    Multi(CompType, Box<CompData>),
 }
 impl CompData {
     pub fn get_type(&self) -> CompType {
@@ -287,7 +286,6 @@ impl CompData {
             Float(_) => CompType::Float,
             Str(content) => CompType::Str(content.len() as u32),
             Func(ast) => ast.as_type(),
-            Multi(_, _) => panic!("Cannot get type of multi in compiler yet"),
         }
     }
 }

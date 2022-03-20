@@ -23,11 +23,7 @@ use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 use std::path::Path;
 
-fn get_value<'a, 'ctx>(
-    val: &CompData,
-    compiler: &Compiler<'a, 'ctx>,
-    fn_val: Option<&FunctionValue<'ctx>>,
-) -> BasicValueEnum<'ctx> {
+fn get_value<'a, 'ctx>(val: &CompData, compiler: &Compiler<'a, 'ctx>) -> BasicValueEnum<'ctx> {
     match val {
         CompData::Int(int) => compiler.i32(*int),
         CompData::Bool(bool) => compiler.custom_int(1, *bool as i8),
@@ -41,42 +37,6 @@ fn get_value<'a, 'ctx>(
                     .collect::<Vec<_>>(),
             )
             .as_basic_value_enum(),
-        CompData::Multi(allowed, current) => {
-            let compilable = allowed
-                .get_variants()
-                .iter()
-                .filter(|x| {
-                    !vec![
-                        CompType::Int,
-                        CompType::Float,
-                        CompType::Null,
-                        CompType::Bool,
-                    ]
-                    .contains(x)
-                })
-                .count()
-                == 0;
-            if !compilable {
-                panic!("Unions of {} are not compilable yet", allowed)
-            };
-            let struct_ty = compiler.context.struct_type(
-                &[
-                    compiler.context.i32_type().as_basic_type_enum(),
-                    compiler.context.i32_type().as_basic_type_enum(),
-                ],
-                false,
-            );
-            let discriminant = get_discriminant(&current.get_type());
-            let discriminant = compiler.i32(discriminant as i32);
-            let val = compiler.builder.build_bitcast(
-                get_value(current, compiler, fn_val),
-                compiler.context.i32_type().as_basic_type_enum(),
-                "union_cast",
-            );
-            struct_ty
-                .const_named_struct(&[discriminant, val])
-                .as_basic_value_enum()
-        }
         CompData::Func(_) => panic!("Functions should be retrieved seperately"),
     }
 }
@@ -553,7 +513,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 },
                 _ => panic!("{:?} not supported on lhs of assignment", var),
             },
-            CompExpression::Value(val) => get_value(val, self, parent),
+            CompExpression::Value(val) => get_value(val, self),
             CompExpression::IfElse {
                 cond,
                 then,
