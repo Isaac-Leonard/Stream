@@ -25,6 +25,9 @@ pub enum Token {
     EndBlock,
     StartBracket,
     EndBracket,
+    As,
+    From,
+    Import,
 }
 
 fn integer() -> impl Parser<char, i32, Error = Cheap<char>> {
@@ -80,6 +83,9 @@ pub fn lexer() -> impl Parser<char, Vec<Token>, Error = Cheap<char>> {
         .or(float().map(Token::Float))
         .or(integer().map(Token::Int))
         .or(ident().map(String::from).map(|x| match x.as_str() {
+            "import" => Token::Import,
+            "from" => Token::From,
+            "as" => Token::As,
             "null" => Token::Null,
             "true" => Token::True,
             "false" => Token::False,
