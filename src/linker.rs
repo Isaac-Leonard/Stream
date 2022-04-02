@@ -34,7 +34,7 @@ impl Linker {
         }
         command
             .arg("-lSystem")
-            .arg("/usr/local/Cellar/llvm/13.0.0_2/lib/clang/13.0.0/lib/darwin/libclang_rt.osx.a")
+            .arg("/usr/local/Cellar/llvm/13.0.1_1/lib/clang/13.0.1/lib/darwin/libclang_rt.osx.a")
             .output()
             .map(|x| println!("{}", String::from_utf8(x.stderr).expect("utf8 error")))
             .expect("Linking failed");
