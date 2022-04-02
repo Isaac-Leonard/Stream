@@ -8,7 +8,7 @@ mod parser;
 mod settings;
 mod shared;
 use ast::*;
-use chumsky::Parser;
+use chumsky::{Parser, Stream};
 use parser::*;
 use settings::Settings;
 use shared::*;
@@ -60,7 +60,12 @@ fn parse_files(
     let src = fs::read_to_string(&settings.input_name).expect("Failed to read file");
 
     let lines = calc_lines(&src);
-    let parsed = parser().parse(src.trim());
+    let tokens = lexer::lexer()
+        .parse(src.trim())
+        .map_err(|x| panic!("{:?}", x))
+        .unwrap();
+    let len = tokens.len();
+    let parsed = parser().parse(Stream::from_iter(len..len + 1, tokens.into_iter()));
     match parsed {
         Ok(ast) => {
             for import in &ast.0 {

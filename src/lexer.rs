@@ -1,4 +1,10 @@
-use chumsky::{error::Cheap, prelude::*, text::ident};
+use std::ops::Range;
+
+use chumsky::{
+    error::Cheap,
+    prelude::*,
+    text::{ident, whitespace},
+};
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token {
     Null,
@@ -16,7 +22,8 @@ pub enum Token {
     Type,
     Typeof,
     Operator(String),
-    Constant(bool),
+    Let,
+    Constant,
     Exported,
     Float(f32),
     StartArray,
@@ -77,7 +84,7 @@ fn string() -> impl Parser<char, String, Error = Cheap<char>> {
         .collect::<String>()
 }
 
-pub fn lexer() -> impl Parser<char, Vec<Token>, Error = Cheap<char>> {
+pub fn lexer() -> impl Parser<char, Vec<(Token, Range<usize>)>, Error = Cheap<char>> {
     string()
         .map(Token::Str)
         .or(float().map(Token::Float))
@@ -93,9 +100,13 @@ pub fn lexer() -> impl Parser<char, Vec<Token>, Error = Cheap<char>> {
             "else" => Token::Else,
             "type" => Token::Type,
             "typeof" => Token::Typeof,
+            "while" => Token::While,
+            "let" => Token::Let,
+            "const" => Token::Constant,
+            "extern" => Token::Exported,
             _ => Token::Ident(x),
         }))
-        .or(one_of("+-*/=!<>.")
+        .or(one_of("+-*/=!<>.|")
             .repeated()
             .at_least(1)
             .collect::<String>()
@@ -108,6 +119,10 @@ pub fn lexer() -> impl Parser<char, Vec<Token>, Error = Cheap<char>> {
         .or(just(']').to(Token::EndArray))
         .or(just('{').to(Token::StartBlock))
         .or(just('}').to(Token::EndBlock))
+        .or(just(":").to(Token::Colon))
         .padded()
+        .map_with_span(|token, span| (token, span))
         .repeated()
+        .then_ignore(whitespace())
+        .then_ignore(end())
 }
