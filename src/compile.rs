@@ -605,8 +605,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent),
             CompExpression::Index(arr, index) => {
                 let ptr = self.calc_pos(arr, index, variables, parent);
-                let val = self.builder.build_load(ptr, "indexing").into_int_value();
-                self.cast_to_i32(val).as_basic_value_enum()
+                let val = self.builder.build_load(ptr, "indexing");
+                if arr.result_type.is_str() {
+                    self.cast_to_i32(val.into_int_value()).as_basic_value_enum()
+                } else {
+                    val
+                }
             }
             CompExpression::DotAccess(val, key) => {
                 let keys = match &val.result_type {

@@ -577,7 +577,6 @@ pub fn get_env(
                     ..env.clone()
                 })
             } else {
-                panic!("Here");
                 unreachable!()
             }
         }

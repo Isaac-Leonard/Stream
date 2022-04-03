@@ -54,6 +54,8 @@ arr2[0]=[4,3,2]
     type Point={x:Float;y:Float}
     let union2:Int|Point={x:9.0,y:3.0};
     union2=3;
+    let i00=arr2[0][0]
+    arr2[1][1]=4
     0
     }
 }
