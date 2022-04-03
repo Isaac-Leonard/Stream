@@ -176,21 +176,30 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .map_with_span(|x, s| (s, Typeof(x)))
             .boxed();
 
+        let primary_exp = typeof_check.or(primary_exp);
+
         let index_parser = primary_exp
             .clone()
             .then(
                 primary_exp
                     .clone()
-                    .delimited_by(Token::StartArray, Token::EndArray),
+                    .delimited_by(Token::StartArray, Token::EndArray)
+                    .repeated(),
             )
-            .map_with_span(|x, span| (span, Index(Box::new(x.0), Box::new(x.1))));
+            .map(|(l, t)| {
+                t.into_iter().fold(l, |arr, index| {
+                    (
+                        arr.0.start..index.0.end,
+                        Expression::Index(Box::new(arr), Box::new(index)),
+                    )
+                })
+            })
+            .boxed();
 
-        let primary_exp = (typeof_check.or(index_parser.clone())).or(primary_exp.clone());
-
-        let mult_parser = (primary_exp.clone())
+        let mult_parser = (index_parser.clone())
             .then(
                 (op_parser(Op::Mult).or(op_parser(Op::Div)))
-                    .then(primary_exp.clone())
+                    .then(index_parser.clone())
                     .repeated(),
             )
             .map(|(l, t)| {
