@@ -33,64 +33,42 @@ pub struct ImportFrom {
     pub file: String,
 }
 
+pub type SpannedExpression = (Range<usize>, Expression);
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
-    DotAccess(Box<Expression>, String, Range<usize>),
-    Struct(Vec<(String, Expression)>, Range<usize>),
-    TypeDeclaration(String, CustomType, Range<usize>),
-    Typeof(Box<Expression>, Range<usize>),
-    Array(Vec<Expression>, Range<usize>),
-    BinOp(Op, Box<Expression>, Box<Expression>, Range<usize>),
-    Terminal(Symbol, Range<usize>),
-    FuncCall(String, Vec<Expression>, Range<usize>),
-    Block(Vec<Expression>, Range<usize>),
+    DotAccess(Box<SpannedExpression>, String),
+    Struct(Vec<(String, SpannedExpression)>),
+    TypeDeclaration(String, CustomType),
+    Typeof(Box<SpannedExpression>),
+    Array(Vec<SpannedExpression>),
+    BinOp(Op, Box<SpannedExpression>, Box<SpannedExpression>),
+    Terminal(Symbol),
+    FuncCall(String, Vec<SpannedExpression>),
+    Block(Vec<SpannedExpression>),
     IfElse(
-        Box<Expression>,
-        Box<Expression>,
-        Box<Expression>,
-        Range<usize>,
+        Box<SpannedExpression>,
+        Box<SpannedExpression>,
+        Box<SpannedExpression>,
     ),
-    Loop(Box<Expression>, Box<Expression>, Range<usize>),
-    Invalid(Range<usize>),
-    Assign(Box<Expression>, Box<Expression>, Range<usize>),
+    Loop(Box<SpannedExpression>, Box<SpannedExpression>),
+    Invalid,
+    Assign(Box<SpannedExpression>, Box<SpannedExpression>),
     InitAssign(
         bool,
         bool,
         String,
         Option<CustomType>,
-        Box<Expression>,
-        Range<usize>,
+        Box<SpannedExpression>,
     ),
-    Index(Box<Expression>, Box<Expression>, Range<usize>),
-}
-impl Expression {
-    pub fn get_range(&self) -> Range<usize> {
-        use Expression::*;
-        match &self {
-            DotAccess(_, _, range)
-            | Struct(_, range)
-            | Array(_, range)
-            | Typeof(_, range)
-            | Index(_, _, range)
-            | TypeDeclaration(_, _, range)
-            | BinOp(_, _, _, range)
-            | FuncCall(_, _, range)
-            | IfElse(_, _, _, range)
-            | Loop(_, _, range)
-            | Block(_, range)
-            | Terminal(_, range)
-            | InitAssign(_, _, _, _, _, range)
-            | Assign(_, _, range)
-            | Invalid(range) => range.clone(),
-        }
-    }
+    Index(Box<SpannedExpression>, Box<SpannedExpression>),
 }
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Function {
     pub generics: Vec<String>,
     pub args: Vec<(String, CustomType)>,
-    pub body: Option<Box<Expression>>,
+    pub body: Option<Box<SpannedExpression>>,
     pub return_type: CustomType,
 }
 

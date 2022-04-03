@@ -48,7 +48,7 @@ struct ImportMap {
     depends_on: Vec<ImportFrom>,
 
     program: Option<Program>,
-    ast: Option<Expression>,
+    ast: Option<SpannedExpression>,
     compiled: bool,
     settings: Settings,
     line_numbers: Vec<i32>,

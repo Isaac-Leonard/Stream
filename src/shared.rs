@@ -65,8 +65,8 @@ pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Ve
 
 fn bin_exp(
     op: &Op,
-    left: &Expression,
-    right: &Expression,
+    left: &SpannedExpression,
+    right: &SpannedExpression,
     env: &ExpEnvironment,
     scope: &mut TempScope,
 ) -> Result<CompExpression, Vec<CompError>> {
@@ -76,19 +76,19 @@ fn bin_exp(
 }
 
 fn transform_exp(
-    exp: &Expression,
+    (loc, exp): &SpannedExpression,
     env: &ExpEnvironment,
     mut scope: &mut TempScope,
 ) -> Result<ExpEnvironment, Vec<CompError>> {
     let expression = match exp {
-        Expression::Struct(data, _) => collect_ok_or_err(
+        Expression::Struct(data) => collect_ok_or_err(
             data.iter()
                 .map(|(k, v)| Ok((k.clone(), transform_exp(v, env, scope)?))),
         )
         .unwrap_or_else(|| Ok(Vec::new()))
         .map(|x: Vec<_>| CompExpression::Struct(x.iter().cloned().collect()))
         .map_err(|x: Vec<Vec<CompError>>| x.iter().flatten().cloned().collect::<Vec<_>>())?,
-        Expression::Array(elements, _) => {
+        Expression::Array(elements) => {
             let mut errors = Vec::new();
             let mut oks = Vec::new();
             let mut env = env.clone();
@@ -110,17 +110,17 @@ fn transform_exp(
                 return Err(errors.iter().flatten().cloned().collect());
             }
         }
-        Expression::DotAccess(val, key, _) => {
+        Expression::DotAccess(val, key) => {
             CompExpression::DotAccess(transform_exp(val, env, scope)?, key.clone())
         }
-        Expression::Typeof(exp, _) => transform_exp(exp, env, scope).map(CompExpression::Typeof)?,
-        Expression::Index(arr, index, _loc) => {
+        Expression::Typeof(exp) => transform_exp(exp, env, scope).map(CompExpression::Typeof)?,
+        Expression::Index(arr, index) => {
             let arr_exp = transform_exp(arr, env, scope)?;
             let index_exp = transform_exp(index, env, scope)?;
             CompExpression::Index(arr_exp, index_exp)
         }
-        Expression::TypeDeclaration(_, _, _) => CompExpression::List(Vec::new()),
-        Expression::InitAssign(_, _, name, _, exp, loc) => {
+        Expression::TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
+        Expression::InitAssign(_, _, name, _, exp) => {
             if scope.variable_initialised(name) {
                 return Err(vec![CompError::RedeclareInSameScope(
                     name.clone(),
@@ -155,12 +155,12 @@ fn transform_exp(
                 exp,
             )
         }
-        Expression::Assign(name, exp, _) => {
+        Expression::Assign(name, exp) => {
             let lhs = transform_exp(name, env, scope)?;
             let exp = transform_exp(exp, env, scope)?;
             CompExpression::Assign(lhs, exp)
         }
-        Expression::IfElse(cond, left, right, _) => {
+        Expression::IfElse(cond, left, right) => {
             let cond = transform_exp(cond, env, scope)?;
             let then = transform_exp(left, env, scope)?;
             let otherwise = transform_exp(right, env, scope)?;
@@ -170,12 +170,12 @@ fn transform_exp(
                 otherwise,
             }
         }
-        Expression::Loop(exp, body, _) => {
+        Expression::Loop(exp, body) => {
             let cond = transform_exp(exp, env, scope)?;
             let body = transform_exp(body, env, scope)?;
             CompExpression::WhileLoop { cond, body }
         }
-        Expression::Block(expressions, _) => {
+        Expression::Block(expressions) => {
             let mut env = env.clone();
             let mut errors = Vec::new();
             let mut oks = Vec::new();
@@ -197,8 +197,8 @@ fn transform_exp(
                 return Err(errors.iter().flatten().cloned().collect());
             }
         }
-        Expression::BinOp(op, l, r, _) => bin_exp(op, l, r, env, scope)?,
-        Expression::FuncCall(name, arguments, loc) => {
+        Expression::BinOp(op, l, r) => bin_exp(op, &*l, r, env, scope)?,
+        Expression::FuncCall(name, arguments) => {
             let mut errors = Vec::new();
             let mut args = Vec::new();
             let mut env = env.clone();
@@ -223,7 +223,7 @@ fn transform_exp(
                 .map_err(|_| vec![CompError::CannotFindVariable(name.clone(), loc.clone())])?;
             CompExpression::Call(func, args)
         }
-        Expression::Terminal(sym, loc) => match sym {
+        Expression::Terminal(sym) => match sym {
             Symbol::Identifier(name) => scope
                 .get_variable(name)
                 .map(CompExpression::Read)
@@ -267,8 +267,8 @@ fn transform_exp(
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
                             };
-                            let local_scope = resolve_scope(&body, &mut local_scope);
-                            let body = transform_ast(&body, local_scope)?;
+                            let local_scope = resolve_scope(&*body, &mut local_scope);
+                            let body = transform_ast(&*body, local_scope)?;
 
                             CompData::Func(FunctionAst {
                                 generics,
@@ -287,14 +287,14 @@ fn transform_exp(
                 }
             }),
         },
-        Expression::Invalid(x) => panic!("invalid {:?}", x),
+        Expression::Invalid => panic!("invalid {:?}", loc),
     };
-    get_env(&expression, env, exp.get_range()).map_err(|x| vec![x])
+    get_env(&expression, env, loc.clone()).map_err(|x| vec![x])
 }
 
-fn resolve_scope<'a>(ast: &Expression, scope: &'a mut TempScope) -> &'a mut TempScope {
+fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> &'a mut TempScope {
     match ast {
-        Expression::TypeDeclaration(name, declared_type, loc) => {
+        Expression::TypeDeclaration(name, declared_type) => {
             if !scope.types.contains_key(name) {
                 if let Ok(ty) = transform_type(declared_type, scope) {
                     scope.add_type(name.clone(), ty);
@@ -306,7 +306,7 @@ fn resolve_scope<'a>(ast: &Expression, scope: &'a mut TempScope) -> &'a mut Temp
                 scope
             }
         }
-        Expression::InitAssign(external, constant, name, declared_type, _exp, loc) => {
+        Expression::InitAssign(external, constant, name, declared_type, _exp) => {
             if scope.variables.contains_key(name) {
                 scope
             } else {
@@ -323,8 +323,8 @@ fn resolve_scope<'a>(ast: &Expression, scope: &'a mut TempScope) -> &'a mut Temp
                 })
             }
         }
-        Expression::Assign(name, _, loc) => scope,
-        Expression::Block(expressions, _) => {
+        Expression::Assign(name, exp) => scope,
+        Expression::Block(expressions) => {
             for exp in expressions {
                 resolve_scope(exp, scope);
             }
@@ -348,7 +348,10 @@ fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
     }
 }
 
-fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
+fn transform_ast(
+    ast: &SpannedExpression,
+    scope: &mut TempScope,
+) -> Result<Program, Vec<CompError>> {
     let env = get_env_from_scope(scope);
     let expression = transform_exp(ast, &env, scope)?;
     Ok(Program {
@@ -357,7 +360,10 @@ fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec
     })
 }
 
-pub fn create_program(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
+pub fn create_program(
+    ast: &SpannedExpression,
+    scope: &mut TempScope,
+) -> Result<Program, Vec<CompError>> {
     resolve_scope(ast, scope);
     let prog = transform_ast(ast, scope)?;
     Ok(prog)

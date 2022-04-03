@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::{ast::*, extract_or, lexer::Token};
 use chumsky::{error::Cheap, prelude::*, recursive::Recursive};
 
@@ -23,7 +25,10 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
                 ty.clone()
                     .separated_by(separator())
                     .at_least(1)
-                    .delimited_by(Token::Operator(format!("<")), Token::Operator(format!(">")))
+                    .delimited_by(
+                        Token::Operator("<".to_string()),
+                        Token::Operator(">".to_string()),
+                    )
                     .or_not(),
             )
             .map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_default())))
@@ -34,7 +39,7 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
             .map(|x| CustomType::Callible(x.0, Box::new(x.1)))
             .boxed();
         let union = (singular.clone().or(callible.clone()))
-            .separated_by(just(Token::Operator(format!("|"))))
+            .separated_by(just(Token::Operator("|".to_string())))
             .at_least(2)
             .map(CustomType::Union);
         let array = ty
@@ -92,14 +97,14 @@ fn token_str() -> impl Parser<Token, String, Error = Cheap<Token>> {
     })
 }
 
-fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a {
+fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Cheap<Token>> + 'a {
     use Expression::*;
-    recursive(|exp: Recursive<'_, Token, Expression, Cheap<_>>| {
+    recursive(|exp: Recursive<'_, Token, SpannedExpression, _>| {
         let block_exp = exp
             .clone()
             .repeated()
             .delimited_by(Token::StartBlock, Token::EndBlock)
-            .map_with_span(Expression::Block)
+            .map_with_span(|x, s| (s, Expression::Block(x)))
             .then_ignore(just(Token::Terminator).or_not())
             .labelled("Block");
 
@@ -107,7 +112,7 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
             .clone()
             .separated_by(separator())
             .delimited_by(Token::StartArray, Token::EndArray)
-            .map_with_span(Array);
+            .map_with_span(|x, s| (s, Array(x)));
 
         let func_declaration = token_ident()
             .separated_by(separator())
@@ -147,7 +152,7 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
                     .separated_by(separator())
                     .delimited_by(Token::StartBracket, Token::EndBracket),
             )
-            .map_with_span(|(name, args), span| FuncCall(name, args, span))
+            .map_with_span(|(name, args), span| (span, FuncCall(name, args)))
             .labelled("Call");
 
         let struct_exp = token_ident()
@@ -156,10 +161,10 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
             .separated_by(separator())
             .allow_trailing()
             .delimited_by(Token::StartBlock, Token::EndBlock)
-            .map_with_span(Struct);
+            .map_with_span(|x, s| (s, Struct(x)));
 
         let primary_exp = func_call
-            .or(symbol_parser().map_with_span(Terminal))
+            .or(symbol_parser().map_with_span(|x, s| (s, Terminal(x))))
             .or(exp
                 .clone()
                 .delimited_by(Token::StartBracket, Token::EndBracket))
@@ -168,8 +173,9 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
 
         let typeof_check = just(Token::Typeof)
             .ignore_then(primary_exp.clone().map(Box::new))
-            .map_with_span(Typeof)
+            .map_with_span(|x, s| (s, Typeof(x)))
             .boxed();
+
         let index_parser = primary_exp
             .clone()
             .then(
@@ -177,54 +183,70 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
                     .clone()
                     .delimited_by(Token::StartArray, Token::EndArray),
             )
-            .map_with_span(|x, span| Index(Box::new(x.0), Box::new(x.1), span));
+            .map_with_span(|x, span| (span, Index(Box::new(x.0), Box::new(x.1))));
 
-        let primary_exp = index_parser.clone().or(primary_exp.clone());
-        let primary_exp = typeof_check.clone().or(primary_exp.clone());
+        let primary_exp = (typeof_check.or(index_parser.clone())).or(primary_exp.clone());
 
         let mult_parser = (primary_exp.clone())
             .then(
-                op_parser(Op::Mult)
-                    .or(op_parser(Op::Div))
-                    .then(primary_exp.clone().map(Box::new))
+                (op_parser(Op::Mult).or(op_parser(Op::Div)))
+                    .then(primary_exp.clone())
                     .repeated(),
             )
             .map(|(l, t)| {
-                t.iter().fold(l, |left, (op, right)| {
-                    Expression::BinOp(
-                        op.clone(),
-                        Box::new(left.clone()),
-                        right.clone(),
-                        left.get_range().start..right.get_range().end,
+                t.into_iter().fold(l, |left, (op, right)| {
+                    (
+                        left.0.start..right.0.end,
+                        Expression::BinOp(op, Box::new(left), Box::new(right)),
                     )
                 })
             })
             .boxed();
 
-        let compare_parser = (mult_parser.clone().map(Box::new))
-            .then(op_parser(Op::Le).or(op_parser(Op::Ge)))
-            .then(mult_parser.clone().map(Box::new))
-            .map_with_span(|x, span| Expression::BinOp(x.0 .1, x.0 .0, x.1, span))
-            .boxed();
-
-        let equal_parser = (compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-            .then(op_parser(Op::Eq).or(op_parser(Op::Neq)))
-            .then(compare_parser.clone().or(mult_parser.clone()).map(Box::new))
-            .map_with_span(|x, span| Expression::BinOp(x.0 .1, x.0 .0, x.1, span));
-
         let add_sub_parser = (mult_parser.clone())
             .then(
                 (op_parser(Op::Add).or(op_parser(Op::Sub)))
-                    .then(mult_parser.clone().map(Box::new))
+                    .then(mult_parser.clone())
                     .repeated(),
             )
             .map(|x| {
-                x.1.iter().fold(x.0, |left, (op, right)| {
-                    BinOp(
-                        op.clone(),
-                        Box::new(left.clone()),
-                        right.clone(),
-                        left.get_range().start..right.get_range().end,
+                x.1.into_iter().fold(x.0, |left, (op, right)| {
+                    (
+                        left.0.start..right.0.end,
+                        BinOp(op, Box::new(left), Box::new(right)),
+                    )
+                })
+            })
+            .boxed();
+
+        let compare_parser = (add_sub_parser.clone())
+            .then(
+                (op_parser(Op::Le).or(op_parser(Op::Ge)))
+                    .then(add_sub_parser.clone())
+                    .repeated(),
+            )
+            .map(|x| {
+                x.1.into_iter().fold(x.0, |left, (op, right)| {
+                    (
+                        left.0.start..right.0.end,
+                        Expression::BinOp(op, Box::new(left), Box::new(right)),
+                    )
+                })
+            })
+            .boxed();
+
+        let equal_parser = (compare_parser.clone())
+            .then(
+                op_parser(Op::Eq)
+                    .or(op_parser(Op::Neq))
+                    .then(compare_parser.clone())
+                    .repeated(),
+            )
+            .map(|x| {
+                x.1.into_iter().fold(x.0, |left, (op, right)| {
+                    (
+                        left.0.start..right.0.end,
+                        Expression::BinOp(op, Box::new(left), Box::new(right)),
                     )
                 })
             })
@@ -235,29 +257,29 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
             .then(block_exp.clone().map(Box::new))
             .then_ignore(just(Token::Else))
             .then(block_exp.clone().map(Box::new))
-            .map_with_span(|x, span| IfElse(x.0 .0, x.0 .1, x.1, span));
+            .map_with_span(|x, span| (span, IfElse(x.0 .0, x.0 .1, x.1)));
         let loop_parser = just(Token::While)
             .ignore_then(exp.clone())
             .then(block_exp.clone())
-            .map_with_span(|x, span| Loop(Box::new(x.0), Box::new(x.1), span));
+            .map_with_span(|x, span| (span, Loop(Box::new(x.0), Box::new(x.1))));
 
         let type_declaration = just(Token::Type)
             .ignore_then(token_ident())
             .then_ignore(just(Token::Operator(String::from("="))))
             .then(type_parser())
             .labelled("Type assignment")
-            .map_with_span(|x, r| TypeDeclaration(x.0, x.1, r))
+            .map_with_span(|x, r| (r, TypeDeclaration(x.0, x.1)))
             .boxed();
 
         let reassign = index_parser
             .clone()
             .or(token_ident()
                 .map(Symbol::Identifier)
-                .map_with_span(Terminal))
+                .map_with_span(|x, s| (s, Terminal(x))))
             .map(Box::new)
-            .then_ignore(just(Token::Operator(format!("="))))
+            .then_ignore(just(Token::Operator("=".to_string())))
             .then(exp.clone().map(Box::new))
-            .map_with_span(|x, span| Assign(x.0, x.1, span));
+            .map_with_span(|x, span| (span, Assign(x.0, x.1)));
 
         let is_external = just(Token::Exported).or_not().map(|x| x.is_some());
 
@@ -265,10 +287,13 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
             .then((just(Token::Let).to(false)).or(just(Token::Constant).to(true)))
             .then(token_ident())
             .then(just(Token::Colon).ignore_then(type_parser()).or_not())
-            .then_ignore(just(Token::Operator(format!("="))))
+            .then_ignore(just(Token::Operator("=".to_string())))
             .then(exp.clone().map(Box::new))
             .map_with_span(|x, span| {
-                InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1, span)
+                (
+                    span,
+                    InitAssign(x.0 .0 .0 .0, x.0 .0 .0 .1, x.0 .0 .1, x.0 .1, x.1),
+                )
             })
             .labelled("Declaration");
 
@@ -279,22 +304,22 @@ fn exp_parser<'a>() -> impl Parser<Token, Expression, Error = Cheap<Token>> + 'a
             .or(type_declaration.clone())
             .or(declaration)
             .or(equal_parser)
-            .or(compare_parser)
-            .or(func_declaration.map_with_span(Terminal))
-            .or(add_sub_parser)
+            .or(func_declaration.map_with_span(|x, s| (s, Terminal(x))))
             .or(array_parser)
-            .then_ignore(just(Token::Terminator).or_not())
             .boxed();
         let expression = (expression.clone().map(Box::new))
-            .then_ignore(just(Token::Operator(format!("."))))
+            .then_ignore(just(Token::Operator(".".to_string())))
             .then(token_ident())
-            .map_with_span(|exp, range| DotAccess(exp.0, exp.1, range))
+            .map_with_span(|exp, range| (range, DotAccess(exp.0, exp.1)))
             .or(expression);
-        expression.or(block_exp)
+
+        expression
+            .then_ignore(just(Token::Terminator).or_not())
+            .or(block_exp)
     })
 }
 
-pub fn parser() -> impl Parser<Token, (Vec<ImportFrom>, Expression), Error = Cheap<Token>> {
+pub fn parser() -> impl Parser<Token, (Vec<ImportFrom>, SpannedExpression), Error = Cheap<Token>> {
     let imports = just(Token::From)
         .ignore_then(token_str())
         .then_ignore(just(Token::Import))
@@ -312,6 +337,10 @@ pub fn parser() -> impl Parser<Token, (Vec<ImportFrom>, Expression), Error = Che
         .map(|(file, imports)| ImportFrom { file, imports })
         .repeated();
     imports
-        .then(exp_parser().repeated().map_with_span(Expression::Block))
+        .then(
+            exp_parser()
+                .repeated()
+                .map_with_span(|x, s| (s, Expression::Block(x))),
+        )
         .then_ignore(end())
 }
