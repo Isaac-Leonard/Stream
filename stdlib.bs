@@ -32,6 +32,6 @@ extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int;
 type Point={x:Float; y:Float};
 
 extern const midPoint=(a:Point, b:Point):Point=>({
-    x:((a.x)+(b.x))/2.0,
-    y:((a.y)+(b.y))/2.0
+    x:(a.x+b.x)/2.0,
+    y:(a.y+b.y)/2.0
 });

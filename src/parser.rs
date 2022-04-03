@@ -184,17 +184,30 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
                 primary_exp
                     .clone()
                     .delimited_by(Token::StartArray, Token::EndArray)
+                    .map_with_span(|x, s| (s, Access::Index(x)))
+                    .or(just(Token::Operator(".".to_string()))
+                        .ignore_then(token_ident())
+                        .map_with_span(|x, s| (s, Access::Dot(x))))
                     .repeated(),
             )
             .map(|(l, t)| {
                 t.into_iter().fold(l, |arr, index| {
+                    use Access::*;
                     (
                         arr.0.start..index.0.end,
-                        Expression::Index(Box::new(arr), Box::new(index)),
+                        match index.1 {
+                            Index(index) => Expression::Index(Box::new(arr), Box::new(index)),
+                            Dot(prop) => DotAccess(Box::new(arr), prop),
+                        },
                     )
                 })
             })
             .boxed();
+
+        enum Access {
+            Index(SpannedExpression),
+            Dot(String),
+        }
 
         let mult_parser = (index_parser.clone())
             .then(
@@ -316,11 +329,6 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .or(func_declaration.map_with_span(|x, s| (s, Terminal(x))))
             .or(array_parser)
             .boxed();
-        let expression = (expression.clone().map(Box::new))
-            .then_ignore(just(Token::Operator(".".to_string())))
-            .then(token_ident())
-            .map_with_span(|exp, range| (range, DotAccess(exp.0, exp.1)))
-            .or(expression);
 
         expression
             .then_ignore(just(Token::Terminator).or_not())
