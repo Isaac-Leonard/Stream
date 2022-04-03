@@ -1,5 +1,6 @@
 mod ast;
 mod compile;
+mod config;
 mod errors;
 mod lexer;
 mod linker;
@@ -143,6 +144,6 @@ fn main() {
         }
 
         linker.output("testing");
-        linker.link();
+        linker.link().map_err(|x| panic!("{}", x));
     };
 }
