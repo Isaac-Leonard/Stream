@@ -267,7 +267,7 @@ fn transform_exp(
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
                             };
-                            let local_scope = resolve_scope(&body, &mut local_scope)?;
+                            let local_scope = resolve_scope(&body, &mut local_scope);
                             let body = transform_ast(&body, local_scope)?;
 
                             CompData::Func(FunctionAst {
@@ -292,69 +292,45 @@ fn transform_exp(
     get_env(&expression, env, exp.get_range()).map_err(|x| vec![x])
 }
 
-fn resolve_scope<'a>(
-    ast: &Expression,
-    scope: &'a mut TempScope,
-) -> Result<&'a mut TempScope, Vec<CompError>> {
+fn resolve_scope<'a>(ast: &Expression, scope: &'a mut TempScope) -> &'a mut TempScope {
     match ast {
         Expression::TypeDeclaration(name, declared_type, loc) => {
             if !scope.types.contains_key(name) {
-                Ok(scope.add_type(name.clone(), transform_type(declared_type, scope)?))
+                if let Ok(ty) = transform_type(declared_type, scope) {
+                    scope.add_type(name.clone(), ty);
+                    scope
+                } else {
+                    scope
+                }
             } else {
-                Err(vec![CompError::TypeAlreadyDefined(
-                    name.clone(),
-                    loc.clone(),
-                )])
+                scope
             }
         }
         Expression::InitAssign(external, constant, name, declared_type, _exp, loc) => {
             if scope.variables.contains_key(name) {
-                Err(vec![CompError::RedeclareInSameScope(
-                    name.clone(),
-                    loc.clone(),
-                )])
+                scope
             } else {
                 let typing = match declared_type {
                     None => None,
-                    Some(x) => Some(transform_type(x, scope)?),
+                    Some(x) => transform_type(x, scope).map_or(None, Some),
                 };
-                Ok(scope.add_variable(NewVariable {
+                scope.add_variable(NewVariable {
                     constant: *constant,
                     name: name.clone(),
                     typing,
                     initialised: false,
                     external: *external,
-                }))
+                })
             }
         }
-        Expression::Assign(name, _, loc) => {
-            if let Expression::Terminal(Symbol::Identifier(name), _) = name.as_ref() {
-                if scope.parent.is_none() {
-                    Err(vec![CompError::GlobalReassign(name.clone(), loc.clone())])
-                } else if !scope.variable_exists(name) {
-                    Err(vec![CompError::CannotFindVariable(
-                        name.clone(),
-                        loc.clone(),
-                    )])
-                } else if scope.constant_exists(name) {
-                    Err(vec![CompError::ConstReassign(name.clone(), loc.clone())])
-                } else {
-                    Ok(scope)
-                }
-            } else {
-                Err(vec![CompError::InvalidLeftHandForAssignment(
-                    *name.clone(),
-                    loc.clone(),
-                )])
-            }
-        }
+        Expression::Assign(name, _, loc) => scope,
         Expression::Block(expressions, _) => {
             for exp in expressions {
                 resolve_scope(exp, scope);
             }
-            Ok(scope)
+            scope
         }
-        _x => Ok(scope),
+        _x => scope,
     }
 }
 
@@ -382,7 +358,7 @@ fn transform_ast(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec
 }
 
 pub fn create_program(ast: &Expression, scope: &mut TempScope) -> Result<Program, Vec<CompError>> {
-    resolve_scope(ast, scope)?;
+    resolve_scope(ast, scope);
     let prog = transform_ast(ast, scope)?;
     Ok(prog)
 }
