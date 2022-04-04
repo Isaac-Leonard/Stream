@@ -290,14 +290,12 @@ fn transform_exp(
                             let body = transform_ast(&*body, local_scope)?;
 
                             CompData::Func(FunctionAst {
-                                generics,
                                 arguments,
                                 return_type,
                                 body: Some(Box::new(body)),
                             })
                         }
                         None => CompData::Func(FunctionAst {
-                            generics,
                             arguments,
                             return_type,
                             body: None,
@@ -331,7 +329,7 @@ fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> 
             } else {
                 let typing = match declared_type {
                     None => None,
-                    Some(x) => transform_type(x, scope).map_or(None, Some),
+                    Some(x) => transform_type(x, scope).ok(),
                 };
                 scope.add_variable(NewVariable {
                     constant: *constant,
@@ -388,8 +386,67 @@ pub fn create_program(
     Ok(prog)
 }
 
-pub fn substitute_generics(func: &FunctionAst) -> FunctionAst {
-    func.clone()
+pub fn function_from_generics(
+    func: Function,
+    generics: Vec<CompType>,
+    scope: &mut TempScope,
+) -> Result<FunctionAst, Vec<CompError>> {
+    let mut scope = TempScope {
+        parent: Some(Box::new(scope.clone())),
+        preset_variables: HashMap::new(),
+        variables: HashMap::new(),
+        types: HashMap::new(),
+    };
+    let generic_names = func.generics;
+    for gen in generic_names.into_iter().zip(generics) {
+        scope.add_type(gen.0, gen.1);
+    }
+    let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
+        transform_type(&x.1.clone(), &scope).map(|typing| CompVariable {
+            constant: true,
+            name: x.0.clone(),
+            typing,
+            external: false,
+        })
+    }))
+    .unwrap_or_else(|| Ok(Vec::new()));
+    let return_type = transform_type(&func.return_type, &scope);
+    let (temp_variables, return_type) = match (temp_variables, return_type) {
+        (Ok(vars), Ok(ret)) => (vars, ret),
+        (Err(vars), Err(ret)) => {
+            return Err(vars.iter().flatten().chain(ret.iter()).cloned().collect())
+        }
+        (Err(vars), _) => return Err(vars.iter().flatten().cloned().collect()),
+        (_, Err(ret)) => return Err(ret),
+    };
+    let arguments = temp_variables.clone();
+    let mut local_variables = HashMap::new();
+    for var in temp_variables {
+        local_variables.insert(var.name.clone(), var);
+    }
+    Ok(match func.body {
+        Some(body) => {
+            let mut local_scope = TempScope {
+                parent: Some(Box::new(scope.clone())),
+                preset_variables: local_variables,
+                variables: HashMap::new(),
+                types: HashMap::new(),
+            };
+            let local_scope = resolve_scope(&*body, &mut local_scope);
+            let body = transform_ast(&*body, local_scope)?;
+
+            FunctionAst {
+                arguments,
+                return_type,
+                body: Some(Box::new(body)),
+            }
+        }
+        None => FunctionAst {
+            arguments,
+            return_type,
+            body: None,
+        },
+    })
 }
 
 pub fn get_env(

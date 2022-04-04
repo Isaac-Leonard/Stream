@@ -149,7 +149,6 @@ pub struct CompVariable {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FunctionAst {
-    pub generics: Vec<String>,
     pub arguments: Vec<CompVariable>,
     pub return_type: CompType,
     pub body: Option<Box<Program>>,
@@ -436,7 +435,7 @@ pub enum CompType {
     Float,
     Str(u32),
     Ptr,
-    Generic(String),
+    Generic(Box<CompType>),
     Type,
 }
 impl CompType {
