@@ -57,9 +57,28 @@ pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Ve
                 (Ok(args), Ok(ret)) => Ok(CompType::Callible(args, Box::new(ret))),
             }
         }
-        CustomType::Lone(ty) => scope
-            .get_type(&ty.name)
-            .map_err(|_| vec![CompError::CannotFindType(ty.clone().name, 0..0)]),
+        CustomType::Lone(ty) => {
+            let x = scope.get_type(&ty.name);
+            if let Ok(x) = x {
+                Ok(x)
+            } else {
+                if ty.name == "Str" && ty.generics.len() == 1 {
+                    let len = ty.generics[0].clone();
+                    if let CustomType::Constant(len) = len {
+                        if let RawData::Int(len) = *len {
+                            Ok(CompType::Str(len as u32))
+                        } else {
+                            Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
+                        }
+                    } else {
+                        Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
+                    }
+                } else {
+                    Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
+                }
+            }
+        }
+        _ => panic!("General constant types are not yet supported sorry"),
     }
 }
 

@@ -3,7 +3,7 @@ use std::ops::Range;
 use crate::{ast::*, extract_or, lexer::Token};
 use chumsky::{error::Cheap, prelude::*, recursive::Recursive};
 
-fn symbol_parser() -> impl Parser<Token, Symbol, Error = Cheap<Token>> {
+fn raw_data_parser() -> impl Parser<Token, RawData, Error = Cheap<Token>> {
     filter_map(|e, x| match x {
         Token::Str(x) => Ok(RawData::Str(x)),
         Token::Float(x) => Ok(RawData::Float(x)),
@@ -13,13 +13,22 @@ fn symbol_parser() -> impl Parser<Token, Symbol, Error = Cheap<Token>> {
         Token::False => Ok(RawData::Bool(false)),
         _ => Err(Cheap::expected_input_found(e, Vec::new(), None)),
     })
-    .map(Symbol::Data)
-    .or(token_ident().map(String::from).map(Symbol::Identifier))
-    .labelled("Symbol")
+}
+
+fn symbol_parser() -> impl Parser<Token, Symbol, Error = Cheap<Token>> {
+    raw_data_parser()
+        .map(Symbol::Data)
+        .or(token_ident().map(String::from).map(Symbol::Identifier))
+        .labelled("Symbol")
 }
 
 fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
     recursive(|ty: Recursive<Token, CustomType, _>| {
+        let constant = raw_data_parser()
+            .map(Box::new)
+            .map(CustomType::Constant)
+            .boxed();
+
         let singular = token_ident()
             .then(
                 ty.clone()
@@ -38,7 +47,8 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
             .then(just(Token::Colon).ignore_then(ty.clone()))
             .map(|x| CustomType::Callible(x.0, Box::new(x.1)))
             .boxed();
-        let union = (singular.clone().or(callible.clone()))
+        let union = (constant.clone())
+            .or(singular.clone().or(callible.clone()))
             .separated_by(just(Token::Operator("|".to_string())))
             .at_least(2)
             .map(CustomType::Union);
@@ -63,7 +73,8 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
             .allow_trailing()
             .delimited_by(Token::StartBlock, Token::EndBlock)
             .map(CustomType::Struct);
-        (callible)
+        (constant)
+            .or(callible)
             .or(union)
             .or(singular)
             .or(array)
