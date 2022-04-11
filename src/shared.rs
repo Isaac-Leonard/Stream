@@ -103,47 +103,37 @@ fn transform_exp(
     mut scope: &mut TempScope,
 ) -> (ExpEnvironment, Vec<CompError>) {
     let mut errs = Vec::new();
+    macro_rules! get_exp {
+        ($exp:expr, $env:expr, $scope:expr) => {{
+            let mut res = transform_exp($exp, $env, $scope);
+            errs.append(&mut res.1);
+            res.0
+        }};
+    }
     let expression = match exp {
         Expression::Struct(data) => {
-            let res = data.iter().map(|(k, v)| {
-                let (a, b) = transform_exp(v, env, scope);
-                (k.clone(), a, b)
-            });
-            let mut success = Vec::new();
-            for mut el in res {
-                success.push((el.0, el.1));
-
-                errs.append(&mut el.2)
-            }
-            CompExpression::Struct(success.into_iter().collect())
+            let res = data
+                .iter()
+                .map(|(k, v)| (k.clone(), get_exp!(v, env, scope)));
+            CompExpression::Struct(res.collect())
         }
         Expression::Array(elements) => {
             let mut oks = Vec::new();
             let mut env = env.clone();
             for exp in elements {
-                let mut res = transform_exp(exp, &env, scope);
-                oks.push(res.0.clone());
-                env = res.0;
-                errs.append(&mut res.1);
+                env = get_exp!(exp, &env, scope);
+                oks.push(env.clone());
             }
             CompExpression::Array(oks)
         }
         Expression::DotAccess(val, key) => {
-            let mut exp = transform_exp(val, env, scope);
-            errs.append(&mut exp.1);
-            CompExpression::DotAccess(exp.0, key.clone())
+            CompExpression::DotAccess(get_exp!(val, env, scope), key.clone())
         }
-        Expression::Typeof(exp) => {
-            let mut exp = transform_exp(exp, env, scope);
-            errs.append(&mut exp.1);
-            CompExpression::Typeof(exp.0)
-        }
+        Expression::Typeof(exp) => CompExpression::Typeof(get_exp!(exp, env, scope)),
         Expression::Index(arr, index) => {
-            let mut arr_exp = transform_exp(arr, env, scope);
-            errs.append(&mut arr_exp.1);
-            let mut index_exp = transform_exp(index, env, scope);
-            errs.append(&mut index_exp.1);
-            CompExpression::Index(arr_exp.0, index_exp.0)
+            let arr_exp = get_exp!(arr, env, scope);
+            let index_exp = get_exp!(index, env, scope);
+            CompExpression::Index(arr_exp, index_exp)
         }
         Expression::TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
         Expression::InitAssign(_, _, name, _, exp) => {
@@ -151,8 +141,8 @@ fn transform_exp(
                 errs.push(CompError::RedeclareInSameScope(name.clone(), loc.clone()));
             }
 
-            let exp = transform_exp(exp, env, scope);
-            let exp_ty = exp.0.result_type.clone();
+            let exp = get_exp!(exp, env, scope);
+            let exp_ty = exp.result_type.clone();
             let has_type = scope.variable_has_type(name);
             if !has_type {
                 scope = scope.set_variable_type(name, &exp_ty);
@@ -182,26 +172,21 @@ fn transform_exp(
                     result_type: var.typing.clone(),
                     expression: Box::new(CompExpression::Read(var)),
                     var_types: HashMap::new(),
-                    located: loc.start..exp.0.located.start,
+                    located: loc.start..exp.located.start,
                     errors: Vec::new(),
                 },
-                exp.0,
+                exp,
             )
         }
         Expression::Assign(name, exp) => {
-            let mut lhs = transform_exp(name, env, scope);
-            errs.append(&mut lhs.1);
-            let mut exp = transform_exp(exp, env, scope);
-            errs.append(&mut exp.1);
-            CompExpression::Assign(lhs.0, exp.0)
+            let lhs = get_exp!(name, env, scope);
+            let exp = get_exp!(exp, env, scope);
+            CompExpression::Assign(lhs, exp)
         }
         Expression::IfElse(cond, left, right) => {
-            let (cond, mut errors) = transform_exp(cond, env, scope);
-            errs.append(&mut errors);
-            let (then, mut errors) = transform_exp(left, env, scope);
-            errs.append(&mut errors);
-            let (otherwise, mut errors) = transform_exp(right, env, scope);
-            errs.append(&mut errors);
+            let cond = get_exp!(cond, env, scope);
+            let then = get_exp!(left, env, scope);
+            let otherwise = get_exp!(right, env, scope);
             CompExpression::IfElse {
                 cond,
                 then,
@@ -209,20 +194,16 @@ fn transform_exp(
             }
         }
         Expression::Loop(exp, body) => {
-            let (cond, mut errors) = transform_exp(exp, env, scope);
-            errs.append(&mut errors);
-            let (body, mut errors) = transform_exp(body, env, scope);
-            errs.append(&mut errors);
+            let cond = get_exp!(exp, env, scope);
+            let body = get_exp!(body, env, scope);
             CompExpression::WhileLoop { cond, body }
         }
         Expression::Block(expressions) => {
             let mut env = env.clone();
             let mut oks = Vec::new();
             for exp in expressions {
-                let mut res = transform_exp(exp, &env, scope);
-                oks.push(res.0.clone());
-                env = res.0;
-                errs.append(&mut res.1);
+                env = get_exp!(exp, &env, scope);
+                oks.push(env.clone());
             }
             CompExpression::List(oks)
         }
@@ -235,10 +216,8 @@ fn transform_exp(
             let mut args = Vec::new();
             let mut env = env.clone();
             for exp in arguments {
-                let mut res = transform_exp(exp, &env, scope);
-                args.push(res.0.clone());
-                env = res.0;
-                errs.append(&mut res.1);
+                env = get_exp!(exp, &env, scope);
+                args.push(env.clone());
             }
             let func = if let Ok(var) = scope.get_variable(name) {
                 var
@@ -422,7 +401,8 @@ pub fn function_from_generics(
     func: Function,
     generics: Vec<CompType>,
     scope: &mut TempScope,
-) -> Result<FunctionAst, Vec<CompError>> {
+) -> (FunctionAst, Vec<CompError>) {
+    let mut errs = Vec::new();
     let mut scope = TempScope {
         parent: Some(Box::new(scope.clone())),
         preset_variables: HashMap::new(),
@@ -433,30 +413,35 @@ pub fn function_from_generics(
     for gen in generic_names.into_iter().zip(generics) {
         scope.add_type(gen.0, gen.1);
     }
-    let temp_variables = collect_ok_or_err(func.args.iter().map(|x| {
-        transform_type(&x.1.clone(), &scope).map(|typing| CompVariable {
-            constant: true,
+    let mut temp_variables = Vec::new();
+    for x in func.args {
+        let typing = match transform_type(&x.1.clone(), &scope) {
+            Ok(ty) => ty,
+            Err(mut err) => {
+                errs.append(&mut err);
+                CompType::Unknown
+            }
+        };
+        temp_variables.push(CompVariable {
             name: x.0.clone(),
+            constant: true,
             typing,
             external: false,
-        })
-    }))
-    .unwrap_or_else(|| Ok(Vec::new()));
-    let return_type = transform_type(&func.return_type, &scope);
-    let (temp_variables, return_type) = match (temp_variables, return_type) {
-        (Ok(vars), Ok(ret)) => (vars, ret),
-        (Err(vars), Err(ret)) => {
-            return Err(vars.iter().flatten().chain(ret.iter()).cloned().collect())
+        });
+    }
+    let return_type = match transform_type(&func.return_type, &scope) {
+        Ok(ty) => ty,
+        Err(mut err) => {
+            errs.append(&mut err);
+            CompType::Unknown
         }
-        (Err(vars), _) => return Err(vars.iter().flatten().cloned().collect()),
-        (_, Err(ret)) => return Err(ret),
     };
     let arguments = temp_variables.clone();
     let mut local_variables = HashMap::new();
     for var in temp_variables {
         local_variables.insert(var.name.clone(), var);
     }
-    Ok(match func.body {
+    let func = match func.body {
         Some(body) => {
             let mut local_scope = TempScope {
                 parent: Some(Box::new(scope.clone())),
@@ -465,7 +450,14 @@ pub fn function_from_generics(
                 types: HashMap::new(),
             };
             let local_scope = resolve_scope(&*body, &mut local_scope);
-            let body = transform_ast(&*body, local_scope)?;
+
+            let env = get_env_from_scope(&scope);
+            let mut expression = transform_exp(&*body, &env, &mut scope);
+            let body = Program {
+                scope: local_scope.clone(),
+                body: expression.0,
+            };
+            errs.append(&mut expression.1);
 
             FunctionAst {
                 arguments,
@@ -478,7 +470,8 @@ pub fn function_from_generics(
             return_type,
             body: None,
         },
-    })
+    };
+    (func, errs)
 }
 
 pub fn get_env(
