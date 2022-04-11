@@ -254,7 +254,6 @@ fn transform_exp(
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
                 RawData::Func(func) => {
-                    let generics = func.generics;
                     let mut temp_variables = Vec::new();
                     for arg in func.args {
                         let arg_ty = match transform_type(&arg.1, scope) {
@@ -293,12 +292,12 @@ fn transform_exp(
                                 types: HashMap::new(),
                             };
                             let local_scope = resolve_scope(&*body, &mut local_scope);
-                            let body = transform_ast(&*body, local_scope);
-
+                            let (body, mut errors) = transform_ast(&*body, local_scope);
+                            errs.append(&mut errors);
                             CompData::Func(FunctionAst {
                                 arguments,
                                 return_type,
-                                body: Some(Box::new(body.unwrap())),
+                                body: Some(Box::new(body)),
                             })
                         }
                         None => CompData::Func(FunctionAst {
@@ -346,7 +345,7 @@ fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> 
                 })
             }
         }
-        Expression::Assign(name, exp) => scope,
+        Expression::Assign(_, _) => scope,
         Expression::Block(expressions) => {
             for exp in expressions {
                 resolve_scope(exp, scope);
@@ -372,29 +371,19 @@ fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
     }
 }
 
-fn transform_ast(
-    ast: &SpannedExpression,
-    scope: &mut TempScope,
-) -> Result<Program, Vec<CompError>> {
+fn transform_ast(ast: &SpannedExpression, scope: &mut TempScope) -> (Program, Vec<CompError>) {
     let env = get_env_from_scope(scope);
     let expression = transform_exp(ast, &env, scope);
-    if expression.1.is_empty() {
-        Ok(Program {
-            scope: scope.clone(),
-            body: expression.0,
-        })
-    } else {
-        Err(expression.1)
-    }
+    let prog = Program {
+        scope: scope.clone(),
+        body: expression.0,
+    };
+    (prog, expression.1)
 }
 
-pub fn create_program(
-    ast: &SpannedExpression,
-    scope: &mut TempScope,
-) -> Result<Program, Vec<CompError>> {
+pub fn create_program(ast: &SpannedExpression, scope: &mut TempScope) -> (Program, Vec<CompError>) {
     resolve_scope(ast, scope);
-    let prog = transform_ast(ast, scope)?;
-    Ok(prog)
+    transform_ast(ast, scope)
 }
 
 pub fn function_from_generics(

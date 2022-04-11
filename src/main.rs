@@ -114,15 +114,14 @@ fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     }
     let mut program = programs.get_mut(name).unwrap();
     let prog = create_program(program.ast.as_ref().unwrap(), &mut global_scope);
-    match prog {
-        Ok(prog) => {
-            compile::compile(&prog, program.settings.clone());
-            program.program = Some(prog)
-        }
-        Err(messages) => messages
-            .into_iter()
-            .for_each(|e| println!("{}", e.get_msg(&program.line_numbers))),
+    if prog.1.is_empty() {
+        compile::compile(&prog.0, program.settings.clone());
+    } else {
+        prog.1
+            .iter()
+            .for_each(|e| println!("{}", e.get_msg(&program.line_numbers)));
     }
+    program.program = Some(prog.0);
 }
 
 fn main() {
