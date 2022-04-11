@@ -305,6 +305,7 @@ pub struct ExpEnvironment {
     pub var_types: HashMap<String, CompType>,
     pub result_type: CompType,
     pub located: Range<usize>,
+    pub errors: Vec<CompError>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -424,6 +425,7 @@ impl TempScope {
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum CompType {
+    Unknown,
     Not(Box<Self>),
     Callible(Vec<Self>, Box<Self>),
     Union(Vec<Self>),
@@ -510,6 +512,7 @@ impl CompType {
                 }
             }
             Type => Type,
+            Unknown => Unknown,
             Ptr => Ptr,
             Array(ty, len) => Array(ty.clone(), *len),
             Int => Int,
@@ -538,6 +541,7 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Unknown => write!(f, "unkown"),
             Struct(keys) => write!(
                 f,
                 "{{{}}}",
