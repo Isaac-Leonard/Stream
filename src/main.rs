@@ -25,6 +25,16 @@ fn main() {
     };
     let mut files = parse_files(settings.clone(), HashMap::new());
     transform_files(&name, &mut files);
+    for prog in &files {
+        if prog.1.errors.is_empty() {
+            crate::compile::compile(prog.1.program.as_ref().unwrap(), prog.1.settings.clone());
+        } else {
+            prog.1
+                .errors
+                .iter()
+                .for_each(|e| println!("{}", e.get_msg(&prog.1.line_numbers)));
+        }
+    }
     if settings.call_linker {
         let mut linker = linker::Linker::new();
         for file in files {

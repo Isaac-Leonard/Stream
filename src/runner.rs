@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::errors::CompError;
 use crate::lexer;
 use crate::parser::*;
 use crate::settings::Settings;
@@ -42,6 +43,7 @@ pub struct ImportMap {
     pub compiled: bool,
     pub settings: Settings,
     pub line_numbers: Vec<i32>,
+    pub errors: Vec<CompError>,
 }
 impl ImportMap {}
 pub fn parse_files(
@@ -80,6 +82,7 @@ pub fn parse_files(
                     ast: Some(ast.1),
                     program: None,
                     compiled: false,
+                    errors: Vec::new(),
                 },
             );
             files
@@ -104,12 +107,6 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     }
     let mut program = programs.get_mut(name).unwrap();
     let prog = create_program(program.ast.as_ref().unwrap(), &mut global_scope);
-    if prog.1.is_empty() {
-        crate::compile::compile(&prog.0, program.settings.clone());
-    } else {
-        prog.1
-            .iter()
-            .for_each(|e| println!("{}", e.get_msg(&program.line_numbers)));
-    }
     program.program = Some(prog.0);
+    program.errors = prog.1;
 }

@@ -1,8 +1,11 @@
 #[path = "../ast.rs"]
 pub mod ast;
+#[path = "../compile.rs"]
+pub mod compile;
 pub mod completion;
 #[path = "../errors.rs"]
 pub mod errors;
+mod jump_definition;
 #[path = "../lexer.rs"]
 mod lexer;
 #[path = "../macros.rs"]
@@ -19,6 +22,7 @@ pub mod settings;
 pub mod shared;
 use crate::runner::*;
 use ast::*;
+use im_rc::Vector;
 use semantic_token::semantic_token_from_ast;
 use semantic_token::ImCompleteSemanticToken;
 use semantic_token::LEGEND_TYPE;
@@ -221,8 +225,8 @@ impl LanguageServer for Backend {
             let position = params.text_document_position_params.position;
             let char = rope.try_line_to_char(position.line as usize).ok()?;
             let offset = char + position.character as usize;
-            let span = Some((0, 0..0));
-            span.and_then(|(_, range)| {
+            let span = jump_definition::get_definition_of_expr(&ast, Vector::new(), offset);
+            span.1.and_then(|(_, range)| {
                 let start_position = offset_to_position(range.start, &rope)?;
                 let end_position = offset_to_position(range.end, &rope)?;
 
