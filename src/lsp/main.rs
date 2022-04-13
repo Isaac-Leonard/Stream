@@ -22,14 +22,13 @@ pub mod settings;
 pub mod shared;
 use crate::runner::*;
 use ast::*;
-use im_rc::Vector;
 use semantic_token::semantic_token_from_ast;
 use semantic_token::ImCompleteSemanticToken;
 use semantic_token::LEGEND_TYPE;
 use settings::Settings;
 use std::collections::HashMap;
+use std::fs;
 
-use dashmap::DashMap;
 use ropey::Rope;
 use serde_json::Value;
 use tower_lsp::jsonrpc::Result;
@@ -39,9 +38,9 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    ast_map: DashMap<String, ExpEnvironment>,
-    document_map: DashMap<String, Rope>,
-    semantic_token_map: DashMap<String, Vec<ImCompleteSemanticToken>>,
+    ast_map: HashMap<String, ExpEnvironment>,
+    document_map: HashMap<String, Rope>,
+    semantic_token_map: HashMap<String, Vec<ImCompleteSemanticToken>>,
 }
 
 #[tower_lsp::async_trait]
@@ -112,41 +111,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(MessageType::LOG, "semantic_token_full")
             .await;
-        let semantic_tokens = || -> Option<Vec<SemanticToken>> {
-            let mut im_complete_tokens = self.semantic_token_map.get_mut(&uri)?;
-            let rope = self.document_map.get(&uri)?;
-            let ast = self.ast_map.get(&uri)?;
-            let extends_tokens = semantic_token_from_ast(&ast);
-            im_complete_tokens.extend(extends_tokens);
-            im_complete_tokens.sort_by(|a, b| a.start.cmp(&b.start));
-            let mut pre_line = 0;
-            let mut pre_start = 0;
-            let semantic_tokens = im_complete_tokens
-                .iter()
-                .filter_map(|token| {
-                    let line = rope.try_byte_to_line(token.start as usize).ok()? as u32;
-                    let first = rope.try_line_to_char(line as usize).ok()? as u32;
-                    let start = rope.try_byte_to_char(token.start as usize).ok()? as u32 - first;
-                    let delta_line = line - pre_line;
-                    let delta_start = if delta_line == 0 {
-                        start - pre_start
-                    } else {
-                        start
-                    };
-                    let ret = Some(SemanticToken {
-                        delta_line,
-                        delta_start,
-                        length: token.length as u32,
-                        token_type: token.token_type as u32,
-                        token_modifiers_bitset: 0,
-                    });
-                    pre_line = line;
-                    pre_start = start;
-                    ret
-                })
-                .collect::<Vec<_>>();
-            Some(semantic_tokens)
-        }();
+        let semantic_tokens = || -> Option<Vec<SemanticToken>> { None }();
         if let Some(semantic_token) = semantic_tokens {
             return Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
                 result_id: None,
@@ -217,25 +182,41 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        let definition = || -> Option<GotoDefinitionResponse> {
-            let uri = params.text_document_position_params.text_document.uri;
-            let ast = self.ast_map.get(&uri.to_string())?;
-            let rope = self.document_map.get(&uri.to_string())?;
+        let uri = params.text_document_position_params.text_document.uri;
+        let ast = match self.ast_map.get(uri.path()) {
+            Some(ast) => ast.clone(),
+            None => {
+                parse(create_settings(&TextDocumentItem {
+                    uri: uri.clone(),
+                    text: String::default(),
+                    version: 0,
+                }))
+                .0
+            }
+        };
 
-            let position = params.text_document_position_params.position;
-            let char = rope.try_line_to_char(position.line as usize).ok()?;
-            let offset = char + position.character as usize;
-            let span = jump_definition::get_definition_of_expr(&ast, Vector::new(), offset);
-            span.1.and_then(|(_, range)| {
-                let start_position = offset_to_position(range.start, &rope)?;
-                let end_position = offset_to_position(range.end, &rope)?;
+        let position = params.text_document_position_params.position;
+        let file = fs::read_to_string(uri.path()).unwrap();
+        let lines = calc_lines(&file);
+        let line = lines[position.line as usize] as usize;
+        let offset = line + position.character as usize;
+        let span = jump_definition::get_definition_of_expr(&ast, offset)
+            .1
+            .unwrap();
+        let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() - 1 as usize;
+        let start_position = Position {
+            line: line as u32,
+            character: (span.1.start - (lines[line] as usize)) as u32,
+        };
+        let end_position = Position {
+            line: line as u32,
+            character: (span.1.end - (lines[line] as usize)) as u32,
+        };
+        let range = Range::new(start_position, end_position);
 
-                let range = Range::new(start_position, end_position);
-
-                Some(GotoDefinitionResponse::Scalar(Location::new(uri, range)))
-            })
-        }();
-        Ok(definition)
+        Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
+            uri, range,
+        ))))
     }
     async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
         self.client
@@ -359,13 +340,7 @@ struct TextDocumentItem {
 }
 impl Backend {
     async fn on_change(&self, params: TextDocumentItem) {
-        let rope = ropey::Rope::from_str(&params.text);
-        self.document_map
-            .insert(params.uri.to_string(), rope.clone());
         let (ast, errors, semantic_tokens) = parse(create_settings(&params));
-        self.client
-            .log_message(MessageType::INFO, format!("{:?}", errors))
-            .await;
     }
 }
 
@@ -378,9 +353,9 @@ async fn main() {
 
     let (service, socket) = LspService::build(|client| Backend {
         client,
-        ast_map: DashMap::new(),
-        document_map: DashMap::new(),
-        semantic_token_map: DashMap::new(),
+        ast_map: HashMap::new(),
+        document_map: HashMap::new(),
+        semantic_token_map: HashMap::new(),
     })
     .finish();
     Server::new(stdin, stdout, socket).serve(service).await;
