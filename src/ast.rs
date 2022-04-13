@@ -57,7 +57,7 @@ pub enum Expression {
     InitAssign(
         bool,
         bool,
-        String,
+        (String, Range<usize>),
         Option<CustomType>,
         Box<SpannedExpression>,
     ),
@@ -67,7 +67,7 @@ pub enum Expression {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Function {
     pub generics: Vec<String>,
-    pub args: Vec<(String, CustomType)>,
+    pub args: Vec<((String, Range<usize>), CustomType)>,
     pub body: Option<Box<SpannedExpression>>,
     pub return_type: CustomType,
 }
@@ -123,6 +123,7 @@ pub struct NewVariable {
     pub constant: bool,
     pub initialised: bool,
     pub external: bool,
+    pub declared_at: Range<usize>,
 }
 impl NewVariable {
     fn get_final(&self) -> Result<CompVariable, String> {
@@ -134,6 +135,7 @@ impl NewVariable {
                 typing: self.typing.clone().unwrap(),
                 constant: self.constant,
                 external: self.external,
+                declared_at: Some(self.declared_at.clone()),
             })
         }
     }
@@ -145,6 +147,7 @@ pub struct CompVariable {
     pub typing: CompType,
     pub constant: bool,
     pub external: bool,
+    pub declared_at: Option<Range<usize>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

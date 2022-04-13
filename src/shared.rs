@@ -137,27 +137,28 @@ fn transform_exp(
         }
         Expression::TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
         Expression::InitAssign(_, _, name, _, exp) => {
-            if scope.variable_initialised(name) {
-                errs.push(CompError::RedeclareInSameScope(name.clone(), loc.clone()));
+            if scope.variable_initialised(&name.0) {
+                errs.push(CompError::RedeclareInSameScope(name.0.clone(), loc.clone()));
             }
 
             let exp = get_exp!(exp, env, scope);
             let exp_ty = exp.result_type.clone();
-            let has_type = scope.variable_has_type(name);
+            let has_type = scope.variable_has_type(&name.0);
             if !has_type {
-                scope = scope.set_variable_type(name, &exp_ty);
+                scope = scope.set_variable_type(&name.0, &exp_ty);
             }
-            scope.set_variable_initialised(name);
-            let var = scope.get_variable(name);
+            scope.set_variable_initialised(&name.0);
+            let var = scope.get_variable(&name.0);
             let var = if let Ok(var) = var {
                 var
             } else {
-                errs.push(CompError::CannotFindVariable(name.clone(), loc.clone()));
+                errs.push(CompError::CannotFindVariable(name.0.clone(), loc.clone()));
                 CompVariable {
-                    name: name.clone(),
+                    name: name.0.clone(),
                     typing: exp_ty.clone(),
                     constant: false,
                     external: false,
+                    declared_at: None,
                 }
             };
             if has_type && !var.typing.super_of(&exp_ty) {
@@ -228,6 +229,7 @@ fn transform_exp(
                     constant: false,
                     external: false,
                     typing: CompType::Unknown,
+                    declared_at: None,
                 }
             };
             CompExpression::Call(func, args)
@@ -243,6 +245,7 @@ fn transform_exp(
                         constant: false,
                         external: false,
                         typing: CompType::Unknown,
+                        declared_at: None,
                     }
                 };
                 CompExpression::Read(var)
@@ -264,10 +267,11 @@ fn transform_exp(
                             }
                         };
                         let var = CompVariable {
+                            name: arg.0 .0.clone(),
                             constant: true,
-                            name: arg.0.clone(),
                             typing: arg_ty,
                             external: false,
+                            declared_at: Some(arg.0 .1),
                         };
                         temp_variables.push(var);
                     }
@@ -329,7 +333,7 @@ fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> 
             }
         }
         Expression::InitAssign(external, constant, name, declared_type, _exp) => {
-            if scope.variables.contains_key(name) {
+            if scope.variables.contains_key(&name.0) {
                 scope
             } else {
                 let typing = match declared_type {
@@ -337,11 +341,12 @@ fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> 
                     Some(x) => transform_type(x, scope).ok(),
                 };
                 scope.add_variable(NewVariable {
+                    name: name.0.clone(),
                     constant: *constant,
-                    name: name.clone(),
                     typing,
                     initialised: false,
                     external: *external,
+                    declared_at: name.1.clone(),
                 })
             }
         }
@@ -412,10 +417,11 @@ pub fn function_from_generics(
             }
         };
         temp_variables.push(CompVariable {
-            name: x.0.clone(),
+            name: x.0 .0.clone(),
             constant: true,
             typing,
             external: false,
+            declared_at: Some(x.0 .1.clone()),
         });
     }
     let return_type = match transform_type(&func.return_type, &scope) {

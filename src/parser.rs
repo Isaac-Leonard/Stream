@@ -136,6 +136,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .map(Option::unwrap_or_default)
             .then(
                 token_ident()
+                    .map_with_span(|n, s| (n, s))
                     .then(just(Token::Colon).ignore_then(type_parser()))
                     .separated_by(just(Token::Separator))
                     .delimited_by(Token::StartBracket, Token::EndBracket)
@@ -319,7 +320,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 
         let declaration = is_external
             .then((just(Token::Let).to(false)).or(just(Token::Constant).to(true)))
-            .then(token_ident())
+            .then(token_ident().map_with_span(|n, s| (n, s)))
             .then(just(Token::Colon).ignore_then(type_parser()).or_not())
             .then_ignore(just(Token::Operator("=".to_string())))
             .then(exp.clone().map(Box::new))
