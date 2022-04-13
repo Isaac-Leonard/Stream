@@ -37,8 +37,8 @@ pub type SpannedExpression = (Range<usize>, Expression);
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
-    DotAccess(Box<SpannedExpression>, String),
-    Struct(Vec<(String, SpannedExpression)>),
+    DotAccess(Box<SpannedExpression>, (String, Range<usize>)),
+    Struct(Vec<((String, Range<usize>), SpannedExpression)>),
     TypeDeclaration(String, CustomType),
     Typeof(Box<SpannedExpression>),
     Array(Vec<SpannedExpression>),
@@ -270,11 +270,11 @@ impl CompData {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
-    DotAccess(ExpEnvironment, String),
+    DotAccess(ExpEnvironment, (String, Range<usize>)),
     Value(CompData),
     Array(Vec<ExpEnvironment>),
     Typeof(ExpEnvironment),
-    Struct(HashMap<String, ExpEnvironment>),
+    Struct(Vec<((String, Range<usize>), ExpEnvironment)>),
     BinOp(Op, ExpEnvironment, ExpEnvironment),
     Read(CompVariable),
     OneOp(Prefix, ExpEnvironment),

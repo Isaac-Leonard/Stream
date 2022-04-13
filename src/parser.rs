@@ -167,6 +167,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .labelled("Call");
 
         let struct_exp = token_ident()
+            .map_with_span(|k, s| (k, s))
             .then_ignore(just(Token::Colon))
             .then(exp.clone())
             .separated_by(separator())
@@ -197,8 +198,8 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
                     .delimited_by(Token::StartArray, Token::EndArray)
                     .map_with_span(|x, s| (s, Access::Index(x)))
                     .or(just(Token::Operator(".".to_string()))
-                        .ignore_then(token_ident())
-                        .map_with_span(|x, s| (s, Access::Dot(x))))
+                        .ignore_then(token_ident().map_with_span(|k, s| (k, s)))
+                        .map_with_span(|x, s| (s, Access::Dot(x.0, x.1))))
                     .repeated(),
             )
             .map(|(l, t)| {
@@ -208,7 +209,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
                         arr.0.start..index.0.end,
                         match index.1 {
                             Index(index) => Expression::Index(Box::new(arr), Box::new(index)),
-                            Dot(prop) => DotAccess(Box::new(arr), prop),
+                            Dot(prop, s) => DotAccess(Box::new(arr), (prop, s)),
                         },
                     )
                 })
@@ -217,7 +218,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 
         enum Access {
             Index(SpannedExpression),
-            Dot(String),
+            Dot(String, Range<usize>),
         }
 
         let mult_parser = (index_parser.clone())

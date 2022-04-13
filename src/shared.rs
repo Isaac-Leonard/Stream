@@ -470,7 +470,7 @@ pub fn get_env(
 ) -> Result<ExpEnvironment, CompError> {
     use CompExpression::*;
     match exp {
-        DotAccess(val, key) => {
+        DotAccess(val, (key, _)) => {
             if let CompType::Union(types) = &val.result_type {
                 let union = types
                     .clone()
@@ -525,7 +525,7 @@ pub fn get_env(
             located,
             expression: Box::new(exp.clone()),
             result_type: CompType::Struct(map_vec!(keys, |(k, v)| (
-                k.clone(),
+                k.0.clone(),
                 v.result_type.clone()
             )))
             .flatten(),

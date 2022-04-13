@@ -617,7 +617,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     CompType::Struct(data) => data,
                     _ => unreachable!(),
                 };
-                let index = keys.clone().iter().position(|x| &x.0 == key).unwrap();
+                let index = keys.clone().iter().position(|x| x.0 == key.0).unwrap();
                 let val = self.compile_expression(val, variables, parent);
                 let ptr = self
                     .builder
@@ -645,7 +645,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 );
                 if let CompType::Struct(keys) = &exp.result_type {
                     let raw_data = map_vec!(keys, |(k, _)| self.compile_expression(
-                        data.get(k).unwrap(),
+                        &data.iter().find(|x| &x.0 .0 == k).unwrap().1,
                         variables,
                         parent
                     ));
