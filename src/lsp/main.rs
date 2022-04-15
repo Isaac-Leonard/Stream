@@ -233,7 +233,7 @@ impl LanguageServer for Backend {
         let lines = calc_lines(&file);
         let line = lines[position.line as usize] as usize;
         let offset = line + position.character as usize;
-        let item = (self.ast_map.get(uri.path()))
+        let item = (self.ast_map.get(&uri.to_string()))
             .as_ref()
             .and_then(|ast| hover(ast, offset as u32))
             .map(|item| Hover {
