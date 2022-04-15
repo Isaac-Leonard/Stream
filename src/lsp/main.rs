@@ -25,6 +25,7 @@ use crate::runner::*;
 use ast::*;
 use dashmap::DashMap;
 use errors::CompError;
+use hover::hover;
 use semantic_token::semantic_token_from_ast;
 use semantic_token::ImCompleteSemanticToken;
 use semantic_token::LEGEND_TYPE;
@@ -209,10 +210,10 @@ impl LanguageServer for Backend {
             Some(span) => span,
             None => return Ok(None),
         };
-        let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() - 1 as usize;
+        let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() as usize - 1;
         let start_position = Position {
-            line: line as u32 - 1,
-            character: (span.1.start - (lines[line] as usize)) as u32 - 1,
+            line: line as u32,
+            character: (span.1.start - (lines[line] as usize)) as u32,
         };
         let end_position = Position {
             line: line as u32 - 1,
@@ -226,8 +227,20 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let _ = params;
-        Err(Error::method_not_found())
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+        let file = fs::read_to_string(uri.path()).unwrap();
+        let lines = calc_lines(&file);
+        let line = lines[position.line as usize] as usize;
+        let offset = line + position.character as usize;
+        let item = (self.ast_map.get(uri.path()))
+            .as_ref()
+            .and_then(|ast| hover(ast, offset as u32))
+            .map(|item| Hover {
+                contents: HoverContents::Scalar(MarkedString::String(item.to_string())),
+                range: None,
+            });
+        Ok(item)
     }
 
     async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
