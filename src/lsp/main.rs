@@ -5,6 +5,7 @@ pub mod compile;
 pub mod completion;
 #[path = "../errors.rs"]
 pub mod errors;
+mod hover;
 mod jump_definition;
 #[path = "../lexer.rs"]
 mod lexer;
@@ -30,6 +31,7 @@ use semantic_token::LEGEND_TYPE;
 use settings::Settings;
 use std::collections::HashMap;
 use std::fs;
+use tower_lsp::jsonrpc::Error;
 
 use ropey::Rope;
 use serde_json::Value;
@@ -101,6 +103,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 rename_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 ..ServerCapabilities::default()
             },
         })
@@ -221,6 +224,12 @@ impl LanguageServer for Backend {
             uri, range,
         ))))
     }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let _ = params;
+        Err(Error::method_not_found())
+    }
+
     async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
         self.client
             .log_message(MessageType::INFO, "workspace folders changed!")
