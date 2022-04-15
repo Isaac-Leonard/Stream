@@ -200,9 +200,10 @@ impl LanguageServer for Backend {
         let lines = calc_lines(&file);
         let line = lines[position.line as usize] as usize;
         let offset = line + position.character as usize;
-        let span = jump_definition::get_definition_of_expr(&ast, offset)
-            .1
-            .unwrap();
+        let span = match jump_definition::get_definition_of_expr(&ast, offset).1 {
+            Some(span) => span,
+            None => return Ok(None),
+        };
         let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() - 1 as usize;
         let start_position = Position {
             line: line as u32,
