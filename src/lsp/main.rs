@@ -22,6 +22,8 @@ pub mod settings;
 pub mod shared;
 use crate::runner::*;
 use ast::*;
+use dashmap::DashMap;
+use errors::CompError;
 use semantic_token::semantic_token_from_ast;
 use semantic_token::ImCompleteSemanticToken;
 use semantic_token::LEGEND_TYPE;
@@ -38,7 +40,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 #[derive(Debug)]
 struct Backend {
     client: Client,
-    ast_map: HashMap<String, ExpEnvironment>,
+    ast_map: DashMap<String, ExpEnvironment>,
     document_map: HashMap<String, Rope>,
     semantic_token_map: HashMap<String, Vec<ImCompleteSemanticToken>>,
 }
@@ -354,7 +356,7 @@ async fn main() {
 
     let (service, socket) = LspService::build(|client| Backend {
         client,
-        ast_map: HashMap::new(),
+        ast_map: DashMap::new(),
         document_map: HashMap::new(),
         semantic_token_map: HashMap::new(),
     })
