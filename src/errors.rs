@@ -25,36 +25,32 @@ macro_rules! errors {
 		    })*
                 }
             }
+
+            pub fn get_pos(&self, lines:&Vec<i32>) -> (FilePosition, FilePosition) {
+                match self {
+		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
+			(get_pos(loc.start as i32, lines) ,get_pos(loc.end as i32, lines))
+		    })*
+                }
+            }
         }
     };
 }
-struct FilePosition {
-    line: i32,
-    column: i32,
+pub struct FilePosition {
+    pub line: i32,
+    pub column: i32,
 }
 impl Display for FilePosition {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}: {}", self.line, self.column)
     }
 }
-fn get_pos(pos: i32, lines: &Vec<i32>) -> FilePosition {
-    let mut line_number: i32 = 0;
-    for line in lines {
-        if *line > pos {
-            break;
-        };
-        line_number += 1
-    }
-    if lines.len() == 0 {
-        FilePosition {
-            line: 0,
-            column: pos,
-        }
-    } else {
-        FilePosition {
-            line: line_number as i32,
-            column: pos - lines[line_number as usize - 1] + 1,
-        }
+pub fn get_pos(pos: i32, lines: &[i32]) -> FilePosition {
+    let line = lines.iter().position(|x| *x > pos).unwrap() as usize - 1;
+    let column = pos - lines[line];
+    FilePosition {
+        line: line as i32,
+        column,
     }
 }
 errors!(

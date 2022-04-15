@@ -208,12 +208,12 @@ impl LanguageServer for Backend {
         };
         let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() - 1 as usize;
         let start_position = Position {
-            line: line as u32,
-            character: (span.1.start - (lines[line] as usize)) as u32,
+            line: line as u32 - 1,
+            character: (span.1.start - (lines[line] as usize)) as u32 - 1,
         };
         let end_position = Position {
-            line: line as u32,
-            character: (span.1.end - (lines[line] as usize)) as u32,
+            line: line as u32 - 1,
+            character: (span.1.end - (lines[line] as usize)) as u32 - 1,
         };
         let range = Range::new(start_position, end_position);
 
@@ -344,6 +344,35 @@ struct TextDocumentItem {
 impl Backend {
     async fn on_change(&self, params: TextDocumentItem) {
         let (ast, errors, semantic_tokens) = parse(create_settings(&params));
+        self.client
+            .log_message(MessageType::INFO, format!("{:?}", errors))
+            .await;
+        let lines = calc_lines(&params.text);
+        let diagnostics = errors
+            .into_iter()
+            .map(|item| {
+                let message = item.get_msg(&lines);
+                let pos = item.get_pos(&lines);
+                let start_position = Position {
+                    line: pos.0.line as u32,
+                    character: pos.0.column as u32,
+                };
+                let end_position = Position {
+                    line: pos.1.line as u32,
+                    character: pos.1.column as u32,
+                };
+                Diagnostic::new_simple(Range::new(start_position, end_position), message)
+            })
+            .collect::<Vec<_>>();
+
+        self.client
+            .publish_diagnostics(params.uri.clone(), diagnostics, Some(params.version))
+            .await;
+
+        self.ast_map.insert(params.uri.to_string(), ast);
+        self.client
+            .log_message(MessageType::INFO, &format!("{:?}", semantic_tokens))
+            .await;
     }
 }
 
@@ -371,13 +400,7 @@ fn offset_to_position(offset: usize, rope: &Rope) -> Option<Position> {
     Some(Position::new(line as u32, column as u32))
 }
 
-fn parse(
-    settings: Settings,
-) -> (
-    ExpEnvironment,
-    Vec<chumsky::error::Cheap<String>>,
-    Vec<ImCompleteSemanticToken>,
-) {
+fn parse(settings: Settings) -> (ExpEnvironment, Vec<CompError>, Vec<ImCompleteSemanticToken>) {
     let name = settings.input_name.clone();
     let mut files = parse_files(settings, HashMap::new());
     transform_files(&name, &mut files);
@@ -391,7 +414,7 @@ fn parse(
             .unwrap()
             .body
             .clone(),
-        Vec::new(),
+        files.get(&name).as_ref().unwrap().errors.clone(),
         Vec::new(),
     )
 }
