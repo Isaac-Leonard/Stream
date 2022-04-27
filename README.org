@@ -20,6 +20,7 @@ then run the produced binary
 - Tagged union types.
 - while Loops and if else expressions.
 - Functions.
+- LSP support.
 ** Dependencies
 
 
@@ -33,7 +34,7 @@ In order of likely implementation:
 - Proper type narrowing on unions.
 - Come up with a suitable name.
 - Publish code to cargo and split it up into modules.
-- Limited lsp support and formatter.
+- Formatter.
 - Improved error checking and reporting.
 - More extensive options for controlling compilation including:
   - Specifying an output binary name,
