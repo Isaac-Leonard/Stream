@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::errors::*;
 use crate::map_vec;
+use crate::settings::Settings;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -88,9 +89,10 @@ fn bin_exp(
     right: &SpannedExpression,
     env: &ExpEnvironment,
     scope: &mut TempScope,
+    file: &str,
 ) -> (CompExpression, Vec<CompError>) {
-    let left = transform_exp(left, env, scope);
-    let right = transform_exp(right, env, scope);
+    let left = transform_exp(left, env, scope, file);
+    let right = transform_exp(right, env, scope, file);
     (
         CompExpression::BinOp(op.clone(), left.0, right.0),
         left.1.into_iter().chain(right.1).collect(),
@@ -101,11 +103,12 @@ fn transform_exp(
     (loc, exp): &SpannedExpression,
     env: &ExpEnvironment,
     mut scope: &mut TempScope,
+    file: &str,
 ) -> (ExpEnvironment, Vec<CompError>) {
     let mut errs = Vec::new();
     macro_rules! get_exp {
         ($exp:expr, $env:expr, $scope:expr) => {{
-            let mut res = transform_exp($exp, $env, $scope);
+            let mut res = transform_exp($exp, $env, $scope, file);
             errs.append(&mut res.1);
             res.0
         }};
@@ -209,7 +212,7 @@ fn transform_exp(
             CompExpression::List(oks)
         }
         Expression::BinOp(op, l, r) => {
-            let mut exp = bin_exp(op, &*l, r, env, scope);
+            let mut exp = bin_exp(op, &*l, r, env, scope, file);
             errs.append(&mut exp.1);
             exp.0
         }
@@ -271,7 +274,7 @@ fn transform_exp(
                             constant: true,
                             typing: arg_ty,
                             external: false,
-                            declared_at: Some(arg.0 .1),
+                            declared_at: Some((file.to_string(), arg.0 .1)),
                         };
                         temp_variables.push(var);
                     }
@@ -295,8 +298,8 @@ fn transform_exp(
                                 variables: HashMap::new(),
                                 types: HashMap::new(),
                             };
-                            let local_scope = resolve_scope(&*body, &mut local_scope);
-                            let (body, mut errors) = transform_ast(&*body, local_scope);
+                            let local_scope = resolve_scope(&*body, &mut local_scope, file);
+                            let (body, mut errors) = transform_ast(&*body, local_scope, file);
                             errs.append(&mut errors);
                             CompData::Func(FunctionAst {
                                 arguments,
@@ -318,7 +321,11 @@ fn transform_exp(
     (get_env(&expression, env, loc.clone()).unwrap(), errs)
 }
 
-fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> &'a mut TempScope {
+fn resolve_scope<'a>(
+    (_, ast): &SpannedExpression,
+    scope: &'a mut TempScope,
+    file: &str,
+) -> &'a mut TempScope {
     match ast {
         Expression::TypeDeclaration(name, declared_type) => {
             if !scope.types.contains_key(name) {
@@ -346,14 +353,14 @@ fn resolve_scope<'a>((_, ast): &SpannedExpression, scope: &'a mut TempScope) -> 
                     typing,
                     initialised: false,
                     external: *external,
-                    declared_at: name.1.clone(),
+                    declared_at: (file.to_string(), name.1.clone()),
                 })
             }
         }
         Expression::Assign(_, _) => scope,
         Expression::Block(expressions) => {
             for exp in expressions {
-                resolve_scope(exp, scope);
+                resolve_scope(exp, scope, file);
             }
             scope
         }
@@ -376,9 +383,13 @@ fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
     }
 }
 
-fn transform_ast(ast: &SpannedExpression, scope: &mut TempScope) -> (Program, Vec<CompError>) {
+fn transform_ast(
+    ast: &SpannedExpression,
+    scope: &mut TempScope,
+    file: &str,
+) -> (Program, Vec<CompError>) {
     let env = get_env_from_scope(scope);
-    let expression = transform_exp(ast, &env, scope);
+    let expression = transform_exp(ast, &env, scope, file);
     let prog = Program {
         scope: scope.clone(),
         body: expression.0,
@@ -386,15 +397,20 @@ fn transform_ast(ast: &SpannedExpression, scope: &mut TempScope) -> (Program, Ve
     (prog, expression.1)
 }
 
-pub fn create_program(ast: &SpannedExpression, scope: &mut TempScope) -> (Program, Vec<CompError>) {
-    resolve_scope(ast, scope);
-    transform_ast(ast, scope)
+pub fn create_program(
+    ast: &SpannedExpression,
+    scope: &mut TempScope,
+    settings: &Settings,
+) -> (Program, Vec<CompError>) {
+    resolve_scope(ast, scope, &settings.input_name);
+    transform_ast(ast, scope, &settings.input_name)
 }
 
 pub fn function_from_generics(
     func: Function,
     generics: Vec<CompType>,
     scope: &mut TempScope,
+    file: &str,
 ) -> (FunctionAst, Vec<CompError>) {
     let mut errs = Vec::new();
     let mut scope = TempScope {
@@ -421,7 +437,7 @@ pub fn function_from_generics(
             constant: true,
             typing,
             external: false,
-            declared_at: Some(x.0 .1.clone()),
+            declared_at: Some((file.to_string(), x.0 .1.clone())),
         });
     }
     let return_type = match transform_type(&func.return_type, &scope) {
@@ -444,10 +460,10 @@ pub fn function_from_generics(
                 variables: HashMap::new(),
                 types: HashMap::new(),
             };
-            let local_scope = resolve_scope(&*body, &mut local_scope);
+            let local_scope = resolve_scope(&*body, &mut local_scope, file);
 
             let env = get_env_from_scope(&scope);
-            let mut expression = transform_exp(&*body, &env, &mut scope);
+            let mut expression = transform_exp(&*body, &env, &mut scope, file);
             let body = Program {
                 scope: local_scope.clone(),
                 body: expression.0,

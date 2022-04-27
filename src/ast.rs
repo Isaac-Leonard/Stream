@@ -123,7 +123,7 @@ pub struct NewVariable {
     pub constant: bool,
     pub initialised: bool,
     pub external: bool,
-    pub declared_at: Range<usize>,
+    pub declared_at: (String, Range<usize>),
 }
 impl NewVariable {
     fn get_final(&self) -> Result<CompVariable, String> {
@@ -147,7 +147,7 @@ pub struct CompVariable {
     pub typing: CompType,
     pub constant: bool,
     pub external: bool,
-    pub declared_at: Option<Range<usize>>,
+    pub declared_at: Option<(String, Range<usize>)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -106,7 +106,11 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
         }
     }
     let mut program = programs.get_mut(name).unwrap();
-    let prog = create_program(program.ast.as_ref().unwrap(), &mut global_scope);
+    let prog = create_program(
+        program.ast.as_ref().unwrap(),
+        &mut global_scope,
+        &program.settings,
+    );
     program.program = Some(prog.0);
     program.errors = prog.1;
 }
