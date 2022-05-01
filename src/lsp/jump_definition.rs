@@ -8,7 +8,7 @@ pub fn get_definition_of_expr(
     expr: &ExpEnvironment,
 
     ident_offset: usize,
-) -> (bool, Option<Spanned<String>>) {
+) -> (bool, Option<(String, (String, Range<usize>))>) {
     use CompExpression::*;
     match expr.expression.as_ref() {
         Read(local) => {

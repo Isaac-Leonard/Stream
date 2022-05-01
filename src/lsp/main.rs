@@ -210,14 +210,18 @@ impl LanguageServer for Backend {
             Some(span) => span,
             None => return Ok(None),
         };
-        let line = lines.iter().position(|x| *x > span.1.start as i32).unwrap() as usize - 1;
+        let line = lines
+            .iter()
+            .position(|x| *x > span.1 .1.start as i32)
+            .unwrap() as usize
+            - 1;
         let start_position = Position {
             line: line as u32,
-            character: (span.1.start - (lines[line] as usize)) as u32,
+            character: (span.1 .1.start - (lines[line] as usize)) as u32,
         };
         let end_position = Position {
             line: line as u32 - 1,
-            character: (span.1.end - (lines[line] as usize)) as u32 - 1,
+            character: (span.1 .1.end - (lines[line] as usize)) as u32 - 1,
         };
         let range = Range::new(start_position, end_position);
 
