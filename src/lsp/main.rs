@@ -210,6 +210,7 @@ impl LanguageServer for Backend {
             Some(span) => span,
             None => return Ok(None),
         };
+        let lines = calc_lines(&fs::read_to_string(span.1 .0.clone()).unwrap());
         let line = lines
             .iter()
             .position(|x| *x > span.1 .1.start as i32)
@@ -224,9 +225,9 @@ impl LanguageServer for Backend {
             character: (span.1 .1.end - (lines[line] as usize)) as u32 - 1,
         };
         let range = Range::new(start_position, end_position);
-
         Ok(Some(GotoDefinitionResponse::Scalar(Location::new(
-            uri, range,
+            Url::from_file_path(span.1 .0).unwrap(),
+            range,
         ))))
     }
 

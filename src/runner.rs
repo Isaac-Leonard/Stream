@@ -1,10 +1,12 @@
 use crate::ast::*;
 use crate::errors::CompError;
 use crate::lexer;
+use crate::map_vec;
 use crate::parser::*;
 use crate::settings::Settings;
 use crate::shared::*;
 use chumsky::{Parser, Stream};
+use std::path;
 use std::{collections::HashMap, fs};
 pub fn calc_lines(file: &str) -> Vec<i32> {
     let newlines_positions = file.split('\n').map(|x| x.len()).collect::<Vec<_>>();
@@ -46,6 +48,23 @@ pub struct ImportMap {
     pub errors: Vec<CompError>,
 }
 impl ImportMap {}
+
+pub fn resolve_path(sub_path: &str) -> String {
+    path::Path::new(sub_path)
+        .canonicalize()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+fn normalise_deps(imports: Vec<ImportFrom>) -> Vec<ImportFrom> {
+    map_vec!(imports, |x| ImportFrom {
+        imports: x.imports.clone(),
+        file: resolve_path(&x.file)
+    })
+}
+
 pub fn parse_files(
     settings: Settings,
     mut files: HashMap<String, ImportMap>,
@@ -61,12 +80,14 @@ pub fn parse_files(
     let parsed = parser().parse(Stream::from_iter(len..len + 1, tokens.into_iter()));
     match parsed {
         Ok(ast) => {
-            for import in &ast.0 {
-                if !files.contains_key(&import.file) {
+            let imports = normalise_deps(ast.0);
+            for import in &imports {
+                let dep_name = import.file.clone();
+                if !files.contains_key(&dep_name) {
                     let sub_settings = Settings {
                         call_linker: false,
-                        input_name: import.file.clone(),
-                        object_name: import.file.replace(".bs", ".o"),
+                        input_name: dep_name.clone(),
+                        object_name: dep_name.replace(".bs", ".o"),
                         ..settings
                     };
                     files = parse_files(sub_settings, files);
@@ -78,7 +99,7 @@ pub fn parse_files(
                     file: settings.input_name.clone(),
                     settings,
                     line_numbers: lines,
-                    depends_on: ast.0,
+                    depends_on: imports,
                     ast: Some(ast.1),
                     program: None,
                     compiled: false,
@@ -96,6 +117,8 @@ pub fn parse_files(
 
 pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     let mut global_scope = get_global_scope();
+    println!("{}", name);
+    println!("{:?}", programs.keys());
     for import in programs.get(name).unwrap().depends_on.clone() {
         transform_files(&import.file, programs);
         if let Some(prog) = &programs.get(&import.file).unwrap().program {

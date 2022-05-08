@@ -12,9 +12,10 @@ mod shared;
 use runner::*;
 use settings::Settings;
 use std::collections::HashMap;
-use std::env;
+use std::{env, path};
 fn main() {
     let name = env::args().nth(1).expect("Expected file argument");
+    let name = resolve_path(&name);
     let args = env::args().collect::<Vec<_>>();
     let settings = Settings {
         print_llvm: args.contains(&"-p".to_string()),
