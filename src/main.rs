@@ -12,11 +12,17 @@ mod shared;
 use runner::*;
 use settings::Settings;
 use std::collections::HashMap;
-use std::{env, path};
+use std::env;
 fn main() {
-    let name = env::args().nth(1).expect("Expected file argument");
-    let name = resolve_path(&name);
+    let entry_name = env::args().nth(1).expect("Expected file argument");
+    let name = resolve_path(&entry_name);
     let args = env::args().collect::<Vec<_>>();
+    let name = if let Some(name) = name {
+        name
+    } else {
+        eprintln!("The file '{}' does not exist", entry_name);
+        return;
+    };
     let settings = Settings {
         print_llvm: args.contains(&"-p".to_string()),
         skip_optimizations: !args.contains(&"-s".to_string()),

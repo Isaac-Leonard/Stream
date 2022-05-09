@@ -6,7 +6,7 @@ use crate::parser::*;
 use crate::settings::Settings;
 use crate::shared::*;
 use chumsky::{Parser, Stream};
-use std::path;
+use std::path::Path;
 use std::{collections::HashMap, fs};
 pub fn calc_lines(file: &str) -> Vec<i32> {
     let newlines_positions = file.split('\n').map(|x| x.len()).collect::<Vec<_>>();
@@ -38,7 +38,7 @@ pub fn get_global_scope() -> TempScope {
 pub struct ImportMap {
     //TODO: Change string to path
     pub file: String,
-    pub depends_on: Vec<ImportFrom>,
+    pub depends_on: Vec<Result<ImportFrom, String>>,
 
     pub program: Option<Program>,
     pub ast: Option<SpannedExpression>,
@@ -49,20 +49,21 @@ pub struct ImportMap {
 }
 impl ImportMap {}
 
-pub fn resolve_path(sub_path: &str) -> String {
-    path::Path::new(sub_path)
-        .canonicalize()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string()
+pub fn resolve_path(sub_path: &str) -> Option<String> {
+    Some(
+        Path::new(sub_path)
+            .canonicalize()
+            .ok()?
+            .to_str()?
+            .to_string(),
+    )
 }
 
-fn normalise_deps(imports: Vec<ImportFrom>) -> Vec<ImportFrom> {
-    map_vec!(imports, |x| ImportFrom {
+fn normalise_deps(imports: Vec<ImportFrom>) -> Vec<Result<ImportFrom, String>> {
+    map_vec!(imports, |x| Ok(ImportFrom {
         imports: x.imports.clone(),
-        file: resolve_path(&x.file)
-    })
+        file: resolve_path(&x.file).ok_or_else(|| x.file.clone())?
+    }))
 }
 
 pub fn parse_files(
@@ -81,7 +82,7 @@ pub fn parse_files(
     match parsed {
         Ok(ast) => {
             let imports = normalise_deps(ast.0);
-            for import in &imports {
+            for import in imports.iter().flatten() {
                 let dep_name = import.file.clone();
                 if !files.contains_key(&dep_name) {
                     let sub_settings = Settings {
@@ -93,6 +94,7 @@ pub fn parse_files(
                     files = parse_files(sub_settings, files);
                 }
             }
+
             files.insert(
                 settings.input_name.clone(),
                 ImportMap {
@@ -119,7 +121,14 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     let mut global_scope = get_global_scope();
     println!("{}", name);
     println!("{:?}", programs.keys());
-    for import in programs.get(name).unwrap().depends_on.clone() {
+    for import in programs
+        .get(name)
+        .unwrap()
+        .depends_on
+        .clone()
+        .iter()
+        .flatten()
+    {
         transform_files(&import.file, programs);
         if let Some(prog) = &programs.get(&import.file).unwrap().program {
             println!("here");
