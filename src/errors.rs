@@ -97,5 +97,6 @@ errors!(
     (17, InvalidLeftHandForAssignment(found:Expression), "Cannot assign to expression {:?}, can only assign to variables"),
     (18, MismatchedTypeInArray(expected:CompType, found:Vec<CompType>), "Found multiple types in array, array starts with {} but also contains the following types: {:?}"),
     (19, MissingPropertyInUnion(key:String, ty:CompType), "The property '{}' does not exist for all variants of {}"),
-    (20, PropertyDoesNotExistOnType(key:String, ty:CompType), "The property '{}' does not exist on type '{}'")
+    (20, PropertyDoesNotExistOnType(key:String, ty:CompType), "The property '{}' does not exist on type '{}'"),
+    (21, ModuleNotFound(path:String), "Could not find a module at '{}'")
 );
