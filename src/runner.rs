@@ -39,7 +39,7 @@ pub struct ImportMap {
     //TODO: Change string to path
     pub file: String,
     pub depends_on: Vec<Result<ImportFrom, String>>,
-
+    pub text: Option<String>,
     pub program: Option<Program>,
     pub ast: Option<SpannedExpression>,
     pub compiled: bool,
@@ -47,7 +47,28 @@ pub struct ImportMap {
     pub line_numbers: Vec<i32>,
     pub errors: Vec<CompError>,
 }
-impl ImportMap {}
+impl ImportMap {
+    pub fn new(settings: Settings) -> ImportMap {
+        ImportMap {
+            file: settings.input_name.clone(),
+            settings,
+            text: None,
+            ast: None,
+            program: None,
+            compiled: false,
+            depends_on: Vec::new(),
+            line_numbers: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+    pub fn text(self, text: String) -> Self {
+        ImportMap {
+            line_numbers: calc_lines(&text),
+            text: Some(text),
+            ..self
+        }
+    }
+}
 
 pub fn resolve_path(sub_path: &str) -> Option<String> {
     Some(
@@ -70,11 +91,15 @@ pub fn parse_files(
     settings: Settings,
     mut files: HashMap<String, ImportMap>,
 ) -> HashMap<String, ImportMap> {
-    let src = fs::read_to_string(&settings.input_name).expect("Failed to read file");
-
-    let lines = calc_lines(&src);
+    let import_map = ImportMap::new(settings.clone());
+    let src = fs::read_to_string(&settings.input_name).ok();
+    let src = if let Some(src) = src.clone() {
+        src
+    } else {
+        return files;
+    };
     let tokens = lexer::lexer()
-        .parse(src.trim())
+        .parse(src.clone())
         .map_err(|x| panic!("{:?}", x))
         .unwrap();
     let len = tokens.len();
@@ -94,13 +119,14 @@ pub fn parse_files(
                     files = parse_files(sub_settings, files);
                 }
             }
-
+            let lines = calc_lines(&src);
             files.insert(
                 settings.input_name.clone(),
                 ImportMap {
                     file: settings.input_name.clone(),
                     settings,
                     line_numbers: lines,
+                    text: Some(src),
                     depends_on: imports,
                     ast: Some(ast.1),
                     program: None,
