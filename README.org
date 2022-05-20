@@ -1,16 +1,7 @@
-* A Compiler for my language
+* A compiler for The River programming language
 ** Notes
 This project initially began as an implementation of the borrow-script language found at https://github.com/alshdavid/BorrowScript/ however I have diverged from the current specifications and plan to likely go in a slightly different direction while still following the same general idea of a memory safe, thread safe, compilable language with similar semantics to typescript and rust while simplifying and learning from the mistakes of both.
 Check the road map section for what is likely to be implemented next.
-** Running the compiler
-After installing dependencies run with
-#+begin_src:
-$ cargo run -- example-compile.bs
-#+end_src
-then run the produced binary
-#+begin_src:
-./testing
-#+end_src
 ** Features
 - JS / TS style syntax.
 - Int, Float, Boolean and Null Primitives.
@@ -21,18 +12,20 @@ then run the produced binary
 - while Loops and if else expressions.
 - Functions.
 - LSP support.
-** Dependencies
-
-
-The only current dependencies iare the Chumsky package for parsing found at https://github.com/zesterer/chumsky and inkwell for ergonomically interfacing  with LLVM found at https://github.com/TheDan64/inkwell.
-Initially I explored using parser generators that took EBNF as input however could not find any that did what I wanted and had as much control as chomsky.
-I also use the fxhash crate for deterministic hashing of types for run time matching of tagged unions.
+** Running the compiler
+After installing dependencies run with
+#+begin_src:
+$ cargo run -- example-compile.bs
+#+end_src
+then run the produced binary
+#+begin_src:
+./testing
+#+end_src
 ** Road map
 The following is a list of features I intend to implement in the short term (next three months) however my time is limited and some features may require others to be implemented first or may require major rewrites in the compiler internals so this is currently still unreliable.
 In order of likely implementation:
 - Full generics support in the compiler.
 - Proper type narrowing on unions.
-- Come up with a suitable name.
 - Publish code to cargo and split it up into modules.
 - Formatter.
 - Improved error checking and reporting.
@@ -42,5 +35,5 @@ In order of likely implementation:
   - using precompiled binaries when linking allowing for full interoperability with existing compiled binaries (Note that Stubs would still have to be written to tell  the compiler what they should be called like such like is currently done with puts and getchar),
   - and better debugging.
 - Automatic memory management.
-  This is needed for most future features such as nested arrays or complex structs as well as closures and useful unions and so is now a priority.
+
 In the long term (next 6 months to a year) I intend to make the compiler completely bootstrappable and start writing some projects using it as well as working on multithreading support.
