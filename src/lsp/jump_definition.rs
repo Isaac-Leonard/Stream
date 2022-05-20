@@ -11,6 +11,7 @@ pub fn get_definition_of_expr(
 ) -> (bool, Option<(String, (String, Range<usize>))>) {
     use CompExpression::*;
     match expr.expression.as_ref() {
+        Typeof(var) => get_definition_of_expr(var, ident_offset),
         Read(local) => {
             if ident_offset >= expr.located.start && ident_offset < expr.located.end {
                 (
