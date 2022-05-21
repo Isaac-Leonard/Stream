@@ -409,7 +409,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         };
         for (i, element) in elements.enumerate() {
             let ptr = unsafe {
-                println!("Looping unsafe calculation");
                 self.builder.build_in_bounds_gep(
                     mem,
                     &[

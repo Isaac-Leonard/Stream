@@ -145,8 +145,6 @@ pub fn parse_files(
 
 pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     let mut global_scope = get_global_scope();
-    println!("{}", name);
-    println!("{:?}", programs.keys());
     for import in programs
         .get(name)
         .unwrap()
@@ -157,7 +155,6 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     {
         transform_files(&import.file, programs);
         if let Some(prog) = &programs.get(&import.file).unwrap().program {
-            println!("here");
             prog.get_exported().iter().for_each(|x| {
                 global_scope.variables.insert(x.name.clone(), x.clone());
             });
