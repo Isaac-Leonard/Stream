@@ -113,7 +113,7 @@ pub fn parse_files(
                     let sub_settings = Settings {
                         call_linker: false,
                         input_name: dep_name.clone(),
-                        object_name: dep_name.replace(".bs", ".o"),
+                        object_name: dep_name.replace(".riv", ".o"),
                         ..settings
                     };
                     files = parse_files(sub_settings, files);

@@ -28,7 +28,7 @@ fn main() {
         skip_optimizations: !args.contains(&"-s".to_string()),
         call_linker: true,
         input_name: name.clone(),
-        object_name: name.replace(".bs", ".o"),
+        object_name: name.replace(".riv", ".o"),
     };
     let mut files = parse_files(settings.clone(), HashMap::new());
     transform_files(&name, &mut files);
