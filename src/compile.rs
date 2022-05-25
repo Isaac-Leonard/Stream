@@ -23,198 +23,11 @@ use inkwell::OptimizationLevel;
 use std::collections::HashMap;
 use std::path::Path;
 
-fn get_value<'a, 'ctx>(val: &CompData, compiler: &Compiler<'a, 'ctx>) -> BasicValueEnum<'ctx> {
-    match val {
-        CompData::Int(int) => compiler.i32(*int),
-        CompData::Bool(bool) => compiler.custom_int(1, *bool as i8),
-        CompData::Float(float) => compiler.f32(*float),
-        CompData::Null => compiler.custom_int(1, 0),
-        CompData::Str(str) => compiler
-            .create_array(
-                compiler.context.i8_type().array_type(str.len() as u32 + 1),
-                (str.chars().chain(['\0']))
-                    .map(|x| compiler.i8(x as i8))
-                    .collect::<Vec<_>>(),
-            )
-            .as_basic_value_enum(),
-        CompData::Func(_) => panic!("Functions should be retrieved seperately"),
-    }
-}
-
-fn comp_bin_op<'a, 'ctx>(
-    op: &Op,
-    lhs: BasicValueEnum<'ctx>,
-    rhs: BasicValueEnum<'ctx>,
-    compiler: &Compiler<'a, 'ctx>,
-    fn_val: Option<&FunctionValue<'ctx>>,
-) -> BasicValueEnum<'ctx> {
-    use BasicValueEnum::*;
-    match (lhs, rhs) {
-        (IntValue(a), IntValue(b)) => comp_bin_op_int(op, a, b, compiler.builder),
-        (FloatValue(a), FloatValue(b)) => comp_bin_op_float(op, a, b, compiler.builder),
-        (PointerValue(a), PointerValue(b)) => match (
-            a.get_type().get_element_type(),
-            b.get_type().get_element_type(),
-        ) {
-            (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {
-                comp_bin_op_str(op, a, b, compiler, fn_val.unwrap())
-            }
-            _ => panic!(
-                "Binary operations for {:?} and {:?} type cannot be compiled at this time",
-                a, b
-            ),
-        },
-        (a, b) => panic!(
-            "Binary operations for {:?} and {:?} type cannot be compiled at this time",
-            a, b
-        ),
-    }
-}
-
-fn comp_bin_op_float<'ctx, T: FloatMathValue<'ctx>>(
-    op: &Op,
-    lhs: T,
-    rhs: T,
-    builder: &Builder<'ctx>,
-) -> BasicValueEnum<'ctx> {
-    use Op::*;
-    match op {
-        Add => builder
-            .build_float_add(lhs, rhs, "adding")
-            .as_basic_value_enum(),
-        Sub => builder
-            .build_float_sub(lhs, rhs, "subtracting")
-            .as_basic_value_enum(),
-        Mult => builder
-            .build_float_mul(lhs, rhs, "mult")
-            .as_basic_value_enum(),
-        Div => builder
-            .build_float_div(lhs, rhs, "div")
-            .as_basic_value_enum(),
-        Eq => builder
-            .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "equal")
-            .as_basic_value_enum(),
-        Neq => builder
-            .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "equal")
-            .as_basic_value_enum(),
-        Le => builder
-            .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "Lessthan")
-            .as_basic_value_enum(),
-        Ge => builder
-            .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "Lessthan")
-            .as_basic_value_enum(),
-    }
-}
-
-fn comp_bin_op_int<'ctx, T: IntMathValue<'ctx>>(
-    op: &Op,
-    lhs: T,
-    rhs: T,
-    builder: &Builder<'ctx>,
-) -> BasicValueEnum<'ctx> {
-    use Op::*;
-    match op {
-        Add => builder
-            .build_int_add(lhs, rhs, "adding")
-            .as_basic_value_enum(),
-        Sub => builder
-            .build_int_sub(lhs, rhs, "subtracting")
-            .as_basic_value_enum(),
-        Mult => builder
-            .build_int_mul(lhs, rhs, "mult")
-            .as_basic_value_enum(),
-        Div => builder
-            .build_int_signed_div(lhs, rhs, "div")
-            .as_basic_value_enum(),
-        Eq => builder
-            .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "equal")
-            .as_basic_value_enum(),
-        Neq => builder
-            .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "equal")
-            .as_basic_value_enum(),
-        Le => builder
-            .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "Lessthan")
-            .as_basic_value_enum(),
-        Ge => builder
-            .build_int_compare(inkwell::IntPredicate::SGT, lhs, rhs, "Lessthan")
-            .as_basic_value_enum(),
-    }
-}
-
-fn comp_bin_op_str<'a, 'ctx>(
-    op: &Op,
-    lhs: PointerValue<'ctx>,
-    rhs: PointerValue<'ctx>,
-    compiler: &Compiler<'a, 'ctx>,
-    fn_val: &FunctionValue<'ctx>,
-) -> BasicValueEnum<'ctx> {
-    use Op::*;
-    let (len_1, len_2) = match (
-        lhs.get_type().get_element_type(),
-        rhs.get_type().get_element_type(),
-    ) {
-        (AnyTypeEnum::ArrayType(a), AnyTypeEnum::ArrayType(b)) => (a.len(), b.len()),
-        _ => panic!("comp_bin_op_str called with wrong values"),
-    };
-
-    match op {
-        Add => {
-            let strcat = compiler.module.get_function("strcat").unwrap_or_else(|| {
-                let fn_type = compiler.create_function_shape(&CompType::Callible(
-                    vec![CompType::Ptr, CompType::Ptr],
-                    Box::new(CompType::Int),
-                ));
-                compiler
-                    .module
-                    .add_function("strcat", fn_type, Some(Linkage::AvailableExternally))
-            });
-            let target_type = compiler
-                .context
-                .i8_type()
-                .array_type(len_1 + len_2 - 1)
-                .as_basic_type_enum();
-            let target = compiler.add_variable_to_block("strcat_cpy", target_type, fn_val);
-
-            let cast_type = compiler
-                .context
-                .i8_type()
-                .ptr_type(inkwell::AddressSpace::Generic);
-            compiler
-                .builder
-                .build_store(target, target_type.const_zero());
-
-            let lhs_ptr = compiler.builder.build_bitcast(lhs, cast_type, "cast");
-            let rhs_ptr = compiler.builder.build_bitcast(rhs, cast_type, "cast");
-            let target_ptr = compiler.builder.build_bitcast(target, cast_type, "cast");
-
-            compiler.builder.build_call(
-                strcat,
-                &[
-                    BasicMetadataValueEnum::from(target_ptr),
-                    BasicMetadataValueEnum::from(lhs_ptr),
-                ],
-                "str_cpy",
-            );
-
-            compiler.builder.build_call(
-                strcat,
-                &[
-                    BasicMetadataValueEnum::from(target_ptr),
-                    BasicMetadataValueEnum::from(rhs_ptr),
-                ],
-                "str_cpy",
-            );
-            target.as_basic_value_enum()
-        }
-        x => panic!("Operator '{}' is not supported for strings", x.get_str()),
-    }
-}
-
-fn get_discriminant(ty: &CompType) -> u32 {
-    hash32(ty)
-}
-
 impl CompType {
+    fn get_discriminant(&self) -> u32 {
+        hash32(self)
+    }
+
     fn get_compiler_type<'ctx>(&self, context: &'ctx Context) -> BasicTypeEnum<'ctx> {
         use CompType::*;
         match self.clone() {
@@ -360,6 +173,192 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         }
     }
 
+    fn comp_bin_op(
+        &self,
+        op: &Op,
+        lhs: BasicValueEnum<'ctx>,
+        rhs: BasicValueEnum<'ctx>,
+        fn_val: Option<&FunctionValue<'ctx>>,
+    ) -> BasicValueEnum<'ctx> {
+        use BasicValueEnum::*;
+        match (lhs, rhs) {
+            (IntValue(a), IntValue(b)) => self.comp_bin_op_int(op, a, b),
+            (FloatValue(a), FloatValue(b)) => self.comp_bin_op_float(op, a, b),
+            (PointerValue(a), PointerValue(b)) => match (
+                a.get_type().get_element_type(),
+                b.get_type().get_element_type(),
+            ) {
+                (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {
+                    self.comp_bin_op_str(op, a, b, fn_val.unwrap())
+                }
+                _ => panic!(
+                    "Binary operations for {:?} and {:?} type cannot be compiled at this time",
+                    a, b
+                ),
+            },
+            (a, b) => panic!(
+                "Binary operations for {:?} and {:?} type cannot be compiled at this time",
+                a, b
+            ),
+        }
+    }
+
+    fn comp_bin_op_float<T: FloatMathValue<'ctx>>(
+        &self,
+        op: &Op,
+        lhs: T,
+        rhs: T,
+    ) -> BasicValueEnum<'ctx> {
+        let builder = self.builder;
+        use Op::*;
+        match op {
+            Add => builder
+                .build_float_add(lhs, rhs, "adding")
+                .as_basic_value_enum(),
+            Sub => builder
+                .build_float_sub(lhs, rhs, "subtracting")
+                .as_basic_value_enum(),
+            Mult => builder
+                .build_float_mul(lhs, rhs, "mult")
+                .as_basic_value_enum(),
+            Div => builder
+                .build_float_div(lhs, rhs, "div")
+                .as_basic_value_enum(),
+            Eq => builder
+                .build_float_compare(inkwell::FloatPredicate::OEQ, lhs, rhs, "equal")
+                .as_basic_value_enum(),
+            Neq => builder
+                .build_float_compare(inkwell::FloatPredicate::ONE, lhs, rhs, "equal")
+                .as_basic_value_enum(),
+            Le => builder
+                .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "Lessthan")
+                .as_basic_value_enum(),
+            Ge => builder
+                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "Lessthan")
+                .as_basic_value_enum(),
+        }
+    }
+
+    fn comp_bin_op_int<T: IntMathValue<'ctx>>(
+        &self,
+        op: &Op,
+        lhs: T,
+        rhs: T,
+    ) -> BasicValueEnum<'ctx> {
+        let builder = self.builder;
+        use Op::*;
+        match op {
+            Add => builder
+                .build_int_add(lhs, rhs, "adding")
+                .as_basic_value_enum(),
+            Sub => builder
+                .build_int_sub(lhs, rhs, "subtracting")
+                .as_basic_value_enum(),
+            Mult => builder
+                .build_int_mul(lhs, rhs, "mult")
+                .as_basic_value_enum(),
+            Div => builder
+                .build_int_signed_div(lhs, rhs, "div")
+                .as_basic_value_enum(),
+            Eq => builder
+                .build_int_compare(inkwell::IntPredicate::EQ, lhs, rhs, "equal")
+                .as_basic_value_enum(),
+            Neq => builder
+                .build_int_compare(inkwell::IntPredicate::NE, lhs, rhs, "equal")
+                .as_basic_value_enum(),
+            Le => builder
+                .build_int_compare(inkwell::IntPredicate::SLT, lhs, rhs, "Lessthan")
+                .as_basic_value_enum(),
+            Ge => builder
+                .build_int_compare(inkwell::IntPredicate::SGT, lhs, rhs, "Lessthan")
+                .as_basic_value_enum(),
+        }
+    }
+
+    fn comp_bin_op_str(
+        &self,
+        op: &Op,
+        lhs: PointerValue<'ctx>,
+        rhs: PointerValue<'ctx>,
+        fn_val: &FunctionValue<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        use Op::*;
+        let (len_1, len_2) = match (
+            lhs.get_type().get_element_type(),
+            rhs.get_type().get_element_type(),
+        ) {
+            (AnyTypeEnum::ArrayType(a), AnyTypeEnum::ArrayType(b)) => (a.len(), b.len()),
+            _ => panic!("comp_bin_op_str called with wrong values"),
+        };
+
+        match op {
+            Add => {
+                let strcat = self.module.get_function("strcat").unwrap_or_else(|| {
+                    let fn_type = self.create_function_shape(&CompType::Callible(
+                        vec![CompType::Ptr, CompType::Ptr],
+                        Box::new(CompType::Int),
+                    ));
+                    self.module
+                        .add_function("strcat", fn_type, Some(Linkage::AvailableExternally))
+                });
+                let target_type = self
+                    .context
+                    .i8_type()
+                    .array_type(len_1 + len_2 - 1)
+                    .as_basic_type_enum();
+                let target = self.add_variable_to_block("strcat_cpy", target_type, fn_val);
+
+                let cast_type = self
+                    .context
+                    .i8_type()
+                    .ptr_type(inkwell::AddressSpace::Generic);
+                self.builder.build_store(target, target_type.const_zero());
+
+                let lhs_ptr = self.builder.build_bitcast(lhs, cast_type, "cast");
+                let rhs_ptr = self.builder.build_bitcast(rhs, cast_type, "cast");
+                let target_ptr = self.builder.build_bitcast(target, cast_type, "cast");
+
+                self.builder.build_call(
+                    strcat,
+                    &[
+                        BasicMetadataValueEnum::from(target_ptr),
+                        BasicMetadataValueEnum::from(lhs_ptr),
+                    ],
+                    "str_cpy",
+                );
+
+                self.builder.build_call(
+                    strcat,
+                    &[
+                        BasicMetadataValueEnum::from(target_ptr),
+                        BasicMetadataValueEnum::from(rhs_ptr),
+                    ],
+                    "str_cpy",
+                );
+                target.as_basic_value_enum()
+            }
+            x => panic!("Operator '{}' is not supported for strings", x.get_str()),
+        }
+    }
+
+    fn get_value(&self, val: &CompData) -> BasicValueEnum<'ctx> {
+        match val {
+            CompData::Int(int) => self.i32(*int),
+            CompData::Bool(bool) => self.custom_int(1, *bool as i8),
+            CompData::Float(float) => self.f32(*float),
+            CompData::Null => self.custom_int(1, 0),
+            CompData::Str(str) => self
+                .create_array(
+                    self.context.i8_type().array_type(str.len() as u32 + 1),
+                    (str.chars().chain(['\0']))
+                        .map(|x| self.i8(x as i8))
+                        .collect::<Vec<_>>(),
+                )
+                .as_basic_value_enum(),
+            CompData::Func(_) => panic!("Functions should be retrieved seperately"),
+        }
+    }
+
     fn create_array(
         &self,
         arr_ty: ArrayType<'ctx>,
@@ -458,7 +457,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::BinOp(op, left, right) => {
                 let lhs = self.compile_expression(left, variables, parent);
                 let rhs = self.compile_expression(right, variables, parent);
-                comp_bin_op(op, lhs, rhs, self, parent)
+                self.comp_bin_op(op, lhs, rhs, parent)
             }
             CompExpression::Read(var) => {
                 if var.typing.is_primitive() {
@@ -483,7 +482,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         if var.typing.is_union() {
                             let ty = &exp.result_type;
                             if !ty.is_union() {
-                                let discriminant = self.i32(get_discriminant(ty) as i32);
+                                let discriminant = self.i32(ty.get_discriminant() as i32);
                                 let val = if val.is_pointer_value() {
                                     self.builder
                                         .build_ptr_to_int(
@@ -532,7 +531,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 },
                 _ => panic!("{:?} not supported on lhs of assignment", var),
             },
-            CompExpression::Value(val) => get_value(val, self),
+            CompExpression::Value(val) => self.get_value(val),
             CompExpression::IfElse {
                 cond,
                 then,
@@ -630,7 +629,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 if exp.result_type.is_union() {
                     self.extract_element(res_exp.into_struct_value(), 0)
                 } else {
-                    self.i32(get_discriminant(&exp.result_type) as i32)
+                    self.i32(exp.result_type.get_discriminant() as i32)
                 }
             }
             CompExpression::Struct(data) => {
