@@ -109,7 +109,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         (self.context.f32_type().const_float(val as f64)).as_basic_value_enum()
     }
 
-    fn alloc_heap(&self, bytes: usize) -> PointerValue<'ctx> {
+    fn alloc_heap(&self, bytes: usize) -> Result<PointerValue<'ctx>, String> {
         let malloc = self.module.get_function("malloc").unwrap_or_else(|| {
             let fn_val = self
                 .context
@@ -129,8 +129,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 "malloc",
             )
             .try_as_basic_value()
-            .unwrap_left()
-            .into_pointer_value()
+            .left()
+            .ok_or_else(|| "Invalid return from function".to_string())
+            .map(|x| x.into_pointer_value())
     }
 
     fn cast_to_i32(&self, int: IntValue<'ctx>) -> IntValue<'ctx> {
@@ -194,9 +195,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 a.get_type().get_element_type(),
                 b.get_type().get_element_type(),
             ) {
-                (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {
-                    self.comp_bin_op_str(op, a, b, fn_val.unwrap())?
-                }
+                (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => self.comp_bin_op_str(
+                    op,
+                    a,
+                    b,
+                    fn_val.ok_or_else(|| "No function provided".to_string())?,
+                )?,
                 _ => Err(format!(
                     "Binary operations for {:?} and {:?} type cannot be compiled at this time",
                     a, b
@@ -362,9 +366,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     (str.chars().chain(['\0']))
                         .map(|x| self.i8(x as i8))
                         .collect::<Vec<_>>(),
-                )
+                )?
                 .as_basic_value_enum(),
-            CompData::Func(_) => Err(format!("Functions should be retrieved seperately"))?,
+            CompData::Func(_) => return Err("Functions should be retrieved seperately".to_string()),
         })
     }
 
@@ -372,43 +376,43 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         &self,
         arr_ty: ArrayType<'ctx>,
         elements: Vec<BasicValueEnum<'ctx>>,
-    ) -> PointerValue<'ctx> {
+    ) -> Result<PointerValue<'ctx>, String> {
         let elements = elements.iter();
         let mem = match arr_ty.get_element_type() {
             BasicTypeEnum::IntType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * el.get_bit_width() as usize),
+                self.alloc_heap(elements.len() * el.get_bit_width() as usize)?,
                 el.array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::FloatType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 32),
+                self.alloc_heap(elements.len() * 32)?,
                 el.array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::PointerType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64),
+                self.alloc_heap(elements.len() * 64)?,
                 el.array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::ArrayType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64),
+                self.alloc_heap(elements.len() * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
                     .array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::StructType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64),
+                self.alloc_heap(elements.len() * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
                     .array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::VectorType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64),
+                self.alloc_heap(elements.len() * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
                     .array_type(elements.len() as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
@@ -428,7 +432,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             };
             self.builder.build_store(ptr, *element);
         }
-        mem
+        Ok(mem)
     }
 
     fn compile_expression(
@@ -529,7 +533,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 },
                 CompExpression::Index(arr, index) => match *exp.expression {
                     CompExpression::Value(CompData::Func(_)) => {
-                        Err(format!("Cannot yet store functions in an array"))?
+                        return Err("Cannot yet store functions in an array".to_string())
                     }
                     _ => {
                         let mut val = self.compile_expression(exp, variables, parent)?;
@@ -649,7 +653,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Struct(data) => {
                 let mem = self.builder.build_pointer_cast(
                     // TODO: Actually calculate it instead of guessing
-                    self.alloc_heap(data.len() * 4),
+                    self.alloc_heap(data.len() * 4)?,
                     exp.result_type
                         .get_compiler_type(self.context)?
                         .into_pointer_type(),
@@ -689,7 +693,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into_pointer_type()
                     .get_element_type()
                     .into_array_type();
-                self.create_array(arr_ty, elements).as_basic_value_enum()
+                self.create_array(arr_ty, elements)?.as_basic_value_enum()
             }
             other => Err(format!("Not implemented '{:?}'", other))?,
         })
