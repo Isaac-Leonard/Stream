@@ -840,7 +840,7 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         .compile_expression(&ast.body, &mut HashMap::new(), None)
         .unwrap();
 
-    Target::initialize_native(&InitializationConfig::default());
+    Target::initialize_native(&InitializationConfig::default())?;
     let opt = OptimizationLevel::Default;
     let reloc = RelocMode::Default;
     let model = CodeModel::Default;
