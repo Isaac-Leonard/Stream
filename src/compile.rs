@@ -197,10 +197,10 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => {
                     self.comp_bin_op_str(op, a, b, fn_val.unwrap())?
                 }
-                _ => panic!(
+                _ => Err(format!(
                     "Binary operations for {:?} and {:?} type cannot be compiled at this time",
                     a, b
-                ),
+                ))?,
             },
             (a, b) => Err(format!(
                 "Binary operations for {:?} and {:?} type cannot be compiled at this time",
@@ -294,7 +294,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             rhs.get_type().get_element_type(),
         ) {
             (AnyTypeEnum::ArrayType(a), AnyTypeEnum::ArrayType(b)) => (a.len(), b.len()),
-            _ => panic!("comp_bin_op_str called with wrong values"),
+            _ => Err(format!("comp_bin_op_str called with wrong values"))?,
         };
 
         Ok(match op {
@@ -350,8 +350,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         })
     }
 
-    fn get_value(&self, val: &CompData) -> BasicValueEnum<'ctx> {
-        match val {
+    fn get_value(&self, val: &CompData) -> Result<BasicValueEnum<'ctx>, String> {
+        Ok(match val {
             CompData::Int(int) => self.i32(*int),
             CompData::Bool(bool) => self.custom_int(1, *bool as i8),
             CompData::Float(float) => self.f32(*float),
@@ -364,8 +364,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         .collect::<Vec<_>>(),
                 )
                 .as_basic_value_enum(),
-            CompData::Func(_) => panic!("Functions should be retrieved seperately"),
-        }
+            CompData::Func(_) => Err(format!("Functions should be retrieved seperately"))?,
+        })
     }
 
     fn create_array(
@@ -529,7 +529,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 },
                 CompExpression::Index(arr, index) => match *exp.expression {
                     CompExpression::Value(CompData::Func(_)) => {
-                        panic!("Cannot yet store functions in an array")
+                        Err(format!("Cannot yet store functions in an array"))?
                     }
                     _ => {
                         let mut val = self.compile_expression(exp, variables, parent)?;
@@ -543,7 +543,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 },
                 _ => Err(format!("{:?} not supported on lhs of assignment", var))?,
             },
-            CompExpression::Value(val) => self.get_value(val),
+            CompExpression::Value(val) => self.get_value(val)?,
             CompExpression::IfElse {
                 cond,
                 then,
@@ -750,7 +750,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         if !fn_val.verify(true) {
             self.module.print_to_stderr();
-            panic!("Invalid generated function.")
+            Err(format!("Invalid generated function."))?
         }
         self.fpm.run_on(&fn_val);
         Ok(fn_val)
