@@ -72,10 +72,12 @@ impl CompType {
                     false,
                 )
                 .as_basic_type_enum(),
-            _ => Err(format!(
-                "get_compiler_type not implemented for type '{}'",
-                self.get_str()
-            ))?,
+            _ => {
+                return Err(format!(
+                    "get_compiler_type not implemented for type '{}'",
+                    self.get_str()
+                ))
+            }
         })
     }
 }
@@ -201,15 +203,19 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     b,
                     fn_val.ok_or_else(|| "No function provided".to_string())?,
                 )?,
-                _ => Err(format!(
+                _ => {
+                    return Err(format!(
+                        "Binary operations for {:?} and {:?} type cannot be compiled at this time",
+                        a, b
+                    ))
+                }
+            },
+            (a, b) => {
+                return Err(format!(
                     "Binary operations for {:?} and {:?} type cannot be compiled at this time",
                     a, b
-                ))?,
-            },
-            (a, b) => Err(format!(
-                "Binary operations for {:?} and {:?} type cannot be compiled at this time",
-                a, b
-            ))?,
+                ))
+            }
         })
     }
 
@@ -298,7 +304,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             rhs.get_type().get_element_type(),
         ) {
             (AnyTypeEnum::ArrayType(a), AnyTypeEnum::ArrayType(b)) => (a.len(), b.len()),
-            _ => Err(format!("comp_bin_op_str called with wrong values"))?,
+            _ => return Err("comp_bin_op_str called with wrong values".to_string()),
         };
 
         Ok(match op {
@@ -347,10 +353,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 );
                 target.as_basic_value_enum()
             }
-            x => Err(format!(
-                "Operator '{}' is not supported for strings",
-                x.get_str()
-            ))?,
+            x => {
+                return Err(format!(
+                    "Operator '{}' is not supported for strings",
+                    x.get_str()
+                ))
+            }
         })
     }
 
@@ -545,7 +553,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         val
                     }
                 },
-                _ => Err(format!("{:?} not supported on lhs of assignment", var))?,
+                _ => return Err(format!("{:?} not supported on lhs of assignment", var)),
             },
             CompExpression::Value(val) => self.get_value(val)?,
             CompExpression::IfElse {
@@ -695,7 +703,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     .into_array_type();
                 self.create_array(arr_ty, elements)?.as_basic_value_enum()
             }
-            other => Err(format!("Not implemented '{:?}'", other))?,
+            other => return Err(format!("Not implemented '{:?}'", other)),
         })
     }
 
@@ -754,7 +762,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         if !fn_val.verify(true) {
             self.module.print_to_stderr();
-            Err(format!("Invalid generated function."))?
+            return Err("Invalid generated function.".to_string());
         }
         self.fpm.run_on(&fn_val);
         Ok(fn_val)
