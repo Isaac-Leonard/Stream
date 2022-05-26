@@ -858,7 +858,7 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         .unwrap();
     target_machine
         .write_to_file(compiler.module, FileType::Object, path)
-        .unwrap();
+        .map_err(|x| x.to_string())?;
     if settings.print_llvm {
         module.print_to_stderr();
     }
