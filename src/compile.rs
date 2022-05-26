@@ -8,7 +8,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassManager;
 
 use inkwell::targets::{
-    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetTriple,
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
 };
 use inkwell::types::{
     AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
@@ -840,22 +840,24 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         .compile_expression(&ast.body, &mut HashMap::new(), None)
         .unwrap();
 
-    Target::initialize_x86(&InitializationConfig::default());
+    Target::initialize_native(&InitializationConfig::default());
     let opt = OptimizationLevel::Default;
     let reloc = RelocMode::Default;
     let model = CodeModel::Default;
     let path = Path::new(&settings.object_name);
-    let target = Target::from_name("x86-64").unwrap();
+    let target =
+        Target::from_name("x86-64").ok_or_else(|| "Could not find target from name".to_string())?;
     let target_machine = target
         .create_target_machine(
-            &TargetTriple::create("x86_64-apple-darwin"),
+            &TargetMachine::get_default_triple(),
             "x86-64",
             "+avx2",
             opt,
             reloc,
             model,
         )
-        .unwrap();
+        .ok_or_else(|| "Couldnot make target_machine".to_string())?;
+
     target_machine
         .write_to_file(compiler.module, FileType::Object, path)
         .map_err(|x| x.to_string())?;
