@@ -9,6 +9,7 @@ mod parser;
 mod runner;
 mod settings;
 mod shared;
+use crate::compile::compile;
 use runner::*;
 use settings::Settings;
 use std::collections::HashMap;
@@ -32,17 +33,23 @@ fn main() {
     };
     let mut files = parse_files(settings.clone(), HashMap::new());
     transform_files(&name, &mut files);
+    let mut errors = false;
     for prog in &files {
         if prog.1.errors.is_empty() {
-            crate::compile::compile(prog.1.program.as_ref().unwrap(), prog.1.settings.clone());
+            let comp_res = compile(prog.1.program.as_ref().unwrap(), prog.1.settings.clone());
+            if let Err(msg) = comp_res {
+                eprintln!("Internal compiler error:\n {}", msg);
+                return;
+            }
         } else {
+            errors = true;
             prog.1
                 .errors
                 .iter()
                 .for_each(|e| println!("{}", e.get_msg(&prog.1.line_numbers)));
         }
     }
-    if settings.call_linker {
+    if settings.call_linker && !errors {
         let mut linker = linker::Linker::new();
         for file in files {
             linker.input(&file.1.settings.object_name);
