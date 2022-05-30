@@ -97,7 +97,7 @@ pub enum CustomType {
     Lone(UseType),
     Array(Box<Self>, i32),
     Struct(Vec<(String, Self)>),
-    Constant(Box<RawData>),
+    Constant(ConstantData),
 }
 
 #[derive(Debug, Clone, PartialEq)]

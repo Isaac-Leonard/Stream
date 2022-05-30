@@ -15,6 +15,18 @@ fn raw_data_parser() -> impl Parser<Token, RawData, Error = Cheap<Token>> {
     })
 }
 
+fn constant_data_parser() -> impl Parser<Token, ConstantData, Error = Cheap<Token>> {
+    filter_map(|e, x| match x {
+        Token::Str(x) => Ok(ConstantData::Str(x)),
+        Token::Float(x) => Ok(ConstantData::Float(x)),
+        Token::Int(x) => Ok(ConstantData::Int(x)),
+        Token::Null => Ok(ConstantData::Null),
+        Token::True => Ok(ConstantData::Bool(true)),
+        Token::False => Ok(ConstantData::Bool(false)),
+        _ => Err(Cheap::expected_input_found(e, Vec::new(), None)),
+    })
+}
+
 fn symbol_parser() -> impl Parser<Token, Symbol, Error = Cheap<Token>> {
     raw_data_parser()
         .map(Symbol::Data)
@@ -24,10 +36,7 @@ fn symbol_parser() -> impl Parser<Token, Symbol, Error = Cheap<Token>> {
 
 fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
     recursive(|ty: Recursive<Token, CustomType, _>| {
-        let constant = raw_data_parser()
-            .map(Box::new)
-            .map(CustomType::Constant)
-            .boxed();
+        let constant = constant_data_parser().map(CustomType::Constant).boxed();
 
         let singular = token_ident()
             .then(

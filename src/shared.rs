@@ -66,7 +66,7 @@ pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Ve
                 if ty.name == "Str" && ty.generics.len() == 1 {
                     let len = ty.generics[0].clone();
                     if let CustomType::Constant(len) = len {
-                        if let RawData::Int(len) = *len {
+                        if let ConstantData::Int(len) = len {
                             Ok(CompType::Str(len as u32))
                         } else {
                             Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
