@@ -2,6 +2,7 @@ use crate::errors::CompError;
 use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter};
 
+use std::hash::{self, Hasher};
 use std::rc::Rc;
 use std::{collections::HashMap, ops::Range};
 
@@ -257,6 +258,7 @@ pub enum CompData {
     Str(String),
     Func(FunctionAst),
 }
+
 impl CompData {
     pub fn get_type(&self) -> CompType {
         use CompData::*;
@@ -426,7 +428,41 @@ impl TempScope {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone)]
+pub enum ConstantData {
+    Str(String),
+    Int(i32),
+    Float(f32),
+    Bool(bool),
+    Null,
+}
+
+impl hash::Hash for ConstantData {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        use ConstantData::*;
+        match self {
+            Null => hasher.write_u8(0),
+            Int(i) => {
+                hasher.write_u8(1);
+                hasher.write_i32(*i);
+            }
+            Str(str) => {
+                hasher.write_u8(2);
+                hasher.write(str.as_bytes());
+            }
+            Float(f) => {
+                hasher.write_u8(3);
+                hasher.write(&f.to_le_bytes())
+            }
+            Bool(b) => {
+                hasher.write_u8(3);
+                hasher.write_u8(*b as u8);
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Hash)]
 pub enum CompType {
     Unknown,
     Not(Box<Self>),
@@ -442,6 +478,7 @@ pub enum CompType {
     Ptr,
     Generic(Box<CompType>),
     Type,
+    Constant(ConstantData),
 }
 impl CompType {
     pub fn is_primitive(&self) -> bool {
@@ -499,6 +536,7 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Constant(data) => Constant(data.clone()),
             Struct(keys) => {
                 let mut keys = keys
                     .iter()
@@ -544,7 +582,8 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
-            Unknown => write!(f, "unkown"),
+            Constant(data) => write!(f, "{:?}", data),
+            Unknown => write!(f, "unknown"),
             Struct(keys) => write!(
                 f,
                 "{{{}}}",
