@@ -188,30 +188,80 @@ impl Op {
             Eq | Neq => Ok(Bool),
             Le | Ge => match (a, b) {
                 (Float, Float) | (Int, Int) => Ok(Bool),
+                (Float, Constant(ConstantData::Float(_)))
+                | (Constant(ConstantData::Float(_)), Float) => Ok(Bool),
+                (Int, Constant(ConstantData::Int(_))) | (Constant(ConstantData::Int(_)), Int) => {
+                    Ok(Bool)
+                }
+                (Constant(ConstantData::Float(a)), Constant(ConstantData::Float(b))) => {
+                    Ok(Constant(ConstantData::Bool(if self == &Le {
+                        a < b
+                    } else {
+                        a > b
+                    })))
+                }
+                (Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+                    Ok(Constant(ConstantData::Bool(if self == &Le {
+                        a < b
+                    } else {
+                        a > b
+                    })))
+                }
                 _ => Err(self.invalid_comparison_msg(a, b)),
             },
-            Add => {
-                if let (Str(a), Str(b)) = (a, b) {
-                    Ok(Str(*a + *b))
-                } else if a == b {
-                    match a {
-                        Bool | Null => Err(self.invalid_comparison_msg(a, b)),
-                        x => Ok(x.clone()),
-                    }
-                } else {
-                    Err(self.invalid_comparison_msg(a, b))
+            Add => Ok(match (a, b) {
+                (Str(a), Str(b)) => Str(*a + *b),
+                (Str(a), Constant(ConstantData::Str(b))) => Str(*a + b.len() as u32),
+                (Constant(ConstantData::Str(a)), Str(b)) => Str(a.len() as u32 + *b),
+                (Constant(ConstantData::Str(a)), Constant(ConstantData::Str(b))) => {
+                    Constant(ConstantData::Str(a.clone() + b))
                 }
-            }
-            Sub | Div | Mult => {
-                if a == b {
-                    match a {
-                        Str(_) | Bool | Null => Err(self.invalid_comparison_msg(a, b)),
-                        x => Ok(x.clone()),
-                    }
-                } else {
-                    Err(self.invalid_comparison_msg(a, b))
+                (Bool, Bool) | (Null, Null) | (Bool, Null) | (Null, Bool) => {
+                    return Err(self.invalid_comparison_msg(a, b))
                 }
-            }
+                (Int, Int) => Int,
+                (Float, Float) => Float,
+                (Int, Constant(ConstantData::Int(_))) => Int,
+                (Constant(ConstantData::Int(_)), Int) => Int,
+                (Float, Constant(ConstantData::Float(_))) => Float,
+                (Constant(ConstantData::Float(_)), Float) => Float,
+                (Constant(ConstantData::Float(a)), Constant(ConstantData::Float(b))) => {
+                    Constant(ConstantData::Float(a + b))
+                }
+                (Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+                    Constant(ConstantData::Int(a + b))
+                }
+                _ => return Err(self.invalid_comparison_msg(a, b)),
+            }),
+            Sub | Div | Mult => match (a, b) {
+                (Int, Int) => Ok(Int),
+                (Float, Float) => Ok(Float),
+                (Float, Constant(ConstantData::Float(_)))
+                | (Constant(ConstantData::Float(_)), Float) => Ok(Float),
+                (Int, Constant(ConstantData::Int(_))) | (Constant(ConstantData::Int(_)), Int) => {
+                    Ok(Int)
+                }
+                (Constant(ConstantData::Float(a)), Constant(ConstantData::Float(b))) => {
+                    Ok(Constant(ConstantData::Float(if self == &Sub {
+                        a - b
+                    } else if self == &Mult {
+                        a * b
+                    } else {
+                        a / b
+                    })))
+                }
+                (Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+                    Ok(Constant(ConstantData::Int(if self == &Sub {
+                        a - b
+                    } else if self == &Mult {
+                        a * b
+                    } else {
+                        a / b
+                    })))
+                }
+                _ => Err(self.invalid_comparison_msg(a, b)),
+            },
+            _ => Err(self.invalid_comparison_msg(a, b)),
         }
     }
     fn invalid_comparison_msg(&self, a: &CompType, b: &CompType) -> CompError {
@@ -525,11 +575,17 @@ impl CompType {
     }
 
     pub fn is_int(&self) -> bool {
-        *self == CompType::Int
+        matches!(
+            *self,
+            CompType::Int | CompType::Constant(ConstantData::Int(_))
+        )
     }
 
     pub fn is_str(&self) -> bool {
-        matches!(self, CompType::Str(_))
+        matches!(
+            self,
+            CompType::Str(_) | CompType::Constant(ConstantData::Str(_))
+        )
     }
 
     pub fn is_array(&self) -> bool {
