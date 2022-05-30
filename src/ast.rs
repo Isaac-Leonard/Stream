@@ -264,10 +264,10 @@ impl CompData {
         use CompData::*;
         match self {
             Null => CompType::Null,
-            Bool(_) => CompType::Bool,
-            Int(_) => CompType::Int,
-            Float(_) => CompType::Float,
-            Str(content) => CompType::Str(content.len() as u32),
+            Bool(b) => CompType::Constant(ConstantData::Bool(*b)),
+            Int(i) => CompType::Constant(ConstantData::Int(*i)),
+            Float(f) => CompType::Constant(ConstantData::Float(*f)),
+            Str(content) => CompType::Constant(ConstantData::Str(content.clone())),
             Func(ast) => ast.as_type(),
         }
     }
