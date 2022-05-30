@@ -164,13 +164,7 @@ fn transform_exp(
                     declared_at: None,
                 }
             };
-            if has_type && !var.typing.super_of(&exp_ty) {
-                errs.push(CompError::InvalidAssignment(
-                    exp_ty,
-                    var.typing.clone(),
-                    loc.clone(),
-                ));
-            }
+
             CompExpression::Assign(
                 ExpEnvironment {
                     result_type: var.typing.clone(),
@@ -485,6 +479,22 @@ pub fn function_from_generics(
     (func, errs)
 }
 
+fn get_top_type(types: &[CompType]) -> CompType {
+    use CompType::*;
+    let mut highest_types = Vec::new();
+    for ty in types {
+        highest_types.push(match ty {
+            Int | Constant(ConstantData::Int(_)) => Int,
+            Float | Constant(ConstantData::Float(_)) => Float,
+            Null | Constant(ConstantData::Null) => Null,
+            Bool | Constant(ConstantData::Bool(_)) => Bool,
+            Constant(ConstantData::Str(str)) => Str(str.len() as u32),
+            x => x.clone(),
+        });
+    }
+    return Union(highest_types).flatten();
+}
+
 pub fn get_env(
     exp: &CompExpression,
     env: &ExpEnvironment,
@@ -580,38 +590,11 @@ pub fn get_env(
             )
         }
         Array(elements) => {
-            if elements.is_empty() {
-                return (
-                    ExpEnvironment {
-                        expression: Box::new(exp.clone()),
-                        result_type: CompType::Array(Box::new(CompType::Unknown), 0),
-                        located,
-                        ..env.clone()
-                    },
-                    errs,
-                );
-            }
-            let el_ty = elements[0].result_type.clone();
-            // TODO: Rework this to work with union types
-            // Is it worth allowing inference for unions, or maybe make arrays work like touples?
-            let non_allowed = elements
-                .iter()
-                .filter(|el| el.result_type != el_ty)
-                .collect::<Vec<_>>();
-            let result_type = if !non_allowed.is_empty() {
-                errs.push(CompError::MismatchedTypeInArray(
-                    el_ty,
-                    map_vec!(non_allowed, |el| el.result_type.clone()),
-                    non_allowed[0].located.start..non_allowed.last().unwrap().located.end,
-                ));
-                CompType::Array(Box::new(CompType::Unknown), elements.len())
-            } else {
-                CompType::Array(Box::new(el_ty), elements.len())
-            };
+            let el_types = map_vec!(elements, |el| el.result_type.clone());
             (
                 ExpEnvironment {
                     expression: Box::new(exp.clone()),
-                    result_type,
+                    result_type: CompType::Touple(el_types),
                     located,
                     ..env.clone()
                 },
@@ -749,6 +732,11 @@ pub fn get_env(
         Assign(var, lhs) => {
             let exp_ty = lhs.result_type.clone();
             let var_ty = var.result_type.clone();
+            let exp_ty = if let CompType::Touple(elements) = exp_ty {
+                CompType::Array(Box::new(get_top_type(&elements)), elements.len())
+            } else {
+                exp_ty
+            };
             if !var_ty.super_of(&exp_ty) {
                 errs.push(CompError::InvalidAssignment(
                     var_ty,

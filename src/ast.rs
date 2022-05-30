@@ -642,7 +642,19 @@ impl CompType {
                 match types.len() {
                     0 => Null,
                     1 => types[0].clone(),
-                    _ => Union(types),
+                    _ => {
+                        let mut uniques = Vec::new();
+                        for ty in types {
+                            if !uniques.contains(&ty) {
+                                uniques.push(ty)
+                            }
+                        }
+                        if uniques.len() == 1 {
+                            uniques[0].clone()
+                        } else {
+                            Union(uniques)
+                        }
+                    }
                 }
             }
             Generic(name) => Generic(name.clone()),
