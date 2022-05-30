@@ -502,7 +502,17 @@ impl CompType {
         if self == ty || (self == &CompType::Ptr && ty.is_str()) {
             true
         } else if let CompType::Union(types) = self {
+            // TODO: Do deeper checking here
             types.contains(ty)
+        } else if let CompType::Constant(data) = ty {
+            match (self, data) {
+                (CompType::Str(len), ConstantData::Str(str)) => *len == str.len() as u32,
+                (CompType::Int, ConstantData::Int(_)) => true,
+                (CompType::Float, ConstantData::Float(_)) => true,
+                (CompType::Bool, ConstantData::Bool(_)) => true,
+                (CompType::Null, ConstantData::Null) => true,
+                _ => false,
+            }
         } else {
             false
         }
