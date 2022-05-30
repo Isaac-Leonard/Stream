@@ -79,7 +79,7 @@ pub fn transform_type(ty: &CustomType, scope: &TempScope) -> Result<CompType, Ve
                 }
             }
         }
-        _ => panic!("General constant types are not yet supported sorry"),
+        CustomType::Constant(data) => Ok(CompType::Constant(data.clone())),
     }
 }
 
