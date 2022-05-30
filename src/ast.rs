@@ -1,4 +1,5 @@
 use crate::errors::CompError;
+use crate::map_vec;
 use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter};
 
@@ -529,6 +530,7 @@ pub enum CompType {
     Generic(Box<CompType>),
     Type,
     Constant(ConstantData),
+    Touple(Vec<Self>),
 }
 impl CompType {
     pub fn is_primitive(&self) -> bool {
@@ -568,7 +570,10 @@ impl CompType {
         }
     }
     pub fn is_bool(&self) -> bool {
-        self == &CompType::Bool
+        matches!(
+            *self,
+            CompType::Bool | CompType::Constant(ConstantData::Bool(_))
+        )
     }
     fn is_null(&self) -> bool {
         self == &CompType::Null
@@ -602,6 +607,7 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Touple(elements) => Touple(map_vec!(elements, |el| el.flatten())),
             Constant(data) => Constant(data.clone()),
             Struct(keys) => {
                 let mut keys = keys
@@ -648,6 +654,15 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Touple(elements) => write!(
+                f,
+                "[{}]",
+                elements
+                    .iter()
+                    .map(CompType::get_str)
+                    .reduce(|a, b| format!("{}, {}", a, b))
+                    .unwrap()
+            ),
             Constant(data) => write!(f, "{:?}", data),
             Unknown => write!(f, "unknown"),
             Struct(keys) => write!(
