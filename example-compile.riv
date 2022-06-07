@@ -1,5 +1,4 @@
 from "stdlib.riv" import *;
-     
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
 let main=():Int => {
@@ -14,7 +13,7 @@ let main=():Int => {
     }
     1+1
     let y=3    
-    let x=0
+    let x:Int=0
     hello=world	
     puts		  (world)
     puts(hello+" galaxy")
@@ -44,16 +43,14 @@ arr2[0]=[4,3,2]
     puts(hello)
     newLine()
     let f=30.0;
-    let p1= {x:4.0, y:3.0+f};
-    let p2={x:0.0, y:100.0}
+    type Point={x:Float;y:Float}
+    let p1:Point= {x:4.0, y:3.0+f};
+    let p2:Point={x:0.0, y:100.0}
     midPoint(p1,p2)
     let div=(p1.x+p2.x)/2.0;
     newLine()
     let touple=[1,2]
     addArr(touple);
-    type Point={x:Float;y:Float}
-    let union2:Int|Point={x:9.0,y:3.0};
-    union2=3;
     let i00=arr2[0][0]
     arr2[1][1]=4
     0
