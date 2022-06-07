@@ -487,6 +487,18 @@ pub enum ConstantData {
     Bool(bool),
     Null,
 }
+impl ConstantData {
+    pub fn widen(&self) -> CompType {
+        use ConstantData::*;
+        match self {
+            Str(data) => CompType::Str(data.len() as u32),
+            Int(_) => CompType::Int,
+            Float(_) => CompType::Float,
+            Bool(_) => CompType::Bool,
+            Null => CompType::Null,
+        }
+    }
+}
 
 impl hash::Hash for ConstantData {
     fn hash<H: Hasher>(&self, hasher: &mut H) {
@@ -538,6 +550,13 @@ impl CompType {
         !matches!(self, Str(_) | Array(_, _) | Struct(_))
     }
 
+    pub fn widen(&self) -> Self {
+        match self {
+            Self::Constant(data) => data.widen(),
+            x => x.clone(),
+        }
+    }
+
     pub fn get_str(&self) -> String {
         format!("{}", self)
     }
@@ -565,6 +584,13 @@ impl CompType {
                 (CompType::Null, ConstantData::Null) => true,
                 _ => false,
             }
+        } else if let (Self::Struct(data), Self::Struct(sub)) = (self, ty) {
+            for (a, b) in data.iter().zip(sub) {
+                if !a.1.super_of(&b.1) {
+                    return false;
+                }
+            }
+            return true;
         } else {
             false
         }

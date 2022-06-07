@@ -590,11 +590,12 @@ pub fn get_env(
             )
         }
         Array(elements) => {
-            let el_types = map_vec!(elements, |el| el.result_type.clone());
+            let el_types = map_vec!(elements, |el| el.result_type.widen());
             (
                 ExpEnvironment {
                     expression: Box::new(exp.clone()),
-                    result_type: CompType::Touple(el_types),
+                    // TODO: Fix this as its hacky and will cause a crash
+                    result_type: CompType::Array(Box::new(el_types[0].clone()), elements.len()),
                     located,
                     ..env.clone()
                 },

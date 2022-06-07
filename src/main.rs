@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 mod ast;
 mod compile;
 mod config;
