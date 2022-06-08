@@ -31,13 +31,10 @@ pub fn hover(ast: &ExpEnvironment, pos: u32) -> Option<CompType> {
         BinOp(_, lhs, rhs) => find_in_list!([lhs, rhs], pos),
         OneOp(_, exp) => return hover(exp, pos),
         Typeof(exp) => return hover(exp, pos),
-        DotAccess(obj, prop) => {
-            return if prop.1.contains(&(pos as usize)) {
-                Some(ast.result_type.clone())
-            } else {
-                hover(obj, pos)
-            }
-        }
+        DotAccess(obj, prop) => match prop.1.contains(&(pos as usize)) {
+            true => return Some(ast.result_type.clone()),
+            false => return hover(obj, pos),
+        },
         Value(CompData::Func(func)) => return hover(&func.body.as_ref()?.body, pos),
         Struct(data) => {
             for (key, val) in data {
