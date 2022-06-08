@@ -77,14 +77,10 @@ pub fn semantic_token_from_expr(
                 semantic_token_from_expr(p, semantic_tokens);
             });
         }
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => {
-            semantic_token_from_expr(cond, semantic_tokens);
-            semantic_token_from_expr(then, semantic_tokens);
-            semantic_token_from_expr(otherwise, semantic_tokens);
+        IfElse(if_exp) => {
+            semantic_token_from_expr(&if_exp.cond, semantic_tokens);
+            semantic_token_from_expr(&if_exp.then, semantic_tokens);
+            semantic_token_from_expr(&if_exp.otherwise, semantic_tokens);
         }
         _ => {}
     }

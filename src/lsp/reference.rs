@@ -79,27 +79,23 @@ pub fn get_reference_of_expr(
             );
         }
         Call(callee, args) => {}
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => {
+        IfElse(if_exp) => {
             get_reference_of_expr(
-                cond,
+                &if_exp.cond,
                 definition_ass_list.clone(),
                 reference_symbol.clone(),
                 reference_list,
                 include_self,
             );
             get_reference_of_expr(
-                cond,
+                &if_exp.then,
                 definition_ass_list.clone(),
                 reference_symbol.clone(),
                 reference_list,
                 include_self,
             );
             get_reference_of_expr(
-                otherwise,
+                &if_exp.otherwise,
                 definition_ass_list,
                 reference_symbol.clone(),
                 reference_list,

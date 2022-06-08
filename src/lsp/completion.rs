@@ -57,20 +57,16 @@ pub fn get_completion_of(
             }
             true
         }
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => {
-            match get_completion_of(&cond, definition_map, ident_offset) {
+        IfElse(if_exp) => {
+            match get_completion_of(&if_exp.cond, definition_map, ident_offset) {
                 true => {}
                 false => return false,
             }
-            match get_completion_of(&then, definition_map, ident_offset) {
+            match get_completion_of(&if_exp.then, definition_map, ident_offset) {
                 true => {}
                 false => return false,
             }
-            get_completion_of(&otherwise, definition_map, ident_offset)
+            get_completion_of(&if_exp.otherwise, definition_map, ident_offset)
         }
         List(lst) => {
             for expr in lst {

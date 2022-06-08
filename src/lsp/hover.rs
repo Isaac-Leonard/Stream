@@ -24,11 +24,7 @@ pub fn hover(ast: &ExpEnvironment, pos: u32) -> Option<CompType> {
         List(expressions) => find_in_list!(expressions, pos),
         Assign(lhs, rhs) => find_in_list!([lhs, rhs], pos),
         WhileLoop { cond, body } => find_in_list!([cond, body], pos),
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => find_in_list!([cond, then, otherwise], pos),
+        IfElse(if_exp) => find_in_list!([&if_exp.cond, &if_exp.then, &if_exp.otherwise], pos),
         IfOnly { cond, then } => find_in_list!([cond, then,], pos),
         Index(arr, index) => find_in_list!([arr, index], pos),
         Prog(prog) => return hover(&prog.body, pos),

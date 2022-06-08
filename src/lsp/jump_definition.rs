@@ -49,24 +49,20 @@ pub fn get_definition_of_expr(
             }
             (true, None)
         }
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => {
-            match get_definition_of_expr(cond, ident_offset) {
+        IfElse(if_exp) => {
+            match get_definition_of_expr(&if_exp.cond, ident_offset) {
                 (true, None) => {}
                 (true, Some(value)) => return (false, Some(value)),
                 (false, None) => return (false, None),
                 (false, Some(value)) => return (false, Some(value)),
             }
-            match get_definition_of_expr(then, ident_offset) {
+            match get_definition_of_expr(&if_exp.then, ident_offset) {
                 (true, None) => {}
                 (true, Some(value)) => return (false, Some(value)),
                 (false, None) => return (false, None),
                 (false, Some(value)) => return (false, Some(value)),
             }
-            get_definition_of_expr(otherwise, ident_offset)
+            get_definition_of_expr(&if_exp.otherwise, ident_offset)
         }
         WhileLoop { cond, body } => match get_definition_of_expr(cond, ident_offset) {
             (_, None) => get_definition_of_expr(body, ident_offset),
