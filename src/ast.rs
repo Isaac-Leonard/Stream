@@ -325,6 +325,13 @@ impl CompData {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct IfElse {
+    pub cond: ExpEnvironment,
+    pub then: ExpEnvironment,
+    pub otherwise: ExpEnvironment,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
     DotAccess(ExpEnvironment, (String, Range<usize>)),
     Value(CompData),
@@ -340,11 +347,7 @@ pub enum CompExpression {
         cond: ExpEnvironment,
         then: ExpEnvironment,
     },
-    IfElse {
-        cond: ExpEnvironment,
-        then: ExpEnvironment,
-        otherwise: ExpEnvironment,
-    },
+    IfElse(IfElse),
     WhileLoop {
         cond: ExpEnvironment,
         body: ExpEnvironment,

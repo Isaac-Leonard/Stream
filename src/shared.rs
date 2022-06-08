@@ -185,11 +185,11 @@ fn transform_exp(
             let cond = get_exp!(cond, env, scope);
             let then = get_exp!(left, env, scope);
             let otherwise = get_exp!(right, env, scope);
-            CompExpression::IfElse {
+            CompExpression::IfElse(IfElse {
                 cond,
                 then,
                 otherwise,
-            }
+            })
         }
         Expression::Loop(exp, body) => {
             let cond = get_exp!(exp, env, scope);
@@ -654,19 +654,15 @@ pub fn get_env(
                 errs,
             )
         }
-        IfElse {
-            cond,
-            then,
-            otherwise,
-        } => {
-            if !cond.result_type.is_bool() {
+        IfElse(if_exp) => {
+            if !if_exp.cond.result_type.is_bool() {
                 errs.push(CompError::BoolInIf(
-                    cond.result_type.clone(),
-                    cond.located.clone(),
+                    if_exp.cond.result_type.clone(),
+                    if_exp.cond.located.clone(),
                 ));
             }
-            let then_ty = then.result_type.clone();
-            let other_ty = otherwise.result_type.clone();
+            let then_ty = if_exp.then.result_type.clone();
+            let other_ty = if_exp.otherwise.result_type.clone();
             (
                 ExpEnvironment {
                     expression: Box::new(exp.clone()),

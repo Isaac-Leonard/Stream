@@ -557,13 +557,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 _ => return Err(format!("{:?} not supported on lhs of assignment", var)),
             },
             CompExpression::Value(val) => self.get_value(val)?,
-            CompExpression::IfElse {
-                cond,
-                then,
-                otherwise,
-            } => {
+            CompExpression::IfElse(if_exp) => {
                 let cond = self
-                    .compile_expression(cond, variables, parent)?
+                    .compile_expression(&if_exp.cond, variables, parent)?
                     .into_int_value();
 
                 let then_bb = self.context.append_basic_block(*parent.unwrap(), "then");
@@ -575,14 +571,14 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
                 // build then block
                 self.builder.position_at_end(then_bb);
-                let then_val = self.compile_expression(then, variables, parent)?;
+                let then_val = self.compile_expression(&if_exp.then, variables, parent)?;
                 self.builder.build_unconditional_branch(cont_bb);
 
                 let then_bb = self.builder.get_insert_block().unwrap();
 
                 // build else block
                 self.builder.position_at_end(else_bb);
-                let else_val = self.compile_expression(otherwise, variables, parent)?;
+                let else_val = self.compile_expression(&if_exp.otherwise, variables, parent)?;
                 self.builder.build_unconditional_branch(cont_bb);
 
                 let else_bb = self.builder.get_insert_block().unwrap();
