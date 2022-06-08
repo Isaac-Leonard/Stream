@@ -318,7 +318,7 @@ impl CompData {
             Bool(b) => CompType::Constant(ConstantData::Bool(*b)),
             Int(i) => CompType::Constant(ConstantData::Int(*i)),
             Float(f) => CompType::Constant(ConstantData::Float(*f)),
-            Str(content) => CompType::Constant(ConstantData::Str(content.clone())),
+            Str(content) => CompType::Str(content.len() as u32),
             Func(ast) => ast.as_type(),
         }
     }
