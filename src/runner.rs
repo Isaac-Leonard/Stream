@@ -91,9 +91,8 @@ pub fn parse_files(
     settings: Settings,
     mut files: HashMap<String, ImportMap>,
 ) -> HashMap<String, ImportMap> {
-    let import_map = ImportMap::new(settings.clone());
     let src = fs::read_to_string(&settings.input_name).ok();
-    let src = if let Some(src) = src.clone() {
+    let src = if let Some(src) = src {
         src
     } else {
         return files;
@@ -145,27 +144,33 @@ pub fn parse_files(
 
 pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
     let mut global_scope = get_global_scope();
-    for import in programs
-        .get(name)
-        .unwrap()
-        .depends_on
-        .clone()
-        .iter()
-        .flatten()
-    {
-        transform_files(&import.file, programs);
-        if let Some(prog) = &programs.get(&import.file).unwrap().program {
-            prog.get_exported().iter().for_each(|x| {
-                global_scope.variables.insert(x.name.clone(), x.clone());
-            });
+    let mut import_errors = Vec::new();
+    if let Some(program) = programs.get(name) {
+        for import in program.depends_on.clone() {
+            if let Ok(import) = import {
+                transform_files(&import.file, programs);
+                if let Some(ref prog) = programs.get(&import.file) && let Some(ref prog)=&prog.program {
+                prog.get_exported().iter().for_each(|x| {
+                    global_scope.variables.insert(x.name.clone(), x.clone());
+                });
+            }else{eprintln!("Couldn't load {}",import.file);
+		import_errors.push(CompError::ModuleNotFound(import.file.clone(),0..0))
+	    }
+            } else if let Err(name) = import {
+                import_errors.push(CompError::ModuleNotFound(name.clone(), 0..0))
+            }
         }
     }
-    let mut program = programs.get_mut(name).unwrap();
-    let prog = create_program(
-        program.ast.as_ref().unwrap(),
-        &mut global_scope,
-        &program.settings,
-    );
-    program.program = Some(prog.0);
-    program.errors = prog.1;
+
+    // Have to drop the borrow and get a mutable one
+    if let Some(program) = programs.get_mut(name) {
+        let mut prog = create_program(
+            program.ast.as_ref().unwrap(),
+            &mut global_scope,
+            &program.settings,
+        );
+        program.program = Some(prog.0);
+        program.errors = import_errors;
+        program.errors.append(&mut prog.1);
+    }
 }
