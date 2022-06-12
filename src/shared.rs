@@ -256,12 +256,16 @@ fn transform_exp(
                 RawData::Func(func) => {
                     let mut temp_variables = Vec::new();
                     for arg in func.args {
-                        let arg_ty = match transform_type(&arg.1, scope) {
-                            Ok(ty) => ty,
-                            Err(mut err) => {
-                                errs.append(&mut err);
-                                CompType::Unknown
+                        let arg_ty = if let Some(ty) = arg.1 {
+                            match transform_type(&ty, scope) {
+                                Ok(ty) => ty,
+                                Err(mut err) => {
+                                    errs.append(&mut err);
+                                    CompType::Unknown
+                                }
                             }
+                        } else {
+                            CompType::Unknown
                         };
                         let var = CompVariable {
                             name: arg.0 .0.clone(),
@@ -419,12 +423,16 @@ pub fn function_from_generics(
     }
     let mut temp_variables = Vec::new();
     for x in func.args {
-        let typing = match transform_type(&x.1.clone(), &scope) {
-            Ok(ty) => ty,
-            Err(mut err) => {
-                errs.append(&mut err);
-                CompType::Unknown
+        let typing = if let Some(ty) = x.1.clone() {
+            match transform_type(&ty, &scope) {
+                Ok(ty) => ty,
+                Err(mut err) => {
+                    errs.append(&mut err);
+                    CompType::Unknown
+                }
             }
+        } else {
+            CompType::Unknown
         };
         temp_variables.push(CompVariable {
             name: x.0 .0.clone(),

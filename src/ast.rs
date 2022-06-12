@@ -69,7 +69,7 @@ pub enum Expression {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Function {
     pub generics: Vec<String>,
-    pub args: Vec<((String, Range<usize>), CustomType)>,
+    pub args: Vec<((String, Range<usize>), Option<CustomType>)>,
     pub body: Option<Box<SpannedExpression>>,
     pub return_type: CustomType,
 }
