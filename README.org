@@ -1,4 +1,4 @@
-* A compiler for The River programming language
+* A compiler for The Stream programming language
 ** Notes
 This project initially began as an implementation of the borrow-script language found at https://github.com/alshdavid/BorrowScript/ however I have diverged from the current specifications and plan to likely go in a slightly different direction while still following the same general idea of a memory safe, thread safe, compilable language with similar semantics to typescript and rust while simplifying and learning from the mistakes of both.
 Check the road map section for what is likely to be implemented next.
@@ -15,7 +15,7 @@ Check the road map section for what is likely to be implemented next.
 ** Running the compiler
 After installing dependencies run with
 #+begin_src:
-$ cargo run -- example-compile.bs
+$ cargo run -- example-compile.srm
 #+end_src
 then run the produced binary
 #+begin_src:
