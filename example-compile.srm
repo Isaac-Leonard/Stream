@@ -1,4 +1,4 @@
-from "stdlib.riv" import *;
+from "stdlib.srm" import *;
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
 let main=():Int => {
