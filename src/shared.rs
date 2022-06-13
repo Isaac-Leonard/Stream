@@ -507,8 +507,26 @@ pub fn get_env(
     exp: &CompExpression,
     env: &ExpEnvironment,
     located: Range<usize>,
-    mut errs: Vec<CompError>,
+    errs: Vec<CompError>,
 ) -> (ExpEnvironment, Vec<CompError>) {
+    let (ty, errs) = get_type(&exp, env, located.clone(), errs);
+    (
+        ExpEnvironment {
+            expression: Box::new(exp.clone()),
+            result_type: ty,
+            located,
+            ..env.clone()
+        },
+        errs,
+    )
+}
+
+pub fn get_type(
+    exp: &CompExpression,
+    _env: &ExpEnvironment,
+    located: Range<usize>,
+    mut errs: Vec<CompError>,
+) -> (CompType, Vec<CompError>) {
     use CompExpression::*;
     match exp {
         DotAccess(val, (key, _)) => {
@@ -535,15 +553,7 @@ pub fn get_env(
                 } else {
                     CompType::Union(union)
                 };
-                (
-                    ExpEnvironment {
-                        expression: Box::new(exp.clone()),
-                        result_type,
-                        located,
-                        ..env.clone()
-                    },
-                    errs,
-                )
+                (result_type, errs)
             } else if let CompType::Struct(keys) = &val.result_type {
                 let result_type = if let Some(ty) = &keys.clone().iter().find(|x| &x.0 == key) {
                     ty.1.clone()
@@ -555,30 +565,14 @@ pub fn get_env(
                     ));
                     CompType::Unknown
                 };
-                (
-                    ExpEnvironment {
-                        result_type,
-                        expression: Box::new(exp.clone()),
-                        located,
-                        ..env.clone()
-                    },
-                    errs,
-                )
+                (result_type, errs)
             } else {
                 errs.push(CompError::PropertyDoesNotExistOnType(
                     key.clone(),
                     val.result_type.clone(),
-                    located.clone(),
+                    located,
                 ));
-                (
-                    ExpEnvironment {
-                        result_type: CompType::Unknown,
-                        expression: Box::new(exp.clone()),
-                        located,
-                        ..env.clone()
-                    },
-                    errs,
-                )
+                (CompType::Unknown, errs)
             }
         }
         Struct(keys) => {
@@ -587,62 +581,23 @@ pub fn get_env(
                 v.result_type.clone()
             )))
             .flatten();
-            (
-                ExpEnvironment {
-                    located,
-                    expression: Box::new(exp.clone()),
-                    result_type,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (result_type, errs)
         }
         Array(elements) => {
             let el_types = map_vec!(elements, |el| el.result_type.widen());
+            // TODO: Fix this as its hacky and will cause a crash
             (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    // TODO: Fix this as its hacky and will cause a crash
-                    result_type: CompType::Array(Box::new(el_types[0].clone()), elements.len()),
-                    located,
-                    ..env.clone()
-                },
+                CompType::Array(Box::new(el_types[0].clone()), elements.len()),
                 errs,
             )
         }
 
-        Typeof(_) => (
-            ExpEnvironment {
-                expression: Box::new(exp.clone()),
-                result_type: CompType::Type,
-                located,
-                ..env.clone()
-            },
-            errs,
-        ),
-        Prog(prog) => (
-            ExpEnvironment {
-                expression: Box::new(exp.clone()),
-                result_type: prog.body.result_type.clone(),
-                located,
-                ..env.clone()
-            },
-            errs,
-        ),
+        Typeof(_) => (CompType::Type, errs),
+        Prog(prog) => (prog.body.result_type.clone(), errs),
         List(exps) => (
             exps.last()
-                .map(|x| ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: x.result_type.clone(),
-                    located: located.clone(),
-                    ..env.clone()
-                })
-                .unwrap_or(ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: CompType::Null,
-                    located,
-                    ..env.clone()
-                }),
+                .map(|x| x.result_type.clone())
+                .unwrap_or(CompType::Null),
             errs,
         ),
         WhileLoop { cond, body } => {
@@ -652,15 +607,7 @@ pub fn get_env(
                     cond.located.clone(),
                 ));
             }
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: body.result_type.clone(),
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (body.result_type.clone(), errs)
         }
         IfElse(if_exp) => {
             if !if_exp.cond.result_type.is_bool() {
@@ -671,15 +618,7 @@ pub fn get_env(
             }
             let then_ty = if_exp.then.result_type.clone();
             let other_ty = if_exp.otherwise.result_type.clone();
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: CompType::Union(vec![then_ty, other_ty]).flatten(),
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (CompType::Union(vec![then_ty, other_ty]).flatten(), errs)
         }
         IfOnly { cond, then: _ } => {
             if !cond.result_type.is_bool() {
@@ -688,25 +627,9 @@ pub fn get_env(
                     cond.located.clone(),
                 ));
             }
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: CompType::Null,
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (CompType::Null, errs)
         }
-        Value(data) => (
-            ExpEnvironment {
-                expression: Box::new(exp.clone()),
-                result_type: data.get_type(),
-                located,
-                ..env.clone()
-            },
-            errs,
-        ),
+        Value(data) => (data.get_type(), errs),
         Index(arr, i) => {
             let arr_ty = arr.result_type.clone();
             let i_ty = i.result_type.clone();
@@ -724,15 +647,7 @@ pub fn get_env(
             } else {
                 CompType::Unknown
             };
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type,
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (result_type, errs)
         }
         Assign(var, lhs) => {
             let exp_ty = lhs.result_type.clone();
@@ -746,18 +661,10 @@ pub fn get_env(
                 errs.push(CompError::InvalidAssignment(
                     var_ty,
                     exp_ty.clone(),
-                    located.clone(),
+                    located,
                 ));
             }
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type: exp_ty,
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (exp_ty, errs)
         }
         BinOp(op, a, b) => {
             let result_type = match op.resulting_type(&a.result_type, &b.result_type) {
@@ -767,34 +674,10 @@ pub fn get_env(
                     CompType::Unknown
                 }
             };
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type,
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (result_type, errs)
         }
-        OneOp(_, val) => (
-            ExpEnvironment {
-                expression: Box::new(exp.clone()),
-                result_type: val.result_type.clone(),
-                located,
-                ..env.clone()
-            },
-            errs,
-        ),
-        Read(var) => (
-            ExpEnvironment {
-                expression: Box::new(exp.clone()),
-                result_type: var.typing.clone(),
-                located,
-                ..env.clone()
-            },
-            errs,
-        ),
+        OneOp(_, val) => (val.result_type.clone(), errs),
+        Read(var) => (var.typing.clone(), errs),
         Call(var, args) => {
             let var = var.clone();
             let result_type = if let CompType::Callible(arg_types, ret) = var.typing {
@@ -819,22 +702,10 @@ pub fn get_env(
                 }
                 *ret
             } else {
-                errs.push(CompError::NonfunctionCall(
-                    var.name,
-                    var.typing,
-                    located.clone(),
-                ));
+                errs.push(CompError::NonfunctionCall(var.name, var.typing, located));
                 CompType::Unknown
             };
-            (
-                ExpEnvironment {
-                    expression: Box::new(exp.clone()),
-                    result_type,
-                    located,
-                    ..env.clone()
-                },
-                errs,
-            )
+            (result_type, errs)
         }
     }
 }
