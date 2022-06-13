@@ -1,4 +1,6 @@
-from "stdlib.srm" import *;
+from "stdlib.srm" import {
+    newLine, puts, getchar, putchar, midPoint
+};
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
 let main=():Int => {

@@ -149,13 +149,23 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
         for import in program.depends_on.clone() {
             if let Ok(import) = import {
                 transform_files(&import.file, programs);
-                if let Some(ref prog) = programs.get(&import.file) && let Some(ref prog)=&prog.program {
-                prog.get_exported().iter().for_each(|x| {
-                    global_scope.variables.insert(x.name.clone(), x.clone());
-                });
-            }else{eprintln!("Couldn't load {}",import.file);
-		import_errors.push(CompError::ModuleNotFound(import.file.clone(),0..0))
-	    }
+                if let Some(prog) = programs.get(&import.file)  && let Some(ref prog)=&prog.program {
+                    if let Import::All(None) = import.imports {
+                        prog.get_exported().iter().for_each(|x| {
+                            global_scope.variables.insert(x.name.clone(), x.clone());
+                        });
+                    } else if let Import::Specific(imports) = import.imports {
+                        prog.get_exported().iter().for_each(|x| {
+                            if imports.iter().any(|y| y.0 == x.name) {
+                                global_scope.variables.insert(x.name.clone(), x.clone());
+                            }
+                        });
+                    } else {
+                        panic!("Renaming imports is currently not supported, sorry")
+                    }
+                } else {
+                    import_errors.push(CompError::ModuleNotFound(import.file.clone(), 0..0))
+                }
             } else if let Err(name) = import {
                 import_errors.push(CompError::ModuleNotFound(name.clone(), 0..0))
             }
