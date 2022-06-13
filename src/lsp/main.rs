@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 #[path = "../ast.rs"]
 pub mod ast;
 #[path = "../compile.rs"]
