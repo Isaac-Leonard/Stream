@@ -329,13 +329,9 @@ fn resolve_scope<'a>(
             if !scope.types.contains_key(name) {
                 if let Ok(ty) = transform_type(declared_type, scope) {
                     scope.add_type(name.clone(), ty);
-                    scope
-                } else {
-                    scope
                 }
-            } else {
-                scope
             }
+            scope
         }
         Expression::InitAssign(external, constant, name, declared_type, _exp) => {
             if scope.variables.contains_key(&name.0) {
@@ -355,7 +351,6 @@ fn resolve_scope<'a>(
                 })
             }
         }
-        Expression::Assign(_, _) => scope,
         Expression::Block(expressions) => {
             for exp in expressions {
                 resolve_scope(exp, scope, file);
@@ -561,7 +556,7 @@ pub fn get_type(
                     errs.push(CompError::PropertyDoesNotExistOnType(
                         key.clone(),
                         val.result_type.clone(),
-                        located.clone(),
+                        located,
                     ));
                     CompType::Unknown
                 };
