@@ -165,16 +165,14 @@ fn transform_exp(
                 }
             };
 
-            CompExpression::Assign(
-                ExpEnvironment {
-                    result_type: var.typing.clone(),
-                    expression: Box::new(CompExpression::Read(var)),
-                    var_types: HashMap::new(),
-                    located: loc.start..exp.located.start,
-                    errors: Vec::new(),
-                },
-                exp,
-            )
+            let target = ExpEnvironment {
+                result_type: var.typing.clone(),
+                expression: Box::new(CompExpression::Read(var)),
+                var_types: HashMap::new(),
+                located: loc.start..exp.located.start,
+                errors: Vec::new(),
+            };
+            CompExpression::Assign(target, exp);
         }
         Expression::Assign(name, exp) => {
             let lhs = get_exp!(name, env, scope);
