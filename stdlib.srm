@@ -1,5 +1,5 @@
-type Putchar=(Int):Int
-extern let putchar:Putchar=(x:Int):Int;
+type Putchar=(Char):Int
+extern let putchar:Putchar=(x:Char):Int;
 type Getchar=():Int
 extern let getchar:Getchar=():Int;
 
@@ -8,19 +8,19 @@ extern let sin:Sin=(x:Float):Float;
 
 let add=(x:Int, y:Int):Int=>{x+y}
 let sayHello=()=>{
-putchar(64+8)
-putchar(64+5)
-putchar(64+12)
-putchar(64+12)
-putchar(64+15)
-putchar(10)
-putchar(13)
+putchar(64+8 as Char)
+putchar(64+5 as Char)
+putchar(64+12 as Char)
+putchar(64+12 as Char)
+putchar(64+15 as Char)
+putchar(10 as Char)
+putchar(13 as Char)
 
 }
 
 extern let newLine=()=>{
-putchar(10)
-putchar(13)
+putchar(10 as Char)
+putchar(13 as Char)
 };
 
 
