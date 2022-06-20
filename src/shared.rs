@@ -380,7 +380,7 @@ fn transform_exp(
         },
         Expression::Invalid => panic!("invalid {:?}", loc),
     };
-    get_env(&expression, env, loc.clone(), errs)
+    get_env(expression, env, loc.clone(), errs)
 }
 
 fn resolve_scope<'a>(
@@ -563,12 +563,12 @@ fn get_top_type(types: &[CompType]) -> CompType {
 }
 
 pub fn get_env(
-    exp: &CompExpression,
+    mut exp: CompExpression,
     env: &ExpEnvironment,
     located: Range<usize>,
     errs: Vec<CompError>,
 ) -> (ExpEnvironment, Vec<CompError>) {
-    let (ty, errs) = get_type(exp, env, located.clone(), errs);
+    let (ty, errs) = get_type(&mut exp, env, located.clone(), errs);
     (
         ExpEnvironment {
             expression: Box::new(exp.clone()),
@@ -581,7 +581,7 @@ pub fn get_env(
 }
 
 pub fn get_type(
-    exp: &CompExpression,
+    exp: &mut CompExpression,
     _env: &ExpEnvironment,
     located: Range<usize>,
     mut errs: Vec<CompError>,
@@ -721,8 +721,9 @@ pub fn get_type(
                 match &access.0 {
                     Dot(prop) => {
                         if let CompType::Struct(data) = &var_ty {
-                            var_ty = data.iter().find(|x| &x.0 == prop).unwrap().1.clone();
-                            accesses.push((Dot(prop.clone()), var_ty.clone()))
+                            let ty = data.iter().find(|x| &x.0 == prop).unwrap().1.clone();
+                            accesses.push((Dot(prop.clone()), var_ty.clone()));
+                            var_ty = ty;
                         } else {
                             errs.push(CompError::CannotIndexType(var_ty.clone(), 0..0));
                             accesses.push(access.clone());
@@ -761,6 +762,7 @@ pub fn get_type(
                     located,
                 ));
             }
+            var.accessing = accesses;
             (exp_ty, errs)
         }
         BinOp(op, a, b) => {
