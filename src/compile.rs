@@ -253,7 +253,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 .build_float_compare(inkwell::FloatPredicate::OLT, lhs, rhs, "Lessthan")
                 .as_basic_value_enum(),
             Ge => builder
-                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "Lessthan")
+                .build_float_compare(inkwell::FloatPredicate::OGT, lhs, rhs, "greaterthan")
                 .as_basic_value_enum(),
         }
     }
@@ -532,6 +532,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                             };
                         }
                         IndexOption::Dot(prop) => {
+                            eprintln!("{:?}\n", mem_ty);
                             let index = if let CompType::Struct(data) = &mem_ty {
                                 data.iter()
                                     .position(|x| &x.0 == prop)
@@ -619,23 +620,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 phi.as_basic_value()
             }
             CompExpression::WhileLoop { cond, body } => {
-                // go from current block to loop block
                 let loop_bb = self.context.append_basic_block(*parent.unwrap(), "loop");
-
-                self.builder.build_unconditional_branch(loop_bb);
-                self.builder.position_at_end(loop_bb);
-
-                // emit body
-                self.compile_expression(body, variables, parent)?;
-
                 // compile end condition
                 let end_cond = self
                     .compile_expression(cond, variables, parent)?
                     .into_int_value();
-
                 let after_bb = self
                     .context
                     .append_basic_block(*parent.unwrap(), "afterloop");
+                self.builder
+                    .build_conditional_branch(end_cond, loop_bb, after_bb);
+
+                self.builder.position_at_end(loop_bb);
+
+                // emit body
+                self.compile_expression(body, variables, parent)?;
+                // compile end condition
+                let end_cond = self
+                    .compile_expression(cond, variables, parent)?
+                    .into_int_value();
 
                 self.builder
                     .build_conditional_branch(end_cond, loop_bb, after_bb);
