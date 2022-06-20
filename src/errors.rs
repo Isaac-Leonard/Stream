@@ -14,7 +14,11 @@ macro_rules! errors {
         impl CompError {
 	    fn get_code(&self)->i32{
 		match self {
-		    $(CompError::$Name($($($arg_name,)*)? _) =>$code,)*
+		    $(CompError::$Name($($( $arg_name,)*)? _) =>{
+			// We have to pretend to use the variables otherwise the compiler complains, also we can't use _s
+			let _=($($($arg_name,)*)?);
+			$code
+		    },)*
 		}
 	    }
             pub fn get_msg(&self, lines:&Vec<i32>) -> String {
@@ -29,6 +33,8 @@ macro_rules! errors {
             pub fn get_pos(&self, lines:&Vec<i32>) -> (FilePosition, FilePosition) {
                 match self {
 		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
+			// We have to pretend to use the variables otherwise the compiler complains, also we can't use _s
+			let _=($($($arg_name,)*)?);
 			(get_pos(loc.start as i32, lines) ,get_pos(loc.end as i32, lines))
 		    })*
                 }
