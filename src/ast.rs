@@ -64,6 +64,7 @@ pub enum Expression {
         Box<SpannedExpression>,
     ),
     Index(Box<SpannedExpression>, Box<SpannedExpression>),
+    Conversion(Box<SpannedExpression>, CustomType),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -332,6 +333,18 @@ pub struct IfElse {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum IndexOption {
+    Index(ExpEnvironment),
+    Dot(String),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct MemoryLocation {
+    pub variable: CompVariable,
+    pub accessing: Vec<(IndexOption, CompType)>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
     DotAccess(ExpEnvironment, (String, Range<usize>)),
     Value(CompData),
@@ -342,7 +355,7 @@ pub enum CompExpression {
     Read(CompVariable),
     OneOp(Prefix, ExpEnvironment),
     Call(CompVariable, Vec<ExpEnvironment>),
-    Assign(ExpEnvironment, ExpEnvironment),
+    Assign(MemoryLocation, ExpEnvironment),
     IfOnly {
         cond: ExpEnvironment,
         then: ExpEnvironment,
@@ -355,6 +368,7 @@ pub enum CompExpression {
     Index(ExpEnvironment, ExpEnvironment),
     List(Vec<ExpEnvironment>),
     Prog(Program),
+    Conversion(ExpEnvironment, CompType),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -546,6 +560,7 @@ pub enum CompType {
     Type,
     Constant(ConstantData),
     Touple(Vec<Self>),
+    Char,
 }
 impl CompType {
     pub fn is_primitive(&self) -> bool {
@@ -636,6 +651,7 @@ impl CompType {
     pub fn flatten(&self) -> CompType {
         use CompType::*;
         match self {
+            Char => Char,
             Touple(elements) => Touple(map_vec!(elements, |el| el.flatten())),
             Constant(data) => Constant(data.clone()),
             Struct(keys) => {
@@ -695,6 +711,7 @@ impl Display for CompType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use CompType::*;
         match self {
+            Char => write!(f, "Char"),
             Touple(elements) => write!(
                 f,
                 "[{}]",

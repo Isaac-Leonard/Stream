@@ -340,14 +340,24 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
                 )
             })
             .labelled("Declaration");
-
+        let conversion = equal_parser
+            .clone()
+            .then(just(Token::As).ignore_then(type_parser()).repeated())
+            .map(|x| {
+                x.1.into_iter().fold(x.0, |left, right| {
+                    (
+                        left.0.clone(),
+                        Expression::Conversion(Box::new(left), right),
+                    )
+                })
+            });
         let expression = struct_exp
             .or(if_parser)
             .or(loop_parser)
             .or(reassign)
             .or(type_declaration.clone())
             .or(declaration)
-            .or(equal_parser)
+            .or(conversion)
             .or(func_declaration.map_with_span(|x, s| (s, Terminal(x))))
             .or(array_parser)
             .boxed();

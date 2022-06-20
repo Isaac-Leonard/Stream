@@ -8,7 +8,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassManager;
 
 use inkwell::targets::{
-    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine, TargetTriple,
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::types::{
     AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
@@ -41,6 +41,7 @@ impl CompType {
                 .as_basic_type_enum(),
             Type => context.i32_type().as_basic_type_enum(),
             Int => context.i32_type().as_basic_type_enum(),
+            Char => context.i8_type().as_basic_type_enum(),
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
             Bool => context.custom_width_int_type(1).as_basic_type_enum(),
@@ -175,6 +176,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .into_pointer_value();
         let index = self.compile_expression(index, variables, parent)?;
         Ok(unsafe {
+            eprintln!("segfault1");
             self.builder.build_in_bounds_gep(
                 comp_arr,
                 &[self.i32(0).into_int_value(), index.into_int_value()],
@@ -430,6 +432,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         };
         for (i, element) in elements.enumerate() {
             let ptr = unsafe {
+                eprintln!("segfault2");
                 self.builder.build_in_bounds_gep(
                     mem,
                     &[
@@ -483,79 +486,102 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let rhs = self.compile_expression(right, variables, parent)?;
                 self.comp_bin_op(op, lhs, rhs, parent)?
             }
-            CompExpression::Read(var) => {
-                if var.typing.is_primitive() {
-                    self.load_variable(variables, &var.name)
+            CompExpression::Read(var) => self.load_variable(variables, &var.name),
+            CompExpression::Conversion(exp, ty) => {
+                let val = self.compile_expression(exp, variables, parent)?;
+                // Assume only int and char conversions for now
+                // TODO: implement properly
+                if ty.is_int() {
+                    self.cast_to_i32(val.into_int_value())
                 } else {
-                    variables.get(&var.name).unwrap().as_basic_value_enum()
+                    self.cast_to_i8(val.into_int_value())
                 }
+                .as_basic_value_enum()
             }
-            CompExpression::Assign(var, exp) => match var.expression.as_ref() {
-                CompExpression::Read(var) => match exp.expression.as_ref() {
-                    CompExpression::Value(CompData::Func(func)) => {
-                        self.create_function(func, &var.name)?;
+            CompExpression::Assign(mem, exp) => {
+                if mem.accessing.is_empty() {
+                    if let CompExpression::Value(CompData::Func(func)) = exp.expression.as_ref() {
+                        self.create_function(func, &mem.variable.name)?;
                         // TODO: Is this needed
-                        self.custom_int(1, 0)
+                        return Ok(self.custom_int(1, 0));
                     }
-                    _ => {
-                        let val = self.compile_expression(exp, variables, parent)?;
-                        let var_ptr = *variables.get(&var.name).unwrap();
-                        if val.is_pointer_value() && !var.typing.is_union() {
-                            variables.insert(var.name.clone(), val.into_pointer_value());
-                            return Ok(val);
+                } else {
+                    if let CompExpression::Value(CompData::Func(_)) = *exp.expression {
+                        return Err("Cannot yet store functions in an array".to_string());
+                    };
+                }
+                let val = self.compile_expression(exp, variables, parent)?;
+                let mut mem_ptr = variables.get(&mem.variable.name).unwrap().clone();
+                let mut mem_ty = mem.variable.typing.clone();
+                for (access, ty) in &mem.accessing {
+                    let ptr = self
+                        .builder
+                        .build_load(mem_ptr, "load")
+                        .into_pointer_value();
+                    mem_ty = ty.clone();
+                    match access {
+                        IndexOption::Index(index) => {
+                            let index = self.compile_expression(&index, variables, parent)?;
+                            mem_ptr = unsafe {
+                                eprintln!("segfault3");
+                                self.builder.build_in_bounds_gep(
+                                    ptr,
+                                    &[self.i32(0).into_int_value(), index.into_int_value()],
+                                    "calc_pos",
+                                )
+                            };
                         }
-                        if var.typing.is_union() {
-                            let ty = &exp.result_type;
-                            if !ty.is_union() {
-                                let discriminant = self.i32(ty.get_discriminant() as i32);
-                                let val = if val.is_pointer_value() {
-                                    self.builder
-                                        .build_ptr_to_int(
-                                            val.into_pointer_value(),
-                                            self.context.i32_type(),
-                                            "",
-                                        )
-                                        .as_basic_value_enum()
-                                } else {
-                                    self.builder.build_bitcast(
-                                        val,
-                                        self.context.i32_type().as_basic_type_enum(),
-                                        "",
-                                    )
-                                };
-                                self.builder.build_store(
-                                    self.builder.build_struct_gep(var_ptr, 0, "").unwrap(),
-                                    discriminant,
-                                );
-                                self.builder.build_store(
-                                    self.builder.build_struct_gep(var_ptr, 1, "").unwrap(),
-                                    val,
-                                );
+                        IndexOption::Dot(prop) => {
+                            let index = if let CompType::Struct(data) = &mem_ty {
+                                data.iter()
+                                    .position(|x| &x.0 == prop)
+                                    .ok_or_else(|| "Failed to get prop of struct".to_string())?
                             } else {
-                                self.builder.build_store(var_ptr, val);
-                            }
-                        } else {
-                            self.builder.build_store(var_ptr, val);
+                                return Err("attempted to get prop of non-struct".to_string());
+                            };
+                            mem_ptr = self
+                                .builder
+                                .build_struct_gep(ptr, index as u32, "calc_pos")
+                                .map_err(|_| "Failed to assign struct".to_string())?;
                         }
-                        val
                     }
-                },
-                CompExpression::Index(arr, index) => match *exp.expression {
-                    CompExpression::Value(CompData::Func(_)) => {
-                        return Err("Cannot yet store functions in an array".to_string())
-                    }
-                    _ => {
-                        let mut val = self.compile_expression(exp, variables, parent)?;
-                        if arr.result_type.is_str() {
-                            val = self.cast_to_i8(val.into_int_value()).as_basic_value_enum();
+                }
+
+                if mem_ty.is_union() {
+                    let ty = &exp.result_type;
+                    if !ty.is_union() {
+                        let discriminant = self.i32(ty.get_discriminant() as i32);
+                        let val = if val.is_pointer_value() {
+                            self.builder
+                                .build_ptr_to_int(
+                                    val.into_pointer_value(),
+                                    self.context.i32_type(),
+                                    "",
+                                )
+                                .as_basic_value_enum()
+                        } else {
+                            self.builder.build_bitcast(
+                                val,
+                                self.context.i32_type().as_basic_type_enum(),
+                                "",
+                            )
                         };
-                        let index_ptr = self.calc_pos(arr, index, variables, parent)?;
-                        self.builder.build_store(index_ptr, val);
-                        val
+                        self.builder.build_store(
+                            self.builder.build_struct_gep(mem_ptr, 0, "").unwrap(),
+                            discriminant,
+                        );
+                        self.builder.build_store(
+                            self.builder.build_struct_gep(mem_ptr, 1, "").unwrap(),
+                            val,
+                        );
+                    } else {
+                        self.builder.build_store(mem_ptr, val);
                     }
-                },
-                _ => return Err(format!("{:?} not supported on lhs of assignment", var)),
-            },
+                } else {
+                    self.builder.build_store(mem_ptr, val);
+                }
+                val
+            }
             CompExpression::Value(val) => self.get_value(val)?,
             CompExpression::IfElse(if_exp) => {
                 let cond = self
@@ -626,12 +652,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent)?,
             CompExpression::Index(arr, index) => {
                 let ptr = self.calc_pos(arr, index, variables, parent)?;
-                let val = self.builder.build_load(ptr, "indexing");
-                if arr.result_type.is_str() {
-                    self.cast_to_i32(val.into_int_value()).as_basic_value_enum()
-                } else {
-                    val
-                }
+                self.builder.build_load(ptr, "indexing")
             }
             CompExpression::DotAccess(val, key) => {
                 let keys = match &val.result_type {
@@ -727,12 +748,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             let arg_name = func.arguments[i].name.as_str();
             let ty = func.arguments[i].typing.get_compiler_type(self.context)?;
             let var = self.add_variable_to_block(arg_name, ty, &fn_val);
-            if func.arguments[i].typing.is_primitive() {
-                self.builder.build_store(var, arg);
-                variables.insert(arg_name.to_string(), var);
-            } else {
-                variables.insert(arg_name.to_string(), arg.into_pointer_value());
-            }
+            self.builder.build_store(var, arg);
+            variables.insert(arg_name.to_string(), var);
         }
         let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
         for x in
@@ -833,9 +850,7 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         }
     }
 
-    compiler
-        .compile_expression(&ast.body, &mut HashMap::new(), None)
-        .unwrap();
+    compiler.compile_expression(&ast.body, &mut HashMap::new(), None)?;
 
     Target::initialize_native(&InitializationConfig::default())?;
     let opt = OptimizationLevel::Default;

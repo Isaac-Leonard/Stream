@@ -99,6 +99,47 @@ fn bin_exp(
     )
 }
 
+fn resolve_memory(
+    mut exp: &SpannedExpression,
+    env: &ExpEnvironment,
+    scope: &mut TempScope,
+    file: &str,
+) -> (Option<MemoryLocation>, Vec<CompError>) {
+    let mut accesses = Vec::new();
+    let mut errs = Vec::new();
+    loop {
+        match &exp.1 {
+            Expression::Index(left, index) => {
+                accesses.push(IndexOption::Index(
+                    transform_exp(&index, &env, scope, file).0,
+                ));
+                exp = left.as_ref();
+            }
+            Expression::DotAccess(left, prop) => {
+                accesses.push(IndexOption::Dot(prop.0.clone()));
+                exp = left.as_ref();
+            }
+            Expression::Terminal(Symbol::Identifier(ref name)) => {
+                let var = scope.get_variable(name);
+                return if let Ok(var) = var {
+                    accesses.reverse();
+                    (
+                        Some(MemoryLocation {
+                            variable: var,
+                            accessing: map_vec!(accesses, |x| (x.clone(), CompType::Unknown)),
+                        }),
+                        errs,
+                    )
+                } else {
+                    errs.push(CompError::CannotFindVariable(name.clone(), exp.0.clone()));
+                    (None, errs)
+                };
+            }
+            _ => return (None, errs),
+        }
+    }
+}
+
 fn transform_exp(
     (loc, exp): &SpannedExpression,
     env: &ExpEnvironment,
@@ -113,6 +154,15 @@ fn transform_exp(
             res.0
         }};
     }
+
+    macro_rules! resolve_memory_location {
+        ($exp:expr, $env:expr, $scope:expr) => {{
+            let mut res = resolve_memory($exp, $env, $scope, file);
+            errs.append(&mut res.1);
+            res.0
+        }};
+    }
+
     let expression = match exp {
         Expression::Struct(data) => {
             let res = data
@@ -131,6 +181,17 @@ fn transform_exp(
         }
         Expression::DotAccess(val, key) => {
             CompExpression::DotAccess(get_exp!(val, env, scope), key.clone())
+        }
+        Expression::Conversion(exp, ty) => {
+            let ty = transform_type(ty, scope);
+            let ty = match ty {
+                Ok(ty) => ty,
+                Err(mut errors) => {
+                    errs.append(&mut errors);
+                    CompType::Unknown
+                }
+            };
+            CompExpression::Conversion(get_exp!(exp, env, scope), ty)
         }
         Expression::Typeof(exp) => CompExpression::Typeof(get_exp!(exp, env, scope)),
         Expression::Index(arr, index) => {
@@ -165,19 +226,24 @@ fn transform_exp(
                 }
             };
 
-            let target = ExpEnvironment {
-                result_type: var.typing.clone(),
-                expression: Box::new(CompExpression::Read(var)),
-                var_types: HashMap::new(),
-                located: loc.start..exp.located.start,
-                errors: Vec::new(),
+            let mem = MemoryLocation {
+                variable: var,
+                accessing: Vec::new(),
             };
-            CompExpression::Assign(target, exp);
+            CompExpression::Assign(mem, exp)
         }
         Expression::Assign(name, exp) => {
-            let lhs = get_exp!(name, env, scope);
+            let lhs = resolve_memory_location!(name, env, scope);
             let exp = get_exp!(exp, env, scope);
-            CompExpression::Assign(lhs, exp)
+            if let Some(lhs) = lhs {
+                CompExpression::Assign(lhs, exp)
+            } else {
+                errs.push(CompError::InvalidLeftHandForAssignment(
+                    name.1.clone(),
+                    name.0.clone(),
+                ));
+                CompExpression::List(Vec::new())
+            }
         }
         Expression::IfElse(cond, left, right) => {
             let cond = get_exp!(cond, env, scope);
@@ -502,7 +568,7 @@ pub fn get_env(
     located: Range<usize>,
     errs: Vec<CompError>,
 ) -> (ExpEnvironment, Vec<CompError>) {
-    let (ty, errs) = get_type(&exp, env, located.clone(), errs);
+    let (ty, errs) = get_type(exp, env, located.clone(), errs);
     (
         ExpEnvironment {
             expression: Box::new(exp.clone()),
@@ -522,6 +588,10 @@ pub fn get_type(
 ) -> (CompType, Vec<CompError>) {
     use CompExpression::*;
     match exp {
+        Conversion(exp, ty) => {
+            eprintln!("convert {:?} to {:?}", exp.result_type, ty);
+            (ty.clone(), errs)
+        }
         DotAccess(val, (key, _)) => {
             if let CompType::Union(types) = &val.result_type {
                 let union = types
@@ -636,7 +706,7 @@ pub fn get_type(
             } else if let CompType::Array(elements, _) = arr_ty {
                 *elements
             } else if arr_ty.is_str() {
-                CompType::Int
+                CompType::Char
             } else {
                 CompType::Unknown
             };
@@ -644,7 +714,41 @@ pub fn get_type(
         }
         Assign(var, lhs) => {
             let exp_ty = lhs.result_type.clone();
-            let var_ty = var.result_type.clone();
+            let mut var_ty = var.variable.typing.clone();
+            let mut accesses = Vec::new();
+            for access in &var.accessing {
+                use IndexOption::*;
+                match &access.0 {
+                    Dot(prop) => {
+                        if let CompType::Struct(data) = &var_ty {
+                            var_ty = data.iter().find(|x| &x.0 == prop).unwrap().1.clone();
+                            accesses.push((Dot(prop.clone()), var_ty.clone()))
+                        } else {
+                            errs.push(CompError::CannotIndexType(var_ty.clone(), 0..0));
+                            accesses.push(access.clone());
+                        }
+                    }
+                    Index(index) => {
+                        if !index.result_type.is_int() {
+                            var_ty = CompType::Unknown;
+                            errs.push(CompError::InvalidIndexType(
+                                index.result_type.clone(),
+                                index.located.clone(),
+                            ));
+                            accesses.push((Index(index.clone()), CompType::Unknown))
+                        } else if let CompType::Array(el_ty, len) = var_ty {
+                            var_ty = el_ty.as_ref().clone();
+                            accesses.push((Index(index.clone()), var_ty.clone()));
+                        } else {
+                            errs.push(CompError::CannotIndexType(
+                                var_ty.clone(),
+                                index.located.clone(),
+                            ));
+                            var_ty = CompType::Unknown;
+                        };
+                    }
+                }
+            }
             let exp_ty = if let CompType::Touple(elements) = exp_ty {
                 CompType::Array(Box::new(get_top_type(&elements)), elements.len())
             } else {

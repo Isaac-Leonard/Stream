@@ -21,6 +21,7 @@ pub fn calc_lines(file: &str) -> Vec<i32> {
 
 pub fn get_global_scope() -> TempScope {
     let mut types = HashMap::new();
+    types.insert("Char".to_string(), CompType::Char);
     types.insert("Int".to_string(), CompType::Int);
     types.insert("Float".to_string(), CompType::Float);
     types.insert("Ptr".to_string(), CompType::Ptr);
