@@ -35,3 +35,35 @@ extern const midPoint=(a:Point, b:Point):Point=>({
     x:(a.x+b.x)/2.0,
     y:(a.y+b.y)/2.0
 });
+
+extern const modulo=(x:Int, base:Int):Int=>{
+    while x > 0{
+    	x=x-base;
+    }
+    if x==0{}else{x=x+base}
+    x
+}
+
+extern const pow=(x:Int, y:Int):Int=>{
+    let res=x;
+    if y==0{ res=1; }else{ res=x;}
+    while y>1{
+    	res=res*x
+	y=y-1
+    }
+    res
+}
+
+extern const printInt=(val:Int)=>{
+    let digits:Int=1;
+    let temp=val;
+    while temp > 9{
+    	temp=temp/10;
+	digits=digits+1;
+    }
+    while digits > 0{
+        putchar(val/pow(10, digits-1) +48 as Char);
+	val=modulo(val, pow(10, digits-1));
+        digits=digits-1;
+    }
+};

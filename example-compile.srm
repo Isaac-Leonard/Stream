@@ -1,5 +1,5 @@
 from "stdlib.srm" import {
-    newLine, puts, getchar, putchar, midPoint
+    newLine, puts, getchar, putchar, midPoint, printInt, pow, modulo
 };
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
@@ -47,6 +47,7 @@ arr2[0]=[4,3,2]
     type Point={x:Float;y:Float}
     let p1:Point= {x:4.0, y:3.0+f};
     let p2:Point={x:0.0, y:100.0}
+    p2.x=2.0;
     midPoint(p1,p2)
     let div=(p1.x+p2.x)/2.0;
     newLine()
@@ -54,6 +55,11 @@ arr2[0]=[4,3,2]
     addArr(touple);
     let i00=arr2[0][0]
     arr2[1][1]=4
+    newLine();
+    printInt(9748);
+    newLine()
+    putchar(modulo(8, 10)+48 as Char);
+    newLine();
     0
     }
 }
