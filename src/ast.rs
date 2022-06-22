@@ -120,32 +120,6 @@ impl CustomTypeStruct {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct NewVariable {
-    pub name: String,
-    pub typing: Option<CompType>,
-    pub constant: bool,
-    pub initialised: bool,
-    pub external: bool,
-    pub declared_at: (String, Range<usize>),
-}
-impl NewVariable {
-    fn get_final(&self) -> Result<CompVariable, String> {
-        if self.typing == None || !self.initialised {
-            Err(format!("Cannot use uninitialised variable '{}'", self.name))
-        } else {
-            Ok(CompVariable::new(Variable {
-                name: self.name.clone(),
-                typing: self.typing.clone().unwrap(),
-                constant: self.constant,
-                external: self.external,
-                declared_at: Some(self.declared_at.clone()),
-                initialised: self.initialised,
-            }))
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct Variable {
     pub name: String,
     pub typing: CompType,
@@ -204,10 +178,7 @@ pub struct FunctionAst {
 impl FunctionAst {
     pub fn as_type(&self) -> CompType {
         CompType::Callible(
-            self.arguments
-                .iter()
-                .map(|x| x.get_type().clone())
-                .collect(),
+            self.arguments.iter().map(|x| x.get_type()).collect(),
             Box::new(self.return_type.clone()),
         )
     }
