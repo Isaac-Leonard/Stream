@@ -133,24 +133,66 @@ impl NewVariable {
         if self.typing == None || !self.initialised {
             Err(format!("Cannot use uninitialised variable '{}'", self.name))
         } else {
-            Ok(CompVariable {
+            Ok(CompVariable::new(Variable {
                 name: self.name.clone(),
                 typing: self.typing.clone().unwrap(),
                 constant: self.constant,
                 external: self.external,
                 declared_at: Some(self.declared_at.clone()),
-            })
+                initialised: self.initialised,
+            }))
         }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct CompVariable {
+pub struct Variable {
     pub name: String,
     pub typing: CompType,
+    pub initialised: bool,
     pub constant: bool,
     pub external: bool,
     pub declared_at: Option<(String, Range<usize>)>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct CompVariable(Rc<RefCell<Variable>>);
+impl CompVariable {
+    pub fn new(init: Variable) -> Self {
+        CompVariable(Rc::new(RefCell::new(init)))
+    }
+
+    pub fn get_name(&self) -> String {
+        self.0.borrow().name.clone()
+    }
+    pub fn get_type(&self) -> CompType {
+        // TODO: implement a version that returns a reference if possible
+        self.0.borrow().typing.clone()
+    }
+
+    pub fn set_type(&self, ty: CompType) {
+        self.0.borrow_mut().typing = ty;
+    }
+
+    pub fn is_const(&self) -> bool {
+        self.0.borrow().constant
+    }
+
+    pub fn is_extern(&self) -> bool {
+        self.0.borrow().external
+    }
+
+    pub fn get_declaration_location(&self) -> Option<(String, Range<usize>)> {
+        self.0.borrow().declared_at.clone()
+    }
+
+    pub fn is_initialised(&self) -> bool {
+        self.0.borrow_mut().initialised
+    }
+
+    pub fn set_initialised(&self) {
+        self.0.borrow_mut().initialised = true;
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -162,7 +204,10 @@ pub struct FunctionAst {
 impl FunctionAst {
     pub fn as_type(&self) -> CompType {
         CompType::Callible(
-            self.arguments.iter().map(|x| x.typing.clone()).collect(),
+            self.arguments
+                .iter()
+                .map(|x| x.get_type().clone())
+                .collect(),
             Box::new(self.return_type.clone()),
         )
     }
@@ -387,11 +432,11 @@ pub struct Program {
     pub body: ExpEnvironment,
 }
 impl Program {
-    pub fn get_exported(&self) -> Vec<NewVariable> {
+    pub fn get_exported(&self) -> Vec<CompVariable> {
         self.scope
             .variables
             .iter()
-            .filter(|x| x.1.external)
+            .filter(|x| x.1.is_extern())
             .map(|x| x.1.clone())
             .collect()
     }
@@ -400,7 +445,7 @@ impl Program {
 #[derive(Debug, PartialEq, Clone)]
 pub struct TempScope {
     pub types: HashMap<String, CompType>,
-    pub variables: HashMap<String, NewVariable>,
+    pub variables: HashMap<String, CompVariable>,
     pub preset_variables: HashMap<String, CompVariable>,
     pub parent: Option<Box<Self>>,
 }
@@ -416,8 +461,8 @@ impl TempScope {
         }
     }
 
-    pub fn add_variable(&mut self, var: NewVariable) -> &mut TempScope {
-        self.variables.insert(var.name.clone(), var);
+    pub fn add_variable(&mut self, var: CompVariable) -> &mut TempScope {
+        self.variables.insert(var.get_name(), var);
         self
     }
 
@@ -428,20 +473,20 @@ impl TempScope {
 
     pub fn set_variable_initialised(&mut self, name: &String) {
         if let Some(var) = self.variables.get_mut(name) {
-            var.initialised = true;
+            var.set_initialised();
         }
     }
 
     pub fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut TempScope {
         if let Some(v) = self.variables.get_mut(name) {
-            v.typing = Some(ty.clone());
+            v.set_type(ty.clone());
         }
         self
     }
 
     pub fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
         if let Some(var) = self.variables.get(name) {
-            var.get_final()
+            Ok(var.clone())
         } else if let Some(var) = self.preset_variables.get(name) {
             Ok(var.clone())
         } else {
@@ -465,7 +510,7 @@ impl TempScope {
 
     pub fn constant_exists(&self, name: &String) -> bool {
         if let Some(var) = self.variables.get(name) {
-            var.constant
+            var.is_const()
         } else {
             match &self.parent {
                 Some(parent) => (*parent).constant_exists(name),
@@ -476,7 +521,7 @@ impl TempScope {
 
     pub fn variable_initialised(&self, name: &String) -> bool {
         if let Some(var) = self.variables.get(name) {
-            var.initialised
+            var.is_initialised()
         } else {
             match &self.parent {
                 Some(parent) => (*parent).constant_exists(name),
@@ -486,7 +531,7 @@ impl TempScope {
     }
     pub fn variable_has_type(&self, name: &String) -> bool {
         if let Some(var) = self.variables.get(name) {
-            var.typing != None
+            var.get_type() != CompType::Unknown
         } else {
             match &self.parent {
                 Some(parent) => (*parent).constant_exists(name),

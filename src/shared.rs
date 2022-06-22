@@ -217,13 +217,14 @@ fn transform_exp(
                 var
             } else {
                 errs.push(CompError::CannotFindVariable(name.0.clone(), loc.clone()));
-                CompVariable {
+                CompVariable::new(Variable {
                     name: name.0.clone(),
                     typing: exp_ty.clone(),
                     constant: false,
                     external: false,
                     declared_at: None,
-                }
+                    initialised: false,
+                })
             };
 
             let mem = MemoryLocation {
@@ -285,13 +286,14 @@ fn transform_exp(
                 var
             } else {
                 errs.push(CompError::CannotFindVariable(name.clone(), loc.clone()));
-                CompVariable {
+                CompVariable::new(Variable {
                     name: name.clone(),
                     constant: false,
                     external: false,
                     typing: CompType::Unknown,
                     declared_at: None,
-                }
+                    initialised: false,
+                })
             };
             CompExpression::Call(func, args)
         }
@@ -301,13 +303,14 @@ fn transform_exp(
                     var
                 } else {
                     errs.push(CompError::CannotFindVariable(name.clone(), loc.clone()));
-                    CompVariable {
+                    CompVariable::new(Variable {
                         name: name.clone(),
                         constant: false,
                         external: false,
                         typing: CompType::Unknown,
                         declared_at: None,
-                    }
+                        initialised: false,
+                    })
                 };
                 CompExpression::Read(var)
             }
@@ -331,13 +334,14 @@ fn transform_exp(
                         } else {
                             CompType::Unknown
                         };
-                        let var = CompVariable {
+                        let var = CompVariable::new(Variable {
                             name: arg.0 .0.clone(),
                             constant: true,
                             typing: arg_ty,
                             external: false,
                             declared_at: Some((file.to_string(), arg.0 .1)),
-                        };
+                            initialised: true,
+                        });
                         temp_variables.push(var);
                     }
                     let return_type = match transform_type(&func.return_type, scope) {
@@ -350,7 +354,7 @@ fn transform_exp(
                     let arguments = temp_variables.clone();
                     let mut local_variables = HashMap::new();
                     for var in temp_variables {
-                        local_variables.insert(var.name.clone(), var);
+                        local_variables.insert(var.get_name(), var);
                     }
                     match func.body {
                         Some(body) => {
@@ -402,17 +406,17 @@ fn resolve_scope<'a>(
                 scope
             } else {
                 let typing = match declared_type {
-                    None => None,
-                    Some(x) => transform_type(x, scope).ok(),
+                    None => CompType::Unknown,
+                    Some(x) => transform_type(x, scope).unwrap(),
                 };
-                scope.add_variable(NewVariable {
+                scope.add_variable(CompVariable::new(Variable {
                     name: name.0.clone(),
                     constant: *constant,
                     typing,
                     initialised: false,
                     external: *external,
-                    declared_at: (file.to_string(), name.1.clone()),
-                })
+                    declared_at: Some((file.to_string(), name.1.clone())),
+                }))
             }
         }
         Expression::Block(expressions) => {
@@ -430,7 +434,7 @@ fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
         var_types: scope
             .variables
             .iter()
-            .filter_map(|(name, var)| Some((name.clone(), var.typing.clone()?)))
+            .filter_map(|(name, var)| Some((name.clone(), var.get_type().clone())))
             .clone()
             .collect(),
         result_type: CompType::Null,
@@ -493,13 +497,14 @@ pub fn function_from_generics(
         } else {
             CompType::Unknown
         };
-        temp_variables.push(CompVariable {
+        temp_variables.push(CompVariable::new(Variable {
             name: x.0 .0.clone(),
             constant: true,
             typing,
             external: false,
             declared_at: Some((file.to_string(), x.0 .1.clone())),
-        });
+            initialised: true,
+        }));
     }
     let return_type = match transform_type(&func.return_type, &scope) {
         Ok(ty) => ty,
@@ -511,7 +516,7 @@ pub fn function_from_generics(
     let arguments = temp_variables.clone();
     let mut local_variables = HashMap::new();
     for var in temp_variables {
-        local_variables.insert(var.name.clone(), var);
+        local_variables.insert(var.get_name(), var);
     }
     let func = match func.body {
         Some(body) => {
@@ -559,7 +564,7 @@ fn get_top_type(types: &[CompType]) -> CompType {
             x => x.clone(),
         });
     }
-    return Union(highest_types).flatten();
+    Union(highest_types).flatten()
 }
 
 pub fn get_env(
@@ -610,7 +615,7 @@ pub fn get_type(
                     errs.push(CompError::MissingPropertyInUnion(
                         key.clone(),
                         val.result_type.clone(),
-                        located.clone(),
+                        located,
                     ));
                     CompType::Unknown
                 } else {
@@ -714,16 +719,16 @@ pub fn get_type(
         }
         Assign(var, lhs) => {
             let exp_ty = lhs.result_type.clone();
-            let mut var_ty = var.variable.typing.clone();
+            let mut var_ty = var.variable.get_type();
             let mut accesses = Vec::new();
             for access in &var.accessing {
                 use IndexOption::*;
                 match &access.0 {
                     Dot(prop) => {
                         if let CompType::Struct(data) = &var_ty {
-                            let ty = data.iter().find(|x| &x.0 == prop).unwrap().1.clone();
+                            let pair = data.iter().find(|x| &x.0 == prop).unwrap().clone();
                             accesses.push((Dot(prop.clone()), var_ty.clone()));
-                            var_ty = ty;
+                            var_ty = pair.1.clone();
                         } else {
                             errs.push(CompError::CannotIndexType(var_ty.clone(), 0..0));
                             accesses.push(access.clone());
@@ -757,7 +762,7 @@ pub fn get_type(
             };
             if !var_ty.super_of(&exp_ty) {
                 errs.push(CompError::InvalidAssignment(
-                    var_ty,
+                    var_ty.clone(),
                     exp_ty.clone(),
                     located,
                 ));
@@ -776,10 +781,10 @@ pub fn get_type(
             (result_type, errs)
         }
         OneOp(_, val) => (val.result_type.clone(), errs),
-        Read(var) => (var.typing.clone(), errs),
+        Read(var) => (var.get_type().clone(), errs),
         Call(var, args) => {
             let var = var.clone();
-            let result_type = if let CompType::Callible(arg_types, ret) = var.typing {
+            let result_type = if let CompType::Callible(arg_types, ret) = var.get_type() {
                 let mismatched_args = arg_types
                     .iter()
                     .zip(args)
@@ -799,9 +804,13 @@ pub fn get_type(
                 if let Some(err) = mismatched_args {
                     errs.push(err);
                 }
-                *ret
+                ret.as_ref().clone()
             } else {
-                errs.push(CompError::NonfunctionCall(var.name, var.typing, located));
+                errs.push(CompError::NonfunctionCall(
+                    var.get_name(),
+                    var.get_type().clone(),
+                    located,
+                ));
                 CompType::Unknown
             };
             (result_type, errs)

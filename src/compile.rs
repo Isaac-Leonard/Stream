@@ -455,7 +455,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     ) -> Result<BasicValueEnum<'ctx>, String> {
         Ok(match exp.expression.as_ref() {
             CompExpression::Call(var, args) => {
-                let func = self.module.get_function(&var.name).unwrap();
+                let func = self.module.get_function(&var.get_name()).unwrap();
                 let compiled_args = map_vec!(args, |arg| {
                     let val = self
                         .compile_expression(arg, variables, parent)
@@ -476,7 +476,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 });
                 let argv = map_vec!(compiled_args, |x| BasicMetadataValueEnum::from(*x));
                 self.builder
-                    .build_call(func, argv.as_slice(), &var.name)
+                    .build_call(func, argv.as_slice(), &var.get_name())
                     .try_as_basic_value()
                     .left()
                     .ok_or_else(|| "Invalid function call produced".to_string())?
@@ -486,7 +486,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let rhs = self.compile_expression(right, variables, parent)?;
                 self.comp_bin_op(op, lhs, rhs, parent)?
             }
-            CompExpression::Read(var) => self.load_variable(variables, &var.name),
+            CompExpression::Read(var) => self.load_variable(variables, &var.get_name()),
             CompExpression::Conversion(exp, ty) => {
                 let val = self.compile_expression(exp, variables, parent)?;
                 // Assume only int and char conversions for now
@@ -501,7 +501,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Assign(mem, exp) => {
                 if mem.accessing.is_empty() {
                     if let CompExpression::Value(CompData::Func(func)) = exp.expression.as_ref() {
-                        self.create_function(func, &mem.variable.name)?;
+                        self.create_function(func, &mem.variable.get_name())?;
                         // TODO: Is this needed
                         return Ok(self.custom_int(1, 0));
                     }
@@ -511,8 +511,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     };
                 }
                 let val = self.compile_expression(exp, variables, parent)?;
-                let mut mem_ptr = variables.get(&mem.variable.name).unwrap().clone();
-                let mut mem_ty = mem.variable.typing.clone();
+                let mut mem_ptr = variables.get(&mem.variable.get_name()).unwrap().clone();
+                let mut mem_ty = mem.variable.get_type().clone();
                 for (access, ty) in &mem.accessing {
                     let ptr = self
                         .builder
@@ -748,9 +748,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         // build variables map
         let mut variables: HashMap<String, PointerValue<'ctx>> = HashMap::new();
         for (i, arg) in fn_val.get_param_iter().enumerate() {
-            let arg_name = func.arguments[i].name.as_str();
-            let ty = func.arguments[i].typing.get_compiler_type(self.context)?;
-            let var = self.add_variable_to_block(arg_name, ty, &fn_val);
+            let arg_name = func.arguments[i].get_name();
+            let ty = func.arguments[i]
+                .get_type()
+                .get_compiler_type(self.context)?;
+            let var = self.add_variable_to_block(&arg_name, ty, &fn_val);
             self.builder.build_store(var, arg);
             variables.insert(arg_name.to_string(), var);
         }
@@ -758,8 +760,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         for x in
             (func.body.clone().unwrap().scope.variables.iter()).filter(|x| !arg_names.contains(x.0))
         {
-            let ty = x.1.typing.clone();
-            let comp_type = ty.as_ref().unwrap().get_compiler_type(self.context)?;
+            let ty = x.1.get_type();
+            let comp_type = ty.get_compiler_type(self.context)?;
             let name = x.0.to_string();
             let var = self.add_variable_to_block(&name, comp_type, &fn_val);
             variables.insert(name, var);
@@ -847,8 +849,8 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         module: &module,
     };
     for (name, var) in ast.scope.clone().variables {
-        if var.typing.as_ref().unwrap().is_callable() {
-            let fn_val = compiler.create_function_shape(&var.typing.clone().unwrap())?;
+        if var.get_type().is_callable() {
+            let fn_val = compiler.create_function_shape(&var.get_type().clone())?;
             compiler.module.add_function(&name, fn_val, None);
         }
     }

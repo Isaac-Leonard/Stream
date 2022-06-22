@@ -153,12 +153,12 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
                 if let Some(prog) = programs.get(&import.file)  && let Some(ref prog)=&prog.program {
                     if let Import::All(None) = import.imports {
                         prog.get_exported().iter().for_each(|x| {
-                            global_scope.variables.insert(x.name.clone(), x.clone());
+                            global_scope.variables.insert(x.get_name(), x.clone());
                         });
                     } else if let Import::Specific(imports) = import.imports {
                         prog.get_exported().iter().for_each(|x| {
-                            if imports.iter().any(|y| y.0 == x.name) {
-                                global_scope.variables.insert(x.name.clone(), x.clone());
+                            if imports.iter().any(|y| y.0 == x.get_name()) {
+                                global_scope.variables.insert(x.get_name(), x.clone());
                             }
                         });
                     } else {
