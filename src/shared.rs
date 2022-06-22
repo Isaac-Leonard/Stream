@@ -111,7 +111,7 @@ fn resolve_memory(
         match &exp.1 {
             Expression::Index(left, index) => {
                 accesses.push(IndexOption::Index(
-                    transform_exp(&index, &env, scope, file).0,
+                    transform_exp(&index, env, scope, file).0,
                 ));
                 exp = left.as_ref();
             }
@@ -434,7 +434,7 @@ fn get_env_from_scope(scope: &TempScope) -> ExpEnvironment {
         var_types: scope
             .variables
             .iter()
-            .filter_map(|(name, var)| Some((name.clone(), var.get_type().clone())))
+            .map(|x| (x.0.clone(), x.1.get_type()))
             .clone()
             .collect(),
         result_type: CompType::Null,
@@ -781,7 +781,7 @@ pub fn get_type(
             (result_type, errs)
         }
         OneOp(_, val) => (val.result_type.clone(), errs),
-        Read(var) => (var.get_type().clone(), errs),
+        Read(var) => (var.get_type(), errs),
         Call(var, args) => {
             let var = var.clone();
             let result_type = if let CompType::Callible(arg_types, ret) = var.get_type() {
@@ -808,7 +808,7 @@ pub fn get_type(
             } else {
                 errs.push(CompError::NonfunctionCall(
                     var.get_name(),
-                    var.get_type().clone(),
+                    var.get_type(),
                     located,
                 ));
                 CompType::Unknown
