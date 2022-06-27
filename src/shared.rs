@@ -63,17 +63,8 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> Result<CompType, Vec<Co
             if let Ok(x) = x {
                 Ok(x)
             } else {
-                if ty.name == "Str" && ty.generics.len() == 1 {
-                    let len = ty.generics[0].clone();
-                    if let CustomType::Constant(len) = len {
-                        if let ConstantData::Int(len) = len {
-                            Ok(CompType::Str(len as u32))
-                        } else {
-                            Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
-                        }
-                    } else {
-                        Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
-                    }
+                if ty.name == "Str" && ty.generics.len() == 1&&let                         CustomType::Constant(ConstantData::Int(len))=ty.generics[0].clone() {
+                    Ok(CompType::Str(len as u32))
                 } else {
                     Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
                 }
