@@ -19,7 +19,7 @@ pub fn calc_lines(file: &str) -> Vec<i32> {
     positions
 }
 
-pub fn get_global_scope() -> TempScope {
+pub fn get_global_scope() -> Scope {
     let mut types = HashMap::new();
     types.insert("Char".to_string(), CompType::Char);
     types.insert("Int".to_string(), CompType::Int);
@@ -28,7 +28,7 @@ pub fn get_global_scope() -> TempScope {
     types.insert("Bool".to_string(), CompType::Bool);
     types.insert("Null".to_string(), CompType::Null);
     let variables = HashMap::new();
-    TempScope {
+    Scope {
         preset_variables: HashMap::new(),
         variables,
         types,

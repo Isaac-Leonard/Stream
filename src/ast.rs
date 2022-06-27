@@ -399,7 +399,7 @@ pub struct ExpEnvironment {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
-    pub scope: TempScope,
+    pub scope: Scope,
     pub body: ExpEnvironment,
 }
 impl Program {
@@ -414,13 +414,13 @@ impl Program {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct TempScope {
+pub struct Scope {
     pub types: HashMap<String, CompType>,
     pub variables: HashMap<String, CompVariable>,
     pub preset_variables: HashMap<String, CompVariable>,
     pub parent: Option<Box<Self>>,
 }
-impl TempScope {
+impl Scope {
     pub fn variable_exists(&self, name: &String) -> bool {
         if self.variables.contains_key(name) || self.preset_variables.contains_key(name) {
             true
@@ -432,12 +432,12 @@ impl TempScope {
         }
     }
 
-    pub fn add_variable(&mut self, var: CompVariable) -> &mut TempScope {
+    pub fn add_variable(&mut self, var: CompVariable) -> &mut Scope {
         self.variables.insert(var.get_name(), var);
         self
     }
 
-    pub fn add_type(&mut self, name: String, ty: CompType) -> &mut TempScope {
+    pub fn add_type(&mut self, name: String, ty: CompType) -> &mut Scope {
         self.types.insert(name, ty);
         self
     }
@@ -448,7 +448,7 @@ impl TempScope {
         }
     }
 
-    pub fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut TempScope {
+    pub fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut Scope {
         if let Some(v) = self.variables.get_mut(name) {
             v.set_type(ty.clone());
         }
