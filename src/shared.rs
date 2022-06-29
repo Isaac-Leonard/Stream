@@ -825,7 +825,6 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
         }
     } else {
         // ToDO: Actually match all cases, this should not be reached if correct code is written but still technically reachable and so needs to be handled properly
-        unreachable!();
-        Union(Vec::new())
+        NEVER
     }
 }

@@ -777,3 +777,5 @@ impl Display for CompType {
         }
     }
 }
+
+pub const NEVER: CompType = CompType::Union(Vec::new());
