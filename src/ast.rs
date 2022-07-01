@@ -779,3 +779,11 @@ impl Display for CompType {
 }
 
 pub const NEVER: CompType = CompType::Union(Vec::new());
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Accesses {
+    pub variable: CompVariable,
+    pub read: u32,
+    pub write: u32,
+    pub capture: u32,
+}

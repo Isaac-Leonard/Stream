@@ -828,3 +828,145 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
         NEVER
     }
 }
+
+fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Accesses>) {
+    use CompExpression::*;
+    match env.expression.as_ref() {
+        List(envs) => {
+            for env in envs {
+                count_max_references_in_env(env, accesses)
+            }
+        }
+        IfElse(ifElse) => {
+            count_max_references_in_env(&ifElse.cond, accesses);
+            let mut then = Vec::new();
+            count_max_references_in_env(&ifElse.then, &mut then);
+            let mut otherwise = Vec::new();
+            count_max_references_in_env(&ifElse.otherwise, &mut otherwise);
+            for access in then.into_iter().chain(otherwise) {
+                let mut existing = accesses
+                    .iter_mut()
+                    .find(|access2| access2.variable == access.variable);
+                if let Some(access2) = existing {
+                    access2.capture = std::cmp::max(access.capture, access2.capture);
+                    access2.write = std::cmp::max(access.write, access2.write);
+                    access2.read = std::cmp::max(access.read, access2.read);
+                } else {
+                    accesses.push(access.clone())
+                }
+            }
+        }
+        Read(var) => {
+            let exists = accesses.iter_mut().find(|access| &access.variable == var);
+            if var.get_type().is_primitive() {
+                if let Some(mut access) = exists {
+                    access.read += 1;
+                } else {
+                    accesses.push(Accesses {
+                        variable: var.clone(),
+                        read: 1,
+                        write: 0,
+                        capture: 0,
+                    })
+                }
+            } else {
+                if let Some(access) = exists {
+                    access.capture += 1;
+                } else {
+                    accesses.push(Accesses {
+                        variable: var.clone(),
+                        read: 0,
+                        write: 0,
+                        capture: 1,
+                    })
+                }
+            }
+        }
+        WhileLoop { cond, body } => {
+            count_max_references_in_env(cond, accesses);
+            count_max_references_in_env(body, accesses)
+        }
+        IfOnly { cond, then } => {
+            count_max_references_in_env(cond, accesses);
+            count_max_references_in_env(then, accesses)
+        }
+        BinOp(_, a, b) => {
+            count_max_references_in_env(a, accesses);
+            count_max_references_in_env(b, accesses)
+        }
+        OneOp(_, exp) => count_max_references_in_env(exp, accesses),
+        Typeof(exp) => count_max_references_in_env(exp, accesses),
+        Conversion(exp, _) => count_max_references_in_env(exp, accesses),
+        DotAccess(exp, _) => count_max_references_in_env(exp, accesses),
+        Prog(prog) => count_max_references_in_env(&prog.body, accesses),
+
+        Index(arr, idx) => {
+            count_max_references_in_env(arr, accesses);
+            count_max_references_in_env(idx, accesses)
+        }
+        Array(envs) => {
+            for env in envs {
+                count_max_references_in_env(env, accesses)
+            }
+        }
+        Struct(envs) => {
+            for env in envs {
+                count_max_references_in_env(&env.1, accesses)
+            }
+        }
+        Call(func, envs) => {
+            if let Some(access) = accesses.iter_mut().find(|access| &access.variable == func) {
+                access.read += 1;
+            } else {
+                accesses.push(Accesses {
+                    variable: func.clone(),
+                    read: 1,
+                    write: 0,
+                    capture: 0,
+                })
+            }
+            for env in envs {
+                count_max_references_in_env(env, accesses)
+            }
+        }
+        Value(CompData::Func(_)) => panic!("Cannot reference count closures at this time"),
+        Value(_) => {}
+        Assign(lvalue, rhs) => {
+            count_max_references_in_env(rhs, accesses);
+            for access in &lvalue.accessing {
+                if let IndexOption::Index(env) = &access.0 {
+                    count_max_references_in_env(&env, accesses)
+                }
+            }
+            if let Some(mut access) = accesses
+                .iter_mut()
+                .find(|access| access.variable == lvalue.variable)
+            {
+                access.write += 1;
+            } else {
+                accesses.push(Accesses {
+                    variable: lvalue.variable.clone(),
+                    read: 0,
+                    write: 1,
+                    capture: 0,
+                })
+            }
+        }
+    }
+}
+
+fn count_max_references(func: &FunctionAst) -> Vec<Accesses> {
+    if let Some(env) = &func.body {
+        let mut accesses = Vec::new();
+        count_max_references_in_env(&env.body, &mut accesses);
+        accesses
+    } else {
+        let args = func.arguments.clone();
+        map_vec!(args, |variable| Accesses {
+            variable: variable.clone(),
+            read: 0,
+            write: 0,
+            capture: 1,
+        })
+    }
+}
