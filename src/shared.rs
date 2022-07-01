@@ -844,7 +844,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Acce
             let mut otherwise = Vec::new();
             count_max_references_in_env(&ifElse.otherwise, &mut otherwise);
             for access in then.into_iter().chain(otherwise) {
-                let mut existing = accesses
+                let existing = accesses
                     .iter_mut()
                     .find(|access2| access2.variable == access.variable);
                 if let Some(access2) = existing {
