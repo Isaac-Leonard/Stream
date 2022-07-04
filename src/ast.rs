@@ -383,7 +383,6 @@ pub enum CompExpression {
     },
     Index(ExpEnvironment, ExpEnvironment),
     List(Vec<ExpEnvironment>),
-    Prog(Program),
     Conversion(ExpEnvironment, CompType),
 }
 
@@ -457,7 +456,6 @@ impl ExpEnvironment {
                 }
                 None
             }
-            CompExpression::Prog(prog) => prog.body.find(matcher),
             CompExpression::Read(_) | CompExpression::Value(_) => None,
         }
     }

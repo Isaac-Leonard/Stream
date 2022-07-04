@@ -652,7 +652,6 @@ pub fn get_type(
         }
 
         Typeof(_) => (CompType::Type, errs),
-        Prog(prog) => (prog.body.result_type.clone(), errs),
         List(exps) => (
             exps.last()
                 .map(|x| x.result_type.clone())
@@ -898,8 +897,6 @@ fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Acce
         Typeof(exp) => count_max_references_in_env(exp, accesses),
         Conversion(exp, _) => count_max_references_in_env(exp, accesses),
         DotAccess(exp, _) => count_max_references_in_env(exp, accesses),
-        Prog(prog) => count_max_references_in_env(&prog.body, accesses),
-
         Index(arr, idx) => {
             count_max_references_in_env(arr, accesses);
             count_max_references_in_env(idx, accesses)

@@ -652,7 +652,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
                 last.unwrap_or_else(|| self.i32(0))
             }
-            CompExpression::Prog(prog) => self.compile_expression(&prog.body, variables, parent)?,
             CompExpression::Index(arr, index) => {
                 let ptr = self.calc_pos(arr, index, variables, parent)?;
                 self.builder.build_load(ptr, "indexing")
