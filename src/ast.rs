@@ -399,39 +399,43 @@ impl ExpEnvironment {
     pub fn is_if_else(&self) -> bool {
         matches!(self.expression.as_ref(), CompExpression::IfElse(_))
     }
-    fn find(&self, matcher: fn(&Self) -> bool) -> Option<&Self> {
-        if matcher(self) {
-            return Some(self);
-        }
+    fn find_map<'a, T: 'a, F>(&'a self, matcher: &mut F) -> Option<T>
+    where
+        F: FnMut(&'a Self) -> Option<T>,
+    {
+        let current = matcher(self);
+        if current.is_some() {
+            return current;
+        };
         match self.expression.as_ref() {
             CompExpression::List(exps)
             | CompExpression::Array(exps)
-            | CompExpression::Call(_, exps) => exps.iter().find_map(|x| x.find(matcher)),
-            CompExpression::Struct(key_vals) => key_vals.iter().find_map(|x| x.1.find(matcher)),
+            | CompExpression::Call(_, exps) => exps.iter().find_map(|x| x.find_map(matcher)),
+            CompExpression::Struct(key_vals) => key_vals.iter().find_map(|x| x.1.find_map(matcher)),
             CompExpression::IfElse(ifelse) => {
-                let cond = ifelse.cond.find(matcher);
+                let cond = ifelse.cond.find_map(matcher);
                 if cond.is_some() {
                     return cond;
                 }
-                let then = ifelse.then.find(matcher);
+                let then = ifelse.then.find_map(matcher);
                 if then.is_some() {
                     return then;
                 }
-                let otherwise = ifelse.otherwise.find(matcher);
+                let otherwise = ifelse.otherwise.find_map(matcher);
                 if otherwise.is_some() {
                     return otherwise;
                 }
-                return None;
+                None
             }
             CompExpression::WhileLoop { cond: a, body: b }
             | CompExpression::BinOp(_, a, b)
             | CompExpression::IfOnly { cond: a, then: b }
             | CompExpression::Index(a, b) => {
-                let a = a.find(matcher);
+                let a = a.find_map(matcher);
                 if a.is_some() {
                     return a;
                 }
-                let b = b.find(matcher);
+                let b = b.find_map(matcher);
                 if b.is_some() {
                     return b;
                 }
@@ -440,15 +444,15 @@ impl ExpEnvironment {
             CompExpression::OneOp(_, exp)
             | CompExpression::Typeof(exp)
             | CompExpression::Conversion(exp, _)
-            | CompExpression::DotAccess(exp, _) => exp.find(matcher),
+            | CompExpression::DotAccess(exp, _) => exp.find_map(matcher),
             CompExpression::Assign(lvalue, rhs) => {
-                let rhs = rhs.find(matcher);
+                let rhs = rhs.find_map(matcher);
                 if rhs.is_some() {
                     return rhs;
                 }
                 for access in &lvalue.accessing {
                     if let IndexOption::Index(index) = &access.0 {
-                        let access = index.find(matcher);
+                        let access = index.find_map(matcher);
                         if access.is_some() {
                             return access;
                         }
@@ -458,6 +462,10 @@ impl ExpEnvironment {
             }
             CompExpression::Read(_) | CompExpression::Value(_) => None,
         }
+    }
+
+    fn find(&self, matcher: fn(&Self) -> bool) -> Option<&Self> {
+        self.find_map(&mut |x| if matcher(x) { Some(x) } else { None })
     }
     fn has(&self, matcher: fn(&Self) -> bool) -> bool {
         self.find(matcher).is_some()
