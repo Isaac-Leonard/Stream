@@ -190,6 +190,38 @@ impl FunctionAst {
         }
         vars
     }
+
+    pub fn returns_allocated(&self) -> bool {
+        !self.return_type.is_primitive()
+    }
+
+    pub fn allocates(&self) -> bool {
+        use CompExpression::*;
+        if let Some(body) = &self.body {
+            body.body
+                .has(|x| matches!(x.expression.as_ref(), Struct(_) | Array(_)))
+        } else {
+            false
+        }
+    }
+
+    pub fn find_allocates_targets(&self) -> Vec<MemoryLocation> {
+        use CompExpression::*;
+        if let Some(body) = &self.body {
+            body.body.map_each(&mut |x| match x.expression.as_ref() {
+                Assign(lvalue, rhs) => {
+                    if matches!(rhs.expression.as_ref(), Struct(_) | Array(_)) {
+                        vec![lvalue.clone()]
+                    } else {
+                        Vec::new()
+                    }
+                }
+                _ => Vec::new(),
+            })
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
