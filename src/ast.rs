@@ -182,6 +182,14 @@ impl FunctionAst {
             Box::new(self.return_type.clone()),
         )
     }
+
+    pub fn get_all_written_variables(&self) -> Vec<CompVariable> {
+        let mut vars = self.arguments.clone();
+        if let Some(body) = &self.body {
+            vars.append(&mut body.body.get_all_written_variables())
+        }
+        vars
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -372,10 +380,6 @@ pub enum CompExpression {
     OneOp(Prefix, ExpEnvironment),
     Call(CompVariable, Vec<ExpEnvironment>),
     Assign(MemoryLocation, ExpEnvironment),
-    IfOnly {
-        cond: ExpEnvironment,
-        then: ExpEnvironment,
-    },
     IfElse(IfElse),
     WhileLoop {
         cond: ExpEnvironment,
@@ -404,13 +408,6 @@ impl ExpEnvironment {
         matches!(
             self.expression.as_ref(),
             CompExpression::WhileLoop { cond: _, body: _ }
-        )
-    }
-
-    pub fn is_if_only(&self) -> bool {
-        matches!(
-            self.expression.as_ref(),
-            CompExpression::IfOnly { cond: _, then: _ }
         )
     }
 
@@ -452,7 +449,6 @@ impl ExpEnvironment {
             }
             CompExpression::WhileLoop { cond: a, body: b }
             | CompExpression::BinOp(_, a, b)
-            | CompExpression::IfOnly { cond: a, then: b }
             | CompExpression::Index(a, b) => {
                 let a = a.find_map(matcher);
                 if a.is_some() {
@@ -497,11 +493,11 @@ impl ExpEnvironment {
 
     /// Branches directly in the expression, not including function calls
     pub fn contains_direct_branches(&self) -> bool {
-        self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop())
+        self.has(|x| x.is_if_else() || x.is_while_loop())
     }
 
     pub fn contains_branches(&self) -> bool {
-        self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop() || x.is_call())
+        self.has(|x| x.is_if_else() || x.is_while_loop() || x.is_call())
     }
 
     pub fn map_each<'a, T: 'a, F>(&'a self, mapper: &mut F) -> Vec<T>
@@ -513,16 +509,10 @@ impl ExpEnvironment {
             CompExpression::List(exps)
             | CompExpression::Array(exps)
             | CompExpression::Call(_, exps) => {
-                current.append(&mut exps.iter().map(|x| x.map_each(mapper)).flatten().collect());
+                current.append(&mut exps.iter().flat_map(|x| x.map_each(mapper)).collect());
             }
             CompExpression::Struct(key_vals) => {
-                current.append(
-                    &mut key_vals
-                        .iter()
-                        .map(|x| x.1.map_each(mapper))
-                        .flatten()
-                        .collect(),
-                );
+                current.append(&mut key_vals.iter().flat_map(|x| x.1.map_each(mapper)).collect());
             }
             CompExpression::IfElse(ifelse) => {
                 current.append(&mut ifelse.cond.map_each(mapper));
@@ -531,7 +521,6 @@ impl ExpEnvironment {
             }
             CompExpression::WhileLoop { cond: a, body: b }
             | CompExpression::BinOp(_, a, b)
-            | CompExpression::IfOnly { cond: a, then: b }
             | CompExpression::Index(a, b) => {
                 current.append(&mut a.map_each(mapper));
                 current.append(&mut b.map_each(mapper));

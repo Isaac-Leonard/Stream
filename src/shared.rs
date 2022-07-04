@@ -678,15 +678,6 @@ pub fn get_type(
             let other_ty = if_exp.otherwise.result_type.clone();
             (CompType::Union(vec![then_ty, other_ty]).flatten(), errs)
         }
-        IfOnly { cond, then: _ } => {
-            if !cond.result_type.is_bool() {
-                errs.push(CompError::BoolInIf(
-                    cond.result_type.clone(),
-                    cond.located.clone(),
-                ));
-            }
-            (CompType::Null, errs)
-        }
         Value(data) => (data.get_type(), errs),
         Index(arr, i) => {
             let arr_ty = arr.result_type.clone();
@@ -884,10 +875,6 @@ fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Acce
         WhileLoop { cond, body } => {
             count_max_references_in_env(cond, accesses);
             count_max_references_in_env(body, accesses)
-        }
-        IfOnly { cond, then } => {
-            count_max_references_in_env(cond, accesses);
-            count_max_references_in_env(then, accesses)
         }
         BinOp(_, a, b) => {
             count_max_references_in_env(a, accesses);
