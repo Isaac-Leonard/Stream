@@ -514,7 +514,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                             };
                         }
                         IndexOption::Dot(prop) => {
-                            eprintln!("{:?}\n", mem_ty);
                             let index = if let CompType::Struct(data) = &mem_ty {
                                 data.iter()
                                     .position(|x| &x.0 == prop)

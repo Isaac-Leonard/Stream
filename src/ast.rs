@@ -628,7 +628,6 @@ impl ExpEnvironment {
         let mut count = 0;
         self.map_inplace(&mut |x| match x.expression.as_ref() {
             CompExpression::Array(elements) => {
-                eprintln!("Replacing array");
                 let var = CompVariable::new(Variable {
                     name: ".array".to_string() + &count.to_string(),
                     initialised: false,
