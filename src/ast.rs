@@ -399,7 +399,26 @@ impl ExpEnvironment {
     pub fn is_if_else(&self) -> bool {
         matches!(self.expression.as_ref(), CompExpression::IfElse(_))
     }
-    fn find_map<'a, T: 'a, F>(&'a self, matcher: &mut F) -> Option<T>
+
+    pub fn is_while_loop(&self) -> bool {
+        matches!(
+            self.expression.as_ref(),
+            CompExpression::WhileLoop { cond: _, body: _ }
+        )
+    }
+
+    pub fn is_if_only(&self) -> bool {
+        matches!(
+            self.expression.as_ref(),
+            CompExpression::IfOnly { cond: _, then: _ }
+        )
+    }
+
+    pub fn is_read(&self) -> bool {
+        matches!(self.expression.as_ref(), CompExpression::Read(_))
+    }
+
+    pub fn find_map<'a, T: 'a, F>(&'a self, matcher: &mut F) -> Option<T>
     where
         F: FnMut(&'a Self) -> Option<T>,
     {
@@ -464,11 +483,17 @@ impl ExpEnvironment {
         }
     }
 
-    fn find(&self, matcher: fn(&Self) -> bool) -> Option<&Self> {
+    pub fn find(&self, matcher: fn(&Self) -> bool) -> Option<&Self> {
         self.find_map(&mut |x| if matcher(x) { Some(x) } else { None })
     }
-    fn has(&self, matcher: fn(&Self) -> bool) -> bool {
+
+    pub fn has(&self, matcher: fn(&Self) -> bool) -> bool {
         self.find(matcher).is_some()
+    }
+
+    /// Branches directly in the expression, not including function calls
+    pub fn contains_direct_branches(&self) -> bool {
+        self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop())
     }
 }
 
