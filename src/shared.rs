@@ -442,10 +442,11 @@ fn transform_ast(
 ) -> (Program, Vec<CompError>) {
     let env = get_env_from_scope(scope);
     let expression = transform_exp(ast, &env, scope, file);
-    let prog = Program {
+    let mut prog = Program {
         scope: scope.clone(),
         body: expression.0,
     };
+    prog.body.replace_arrays();
     (prog, expression.1)
 }
 
@@ -584,10 +585,7 @@ pub fn get_type(
 ) -> (CompType, Vec<CompError>) {
     use CompExpression::*;
     match exp {
-        Conversion(exp, ty) => {
-            eprintln!("convert {:?} to {:?}", exp.result_type, ty);
-            (ty.clone(), errs)
-        }
+        Conversion(exp, ty) => (ty.clone(), errs),
         DotAccess(val, (key, _)) => {
             if let CompType::Union(types) = &val.result_type {
                 let union = types
