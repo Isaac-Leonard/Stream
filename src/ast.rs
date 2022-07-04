@@ -418,6 +418,10 @@ impl ExpEnvironment {
         matches!(self.expression.as_ref(), CompExpression::Read(_))
     }
 
+    pub fn is_call(&self) -> bool {
+        matches!(self.expression.as_ref(), CompExpression::Call(_, _))
+    }
+
     pub fn find_map<'a, T: 'a, F>(&'a self, matcher: &mut F) -> Option<T>
     where
         F: FnMut(&'a Self) -> Option<T>,
@@ -494,6 +498,10 @@ impl ExpEnvironment {
     /// Branches directly in the expression, not including function calls
     pub fn contains_direct_branches(&self) -> bool {
         self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop())
+    }
+
+    pub fn contains_branches(&self) -> bool {
+        self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop() || x.is_call())
     }
 }
 
