@@ -176,7 +176,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             .into_pointer_value();
         let index = self.compile_expression(index, variables, parent)?;
         Ok(unsafe {
-            eprintln!("segfault1");
             self.builder.build_in_bounds_gep(
                 comp_arr,
                 &[self.i32(0).into_int_value(), index.into_int_value()],
@@ -200,12 +199,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 a.get_type().get_element_type(),
                 b.get_type().get_element_type(),
             ) {
-                (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_)) => self.comp_bin_op_str(
-                    op,
-                    a,
-                    b,
-                    fn_val.ok_or_else(|| "No function provided".to_string())?,
-                )?,
+                (AnyTypeEnum::PointerType(_), AnyTypeEnum::PointerType(_))
+                | (AnyTypeEnum::ArrayType(_), AnyTypeEnum::ArrayType(_))
+                | (AnyTypeEnum::PointerType(_), AnyTypeEnum::ArrayType(_))
+                | (AnyTypeEnum::ArrayType(_), AnyTypeEnum::PointerType(_)) => self
+                    .comp_bin_op_str(
+                        op,
+                        a,
+                        b,
+                        fn_val.ok_or_else(|| "No function provided".to_string())?,
+                    )?,
                 _ => {
                     return Err(format!(
                         "Binary operations for {:?} and {:?} type cannot be compiled at this time",
@@ -371,14 +374,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompData::Bool(bool) => self.custom_int(1, *bool as i8),
             CompData::Float(float) => self.f32(*float),
             CompData::Null => self.custom_int(1, 0),
-            CompData::Str(str) => self
-                .create_array(
-                    self.context.i8_type().array_type(str.len() as u32 + 1),
-                    (str.chars().chain(['\0']))
-                        .map(|x| self.i8(x as i8))
-                        .collect::<Vec<_>>(),
-                )?
-                .as_basic_value_enum(),
+            CompData::Str(str) => {
+                unsafe { self.builder.build_global_string(str, "string_ptr") }.as_basic_value_enum()
+            }
             CompData::Func(_) => return Err("Functions should be retrieved seperately".to_string()),
         })
     }
@@ -386,64 +384,49 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     fn create_array(
         &self,
         arr_ty: ArrayType<'ctx>,
-        elements: Vec<BasicValueEnum<'ctx>>,
+        len: usize,
     ) -> Result<PointerValue<'ctx>, String> {
-        let elements = elements.iter();
         let mem = match arr_ty.get_element_type() {
             BasicTypeEnum::IntType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * el.get_bit_width() as usize)?,
-                el.array_type(elements.len() as u32)
+                self.alloc_heap(len * el.get_bit_width() as usize)?,
+                el.array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::FloatType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 32)?,
-                el.array_type(elements.len() as u32)
+                self.alloc_heap(len * 32)?,
+                el.array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::PointerType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64)?,
-                el.array_type(elements.len() as u32)
+                self.alloc_heap(len * 64)?,
+                el.array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::ArrayType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64)?,
+                self.alloc_heap(len * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
-                    .array_type(elements.len() as u32)
+                    .array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::StructType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64)?,
+                self.alloc_heap(len * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
-                    .array_type(elements.len() as u32)
+                    .array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
             BasicTypeEnum::VectorType(el) => self.builder.build_pointer_cast(
-                self.alloc_heap(elements.len() * 64)?,
+                self.alloc_heap(len * 64)?,
                 el.ptr_type(inkwell::AddressSpace::Generic)
-                    .array_type(elements.len() as u32)
+                    .array_type(len as u32)
                     .ptr_type(inkwell::AddressSpace::Generic),
                 "",
             ),
         };
-        for (i, element) in elements.enumerate() {
-            let ptr = unsafe {
-                eprintln!("segfault2");
-                self.builder.build_in_bounds_gep(
-                    mem,
-                    &[
-                        self.i64(0).into_int_value(),
-                        self.i32(i as i32).into_int_value(),
-                    ],
-                    "array_initialise",
-                )
-            };
-            self.builder.build_store(ptr, *element);
-        }
         Ok(mem)
     }
 
@@ -512,7 +495,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 }
                 let val = self.compile_expression(exp, variables, parent)?;
                 let mut mem_ptr = variables.get(&mem.variable.get_name()).unwrap().clone();
-                let mut mem_ty = mem.variable.get_type().clone();
+                let mut mem_ty = mem.variable.get_type();
                 for (access, ty) in &mem.accessing {
                     let ptr = self
                         .builder
@@ -521,9 +504,8 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     mem_ty = ty.clone();
                     match access {
                         IndexOption::Index(index) => {
-                            let index = self.compile_expression(&index, variables, parent)?;
+                            let index = self.compile_expression(index, variables, parent)?;
                             mem_ptr = unsafe {
-                                eprintln!("segfault3");
                                 self.builder.build_in_bounds_gep(
                                     ptr,
                                     &[self.i32(0).into_int_value(), index.into_int_value()],
@@ -710,19 +692,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     unreachable!()
                 }
             }
-            CompExpression::Array(elements) => {
-                let elements = elements
-                    .iter()
-                    .map(|x| self.compile_expression(x, variables, parent))
-                    .collect::<Result<_, _>>()?;
-                let arr_ty = exp
-                    .result_type
-                    .get_compiler_type(self.context)?
-                    .into_pointer_type()
-                    .get_element_type()
-                    .into_array_type();
-                self.create_array(arr_ty, elements)?.as_basic_value_enum()
-            }
             other => return Err(format!("Not implemented '{:?}'", other)),
         })
     }
@@ -738,9 +707,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         } else {
             return Err(error);
         };
-        if func.body == None {
+        let prog = if let Some(prog) = func.body.as_ref() {
+            prog
+        } else {
             return Ok(fn_val);
-        }
+        };
 
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
@@ -755,22 +726,37 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             self.builder.build_store(var, arg);
             variables.insert(arg_name.to_string(), var);
         }
-        let arg_names = variables.clone().keys().cloned().collect::<Vec<_>>();
-        for x in
-            (func.body.clone().unwrap().scope.variables.iter()).filter(|x| !arg_names.contains(x.0))
-        {
-            let ty = x.1.get_type();
-            let comp_type = ty.get_compiler_type(self.context)?;
-            let name = x.0.to_string();
-            let var = self.add_variable_to_block(&name, comp_type, &fn_val);
-            variables.insert(name, var);
+        for x in prog.body.get_all_written_variables() {
+            if !variables.contains_key(x.get_name().as_str()) {
+                let ty = x.get_type();
+                let comp_type = ty.get_compiler_type(self.context)?;
+                let name = x.get_name();
+                let var = self.add_variable_to_block(&name, comp_type, &fn_val);
+                variables.insert(name, var);
+            }
+        }
+
+        for x in prog.body.get_all_written_variables() {
+            if x.get_name().starts_with(".array") {
+                let ptr = variables.get(&x.get_name()).unwrap().clone();
+                let ty = x.get_type();
+                let comp_ty = ty
+                    .get_compiler_type(self.context)
+                    .unwrap()
+                    .into_pointer_type()
+                    .get_element_type()
+                    .into_array_type();
+                let len = if let CompType::Array(_, len) = ty {
+                    len
+                } else {
+                    panic!("Exprected array here, wtf")
+                };
+                let val = self.create_array(comp_ty, len as usize)?;
+                self.builder.build_store(ptr, val);
+            }
         }
         // compile body
-        let body = self.compile_expression(
-            &func.body.clone().unwrap().body,
-            &mut variables,
-            Some(&fn_val),
-        )?;
+        let body = self.compile_expression(&prog.body, &mut variables, Some(&fn_val))?;
         match func.return_type {
             CompType::Null => self.builder.build_return(Some(&self.custom_int(1, 0))),
             _ => self.builder.build_return(Some(&body)),
