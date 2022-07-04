@@ -503,6 +503,65 @@ impl ExpEnvironment {
     pub fn contains_branches(&self) -> bool {
         self.has(|x| x.is_if_else() || x.is_if_only() || x.is_while_loop() || x.is_call())
     }
+
+    pub fn map_each<'a, T: 'a, F>(&'a self, mapper: &mut F) -> Vec<T>
+    where
+        F: FnMut(&'a Self) -> Vec<T>,
+    {
+        let mut current = mapper(self);
+        match self.expression.as_ref() {
+            CompExpression::List(exps)
+            | CompExpression::Array(exps)
+            | CompExpression::Call(_, exps) => {
+                current.append(&mut exps.iter().map(|x| x.map_each(mapper)).flatten().collect());
+            }
+            CompExpression::Struct(key_vals) => {
+                current.append(
+                    &mut key_vals
+                        .iter()
+                        .map(|x| x.1.map_each(mapper))
+                        .flatten()
+                        .collect(),
+                );
+            }
+            CompExpression::IfElse(ifelse) => {
+                current.append(&mut ifelse.cond.map_each(mapper));
+                current.append(&mut ifelse.then.map_each(mapper));
+                current.append(&mut ifelse.otherwise.map_each(mapper));
+            }
+            CompExpression::WhileLoop { cond: a, body: b }
+            | CompExpression::BinOp(_, a, b)
+            | CompExpression::IfOnly { cond: a, then: b }
+            | CompExpression::Index(a, b) => {
+                current.append(&mut a.map_each(mapper));
+                current.append(&mut b.map_each(mapper));
+            }
+            CompExpression::OneOp(_, exp)
+            | CompExpression::Typeof(exp)
+            | CompExpression::Conversion(exp, _)
+            | CompExpression::DotAccess(exp, _) => {
+                current.append(&mut exp.map_each(mapper));
+            }
+            CompExpression::Assign(lvalue, rhs) => {
+                current.append(&mut rhs.map_each(mapper));
+                for access in &lvalue.accessing {
+                    if let IndexOption::Index(index) = &access.0 {
+                        current.append(&mut index.map_each(mapper));
+                    }
+                }
+            }
+            CompExpression::Read(_) | CompExpression::Value(_) => {}
+        }
+        current
+    }
+
+    /// Written as in modified during execution
+    pub fn get_all_written_variables(&self) -> Vec<CompVariable> {
+        self.map_each(&mut |x| match x.expression.as_ref() {
+            CompExpression::Assign(lvalue, _) => vec![lvalue.variable.clone()],
+            _ => Vec::new(),
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
