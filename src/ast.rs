@@ -591,54 +591,32 @@ impl ExpEnvironment {
         match self.expression.as_mut() {
             CompExpression::List(exps)
             | CompExpression::Array(exps)
-            | CompExpression::Call(_, exps) => exps.iter_mut().for_each(|x| {
-                if let Some(exp) = mapper(x) {
-                    *x = exp
-                }
-            }),
-            CompExpression::Struct(key_vals) => key_vals.iter_mut().for_each(|x| {
-                if let Some(exp) = mapper(&x.1) {
-                    x.1 = exp
-                }
-            }),
+            | CompExpression::Call(_, exps) => exps.iter_mut().for_each(|x| x.map_inplace(mapper)),
+            CompExpression::Struct(key_vals) => {
+                key_vals.iter_mut().for_each(|x| x.1.map_inplace(mapper))
+            }
             CompExpression::IfElse(ifelse) => {
-                if let Some(cond) = mapper(&ifelse.cond) {
-                    ifelse.cond = cond
-                };
-                if let Some(then) = mapper(&ifelse.then) {
-                    ifelse.then = then
-                };
-                if let Some(otherwise) = mapper(&ifelse.otherwise) {
-                    ifelse.otherwise = otherwise
-                };
+                ifelse.cond.map_inplace(mapper);
+                ifelse.then.map_inplace(mapper);
+                ifelse.otherwise.map_inplace(mapper);
             }
             CompExpression::WhileLoop { cond: a, body: b }
             | CompExpression::BinOp(_, a, b)
             | CompExpression::Index(a, b) => {
-                if let Some(exp) = mapper(a) {
-                    *a = exp
-                }
-                if let Some(exp) = mapper(b) {
-                    *b = exp
-                }
+                a.map_inplace(mapper);
+                b.map_inplace(mapper);
             }
             CompExpression::OneOp(_, exp)
             | CompExpression::Typeof(exp)
             | CompExpression::Conversion(exp, _)
             | CompExpression::DotAccess(exp, _) => {
-                if let Some(a) = mapper(exp) {
-                    *exp = a
-                }
+                exp.map_inplace(mapper);
             }
             CompExpression::Assign(lvalue, rhs) => {
-                if let Some(exp) = mapper(rhs) {
-                    *rhs = exp
-                }
+                rhs.map_inplace(mapper);
                 for access in &mut lvalue.accessing {
                     if let IndexOption::Index(index) = &mut access.0 {
-                        if let Some(exp) = mapper(index) {
-                            *index = exp;
-                        }
+                        index.map_inplace(mapper)
                     }
                 }
             }
@@ -650,6 +628,7 @@ impl ExpEnvironment {
         let mut count = 0;
         self.map_inplace(&mut |x| match x.expression.as_ref() {
             CompExpression::Array(elements) => {
+                eprintln!("Replacing array");
                 let var = CompVariable::new(Variable {
                     name: ".array".to_string() + &count.to_string(),
                     initialised: false,
