@@ -583,6 +583,129 @@ impl ExpEnvironment {
             _ => Vec::new(),
         })
     }
+
+    pub fn map_inplace(&mut self, mapper: &mut dyn FnMut(&Self) -> Option<Self>) {
+        if let Some(current) = mapper(self) {
+            *self = current;
+        };
+        match self.expression.as_mut() {
+            CompExpression::List(exps)
+            | CompExpression::Array(exps)
+            | CompExpression::Call(_, exps) => exps.iter_mut().for_each(|x| {
+                if let Some(exp) = mapper(x) {
+                    *x = exp
+                }
+            }),
+            CompExpression::Struct(key_vals) => key_vals.iter_mut().for_each(|x| {
+                if let Some(exp) = mapper(&x.1) {
+                    x.1 = exp
+                }
+            }),
+            CompExpression::IfElse(ifelse) => {
+                if let Some(cond) = mapper(&ifelse.cond) {
+                    ifelse.cond = cond
+                };
+                if let Some(then) = mapper(&ifelse.then) {
+                    ifelse.then = then
+                };
+                if let Some(otherwise) = mapper(&ifelse.otherwise) {
+                    ifelse.otherwise = otherwise
+                };
+            }
+            CompExpression::WhileLoop { cond: a, body: b }
+            | CompExpression::BinOp(_, a, b)
+            | CompExpression::Index(a, b) => {
+                if let Some(exp) = mapper(a) {
+                    *a = exp
+                }
+                if let Some(exp) = mapper(b) {
+                    *b = exp
+                }
+            }
+            CompExpression::OneOp(_, exp)
+            | CompExpression::Typeof(exp)
+            | CompExpression::Conversion(exp, _)
+            | CompExpression::DotAccess(exp, _) => {
+                if let Some(a) = mapper(exp) {
+                    *exp = a
+                }
+            }
+            CompExpression::Assign(lvalue, rhs) => {
+                if let Some(exp) = mapper(rhs) {
+                    *rhs = exp
+                }
+                for access in &mut lvalue.accessing {
+                    if let IndexOption::Index(index) = &mut access.0 {
+                        if let Some(exp) = mapper(index) {
+                            *index = exp;
+                        }
+                    }
+                }
+            }
+            CompExpression::Read(_) | CompExpression::Value(_) => {}
+        }
+    }
+
+    pub fn replace_arrays(&mut self) {
+        let mut count = 0;
+        self.map_inplace(&mut |x| match x.expression.as_ref() {
+            CompExpression::Array(elements) => {
+                let var = CompVariable::new(Variable {
+                    name: ".array".to_string() + &count.to_string(),
+                    initialised: false,
+                    declared_at: None,
+                    typing: x.result_type.clone(),
+                    constant: false,
+                    external: false,
+                });
+                count += 1;
+                let mut list: Vec<ExpEnvironment> = elements
+                    .iter()
+                    .enumerate()
+                    .map(|(i, element)| ExpEnvironment {
+                        expression: Box::new(CompExpression::Assign(
+                            MemoryLocation {
+                                variable: var.clone(),
+                                accessing: vec![(
+                                    IndexOption::Index(ExpEnvironment {
+                                        expression: Box::new(CompExpression::Value(CompData::Int(
+                                            i as i32,
+                                        ))),
+                                        result_type: CompType::Int,
+                                        var_types: x.var_types.clone(),
+                                        located: 0..0,
+                                        errors: Vec::new(),
+                                    }),
+                                    element.result_type.clone(),
+                                )],
+                            },
+                            element.clone(),
+                        )),
+                        result_type: element.result_type.clone(),
+                        var_types: x.var_types.clone(),
+                        located: 0..0,
+                        errors: Vec::new(),
+                    })
+                    .collect();
+
+                list.push(ExpEnvironment {
+                    expression: Box::new(CompExpression::Read(var)),
+                    result_type: x.result_type.clone(),
+                    var_types: x.var_types.clone(),
+                    located: x.located.clone(),
+                    errors: Vec::new(),
+                });
+                Some(ExpEnvironment {
+                    expression: Box::new(CompExpression::List(list)),
+                    result_type: x.result_type.clone(),
+                    var_types: x.var_types.clone(),
+                    located: x.located.clone(),
+                    errors: x.errors.clone(),
+                })
+            }
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
