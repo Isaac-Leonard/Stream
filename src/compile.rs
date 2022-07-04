@@ -494,7 +494,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     };
                 }
                 let val = self.compile_expression(exp, variables, parent)?;
-                let mut mem_ptr = variables.get(&mem.variable.get_name()).unwrap().clone();
+                let mut mem_ptr = *variables.get(&mem.variable.get_name()).unwrap();
                 let mut mem_ty = mem.variable.get_type();
                 for (access, ty) in &mem.accessing {
                     let ptr = self
@@ -738,7 +738,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 
         for x in prog.body.get_all_written_variables() {
             if x.get_name().starts_with(".array") {
-                let ptr = variables.get(&x.get_name()).unwrap().clone();
+                let ptr = *variables.get(&x.get_name()).unwrap();
                 let ty = x.get_type();
                 let comp_ty = ty
                     .get_compiler_type(self.context)
