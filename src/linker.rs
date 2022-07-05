@@ -11,6 +11,7 @@ pub struct Linker {
 impl Linker {
     pub fn link(&self) -> Result<(), String> {
         let mut command = Command::new("clang");
+        command.arg("-g");
         command.arg("-o").arg(&self.output_file);
         for file in &self.input_files {
             command.arg(file);

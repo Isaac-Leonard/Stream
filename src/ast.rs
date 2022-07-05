@@ -222,6 +222,16 @@ impl FunctionAst {
             Vec::new()
         }
     }
+
+    pub fn get_returns(&self) -> Vec<&ExpEnvironment> {
+        if self.return_type.is_null() {
+            Vec::new()
+        } else if let Some(prog) = &self.body {
+            prog.body.get_final_expressions()
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -682,6 +692,53 @@ impl ExpEnvironment {
                 })
             }
             _ => None,
+        })
+    }
+
+    pub fn get_final_expressions(&self) -> Vec<&ExpEnvironment> {
+        match self.expression.as_ref() {
+            CompExpression::List(exps) => exps.last().unwrap().get_final_expressions(),
+            CompExpression::WhileLoop { cond: _, body: _ } => Vec::new(),
+            CompExpression::IfElse(ifelse) => ifelse
+                .then
+                .get_final_expressions()
+                .into_iter()
+                .chain(ifelse.otherwise.get_final_expressions())
+                .collect(),
+            CompExpression::Array(_)
+            | CompExpression::Struct(_)
+            | CompExpression::Read(_)
+            | CompExpression::Typeof(_)
+            | CompExpression::Value(_)
+            | CompExpression::Index(_, _)
+            | CompExpression::OneOp(_, _)
+            | CompExpression::BinOp(_, _, _)
+            | CompExpression::Assign(_, _)
+            | CompExpression::Call(_, _)
+            | CompExpression::Conversion(_, _)
+            | CompExpression::DotAccess(_, _) => {
+                vec![self]
+            }
+        }
+    }
+
+    pub fn get_references_of(&self, var: &CompVariable) -> Vec<&ExpEnvironment> {
+        self.map_each(&mut |x| match x.expression.as_ref() {
+            CompExpression::Read(variable) => {
+                if var == variable {
+                    vec![x]
+                } else {
+                    Vec::new()
+                }
+            }
+            CompExpression::Assign(lvalue, _) => {
+                if var == &lvalue.variable {
+                    vec![x]
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
         })
     }
 }

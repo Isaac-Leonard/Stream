@@ -4,6 +4,7 @@ use fxhash::hash32;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 
+use inkwell::debug_info::{AsDIScope, DICompileUnit, DebugInfoBuilder};
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassManager;
 
@@ -89,6 +90,8 @@ pub struct Compiler<'a, 'ctx> {
     pub builder: &'a Builder<'ctx>,
     pub fpm: &'a PassManager<FunctionValue<'ctx>>,
     pub module: &'a Module<'ctx>,
+    pub dibuilder: DebugInfoBuilder<'ctx>,
+    pub compile_unit: DICompileUnit<'ctx>,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
     fn i32(&self, val: i32) -> BasicValueEnum<'ctx> {
@@ -711,6 +714,50 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         } else {
             return Ok(fn_val);
         };
+        let ditype = self
+            .dibuilder
+            .create_basic_type(
+                &format!("{}", func.return_type),
+                0_u64,
+                0x00,
+                inkwell::debug_info::DIFlagsConstants::PUBLIC,
+            )
+            .unwrap();
+        let subroutine_type = self.dibuilder.create_subroutine_type(
+            self.compile_unit.get_file(),
+            /* return type */ Some(ditype.as_type()),
+            /* parameter types */ &[],
+            inkwell::debug_info::DIFlagsConstants::PUBLIC,
+        );
+        let func_scope = self.dibuilder.create_function(
+            self.compile_unit.as_debug_info_scope(),
+            name,
+            None,
+            self.compile_unit.get_file(),
+            0,
+            /* DIType */ subroutine_type,
+            /* is_local_to_unit */ true,
+            /* is_definition */ true,
+            /* scope_line */ 0,
+            /* flags */ inkwell::debug_info::DIFlagsConstants::PUBLIC,
+            /* is_optimized */ false,
+        );
+        fn_val.set_subprogram(func_scope);
+        let lexical_block = self.dibuilder.create_lexical_block(
+            /* scope */ func_scope.as_debug_info_scope(),
+            /* file */ self.compile_unit.get_file(),
+            /* line_no */ 0,
+            /* column_no */ 0,
+        );
+
+        let loc = self.dibuilder.create_debug_location(
+            &self.context,
+            /* line */ 0,
+            /* column */ 0,
+            /* current_scope */ lexical_block.as_debug_info_scope(),
+            /* inlined_at */ None,
+        );
+        self.builder.set_current_debug_location(&self.context, loc);
 
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
@@ -762,7 +809,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         };
 
         // return the whole thing after verification and optimization
-
+        self.dibuilder.finalize();
         if !fn_val.verify(true) {
             self.module.print_to_stderr();
             return Err("Invalid generated function.".to_string());
@@ -810,6 +857,31 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
     let ctx = Context::create();
     let module = ctx.create_module("repl");
     let builder = ctx.create_builder();
+    let debug_metadata_version = ctx.i32_type().const_int(3, false);
+    module.add_basic_value_flag(
+        "Debug Info Version",
+        inkwell::module::FlagBehavior::Warning,
+        debug_metadata_version,
+    );
+    let (dibuilder, compile_unit) = module.create_debug_info_builder(
+        true,
+        /* language */ inkwell::debug_info::DWARFSourceLanguage::C,
+        /* filename */ &settings.input_name,
+        /* directory */ ".",
+        /* producer */ "Stream compiler",
+        /* is_optimized */ !settings.skip_optimizations,
+        /* compiler command line flags */ "Fill in later",
+        /* runtime_ver */ 0,
+        /* split_name */ "",
+        /* kind */ inkwell::debug_info::DWARFEmissionKind::Full,
+        /* dwo_id */ 0,
+        /* split_debug_inling */ false,
+        /* debug_info_for_profiling */ false,
+        // Leaving these empty
+        // they're not mentioned in the docs and only exist for later versions of llvm so not sure what to provide
+        "",
+        "",
+    );
 
     // Create FPM
     let fpm = PassManager::create(&module);
@@ -831,7 +903,10 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
         builder: &builder,
         fpm: &fpm,
         module: &module,
+        dibuilder,
+        compile_unit,
     };
+
     for (name, var) in ast.scope.clone().variables {
         if var.get_type().is_callable() {
             let fn_val = compiler.create_function_shape(&var.get_type().clone())?;
