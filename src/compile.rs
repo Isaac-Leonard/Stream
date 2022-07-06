@@ -15,8 +15,8 @@ use inkwell::types::{
     AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
 use inkwell::values::{
-    AggregateValue, BasicMetadataValueEnum, BasicValueEnum, FloatMathValue, IntMathValue, IntValue,
-    PointerValue,
+    AggregateValue, BasicMetadataValueEnum, BasicValueEnum, CallableValue, FloatMathValue,
+    IntMathValue, IntValue, PointerValue,
 };
 /// Some parts of this file have been directly taken from the collider scope example from inkwell
 use inkwell::values::{BasicValue, FunctionValue};
@@ -457,7 +457,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     ) -> Result<BasicValueEnum<'ctx>, String> {
         Ok(match exp.expression.as_ref() {
             CompExpression::Call(var, args) => {
-                let func = self.module.get_function(&var.get_name()).unwrap();
                 let compiled_args = map_vec!(args, |arg| {
                     let val = self
                         .compile_expression(arg, variables, parent)
@@ -477,8 +476,15 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                     }
                 });
                 let argv = map_vec!(compiled_args, |x| BasicMetadataValueEnum::from(*x));
+                let func = self
+                    .load_variable(variables, &var.get_name())
+                    .into_pointer_value();
                 self.builder
-                    .build_call(func, argv.as_slice(), &var.get_name())
+                    .build_call(
+                        CallableValue::try_from(func).unwrap(),
+                        argv.as_slice(),
+                        &var.get_name(),
+                    )
                     .try_as_basic_value()
                     .left()
                     .ok_or_else(|| "Invalid function call produced".to_string())?

@@ -63,5 +63,6 @@ arr2[0]=[4,3,2]
     0
     }
     let testFn=addArr;
+    let testRes=testFn([4,3]);
     0
 }
