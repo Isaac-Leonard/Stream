@@ -409,25 +409,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                 let ty = func.as_type();
                 let fn_ty = self.create_function_shape(&ty);
                 self.module.add_function(&name, fn_ty.unwrap(), None);
-                // Store the current location of the builder so we can pick back up here once the function is compiled
-                let pos = self.builder.get_insert_block();
-                // Also remove the debug info and set it back on later
-                // It can't handle it if we leave it on
-                // TODO: Rewrite to compile functions with some sort of stack so that we don't have to mess around with undoing and resetting things
-                let debug_loc = self.builder.get_current_debug_location();
-                self.builder.unset_current_debug_location();
-                let func_ptr = self
-                    .create_function(func, &name)?
+                self.create_function(func, &name)?
                     .as_global_value()
-                    .as_basic_value_enum();
-                if let Some(block) = pos {
-                    self.builder.position_at_end(block);
-                    if let Some(debug_loc) = debug_loc {
-                        self.builder
-                            .set_current_debug_location(self.context, debug_loc);
-                    }
-                }
-                func_ptr
+                    .as_basic_value_enum()
             }
         })
     }
@@ -541,8 +525,12 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompExpression::Assign(mem, exp) => {
                 if mem.accessing.is_empty() {
                     if let CompExpression::Value(CompData::Func(func)) = exp.expression.as_ref() {
-                        self.create_function(func, &mem.variable.get_name())?;
-                        // TODO: Is this needed
+                        let func = self.create_function(func, &mem.variable.get_name())?;
+                        if let Some(var) = variables.get(&mem.variable.get_name()) {
+                            self.builder
+                                .build_store(*var, func.as_global_value().as_basic_value_enum());
+                        };
+                        // TODO: Is this needed, maybe replace with the function's pointer
                         return Ok(self.custom_int(1, 0));
                     }
                 }
@@ -753,11 +741,20 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         func: &FunctionAst,
         name: &str,
     ) -> Result<FunctionValue<'ctx>, String> {
-        let error = format!("Expected fn {} to have been added before compiling", name);
+        // Store the current location of the builder so we can pick back up there once the function is compiled
+        let original_builder_pos = self.builder.get_insert_block();
+        // Also remove the debug info and set it back on later
+        // It can't handle it if we leave it on
+        // TODO: Rewrite to compile functions with some sort of stack so that we don't have to mess around with undoing and resetting things
+        let original_debug_loc = self.builder.get_current_debug_location();
+        self.builder.unset_current_debug_location();
+
         let fn_val = if let Some(val) = self.module.get_function(name) {
             val
         } else {
-            return Err(error);
+            let name = format!("{}.{}", name, self.get_nex_counter());
+            let ty = self.create_function_shape(&func.as_type())?;
+            self.module.add_function(&name, ty, None)
         };
         let prog = if let Some(prog) = func.body.as_ref() {
             prog
@@ -865,6 +862,16 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             return Err("Invalid generated function.".to_string());
         }
         self.fpm.run_on(&fn_val);
+
+        // Reset original location and debug info before returning
+        if let Some(block) = original_builder_pos {
+            self.builder.position_at_end(block);
+            if let Some(debug_loc) = original_debug_loc {
+                self.builder
+                    .set_current_debug_location(self.context, debug_loc);
+            }
+        }
+
         Ok(fn_val)
     }
 
