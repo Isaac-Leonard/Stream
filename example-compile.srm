@@ -62,4 +62,6 @@ arr2[0]=[4,3,2]
     newLine();
     0
     }
+    let testFn=addArr;
+    0
 }

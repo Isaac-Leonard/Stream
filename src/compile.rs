@@ -44,7 +44,7 @@ impl CompType {
 
                 ret.get_compiler_type(context)?
                     .fn_type(args_types, false)
-                    .ptr_type(inkwell::AddressSpace::Const)
+                    .ptr_type(inkwell::AddressSpace::Generic)
                     .as_basic_type_enum()
             }
             Array(ty, len) => ty
