@@ -168,9 +168,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         variables: &HashMap<String, PointerValue<'ctx>>,
         var: &str,
     ) -> BasicValueEnum<'ctx> {
-        let error = format!("Tried to load nonexistent variable {}", var);
-        let var = variables.get(var).expect(&error);
-        self.builder.build_load(*var, "load")
+        if let Some(var) = variables.get(var) {
+            self.builder.build_load(*var, "load")
+        } else if let Some(func) = self.module.get_function(var) {
+            func.as_global_value().as_basic_value_enum()
+        } else {
+            panic!("Tried to load nonexistent variable {}", var)
+        }
     }
 
     fn extract_element(&self, agg: impl AggregateValue<'ctx>, i: u32) -> BasicValueEnum<'ctx> {
