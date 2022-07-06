@@ -35,6 +35,18 @@ impl CompType {
     ) -> Result<BasicTypeEnum<'ctx>, String> {
         use CompType::*;
         Ok(match self.clone() {
+            Callible(args, ret) => {
+                let args_types: Vec<BasicMetadataTypeEnum> = args
+                    .iter()
+                    .map(|x| x.get_compiler_type(context).map(|x| x.into()))
+                    .collect::<Result<Vec<BasicMetadataTypeEnum>, _>>()?;
+                let args_types = args_types.as_slice();
+
+                ret.get_compiler_type(context)?
+                    .fn_type(args_types, false)
+                    .ptr_type(inkwell::AddressSpace::Const)
+                    .as_basic_type_enum()
+            }
             Array(ty, len) => ty
                 .get_compiler_type(context)?
                 .array_type(len as u32)
