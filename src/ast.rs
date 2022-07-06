@@ -741,6 +741,13 @@ impl ExpEnvironment {
             _ => Vec::new(),
         })
     }
+
+    pub fn get_functions(&self) -> Vec<&FunctionAst> {
+        self.map_each(&mut |x| match x.expression.as_ref() {
+            CompExpression::Value(CompData::Func(func)) => vec![func],
+            _ => Vec::new(),
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
