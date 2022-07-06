@@ -104,8 +104,15 @@ pub struct Compiler<'a, 'ctx> {
     pub module: &'a Module<'ctx>,
     pub dibuilder: DebugInfoBuilder<'ctx>,
     pub compile_unit: DICompileUnit<'ctx>,
+    pub counter: u32,
 }
 impl<'a, 'ctx> Compiler<'a, 'ctx> {
+    /// Used for assigning variable names to generated variables and functions
+    pub fn get_nex_counter(&mut self) -> u32 {
+        self.counter += 1;
+        self.counter
+    }
+
     fn i32(&self, val: i32) -> BasicValueEnum<'ctx> {
         (self.context.i32_type().const_int(val as u64, false)).as_basic_value_enum()
     }
@@ -184,7 +191,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn calc_pos(
-        &self,
+        &mut self,
         arr: &ExpEnvironment,
         index: &ExpEnvironment,
         variables: &mut HashMap<String, PointerValue<'ctx>>,
@@ -387,7 +394,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         })
     }
 
-    fn get_value(&self, val: &CompData) -> Result<BasicValueEnum<'ctx>, String> {
+    fn get_value(&mut self, val: &CompData) -> Result<BasicValueEnum<'ctx>, String> {
         Ok(match val {
             CompData::Int(int) => self.i32(*int),
             CompData::Bool(bool) => self.custom_int(1, *bool as i8),
@@ -396,7 +403,32 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
             CompData::Str(str) => {
                 unsafe { self.builder.build_global_string(str, "string_ptr") }.as_basic_value_enum()
             }
-            CompData::Func(_) => return Err("Functions should be retrieved seperately".to_string()),
+            CompData::Func(func) => {
+                // Insert with a unique name
+                let name = format!("anonymousFunction{}", self.get_nex_counter());
+                let ty = func.as_type();
+                let fn_ty = self.create_function_shape(&ty);
+                self.module.add_function(&name, fn_ty.unwrap(), None);
+                // Store the current location of the builder so we can pick back up here once the function is compiled
+                let pos = self.builder.get_insert_block();
+                // Also remove the debug info and set it back on later
+                // It can't handle it if we leave it on
+                // TODO: Rewrite to compile functions with some sort of stack so that we don't have to mess around with undoing and resetting things
+                let debug_loc = self.builder.get_current_debug_location();
+                self.builder.unset_current_debug_location();
+                let func_ptr = self
+                    .create_function(func, &name)?
+                    .as_global_value()
+                    .as_basic_value_enum();
+                if let Some(block) = pos {
+                    self.builder.position_at_end(block);
+                    if let Some(debug_loc) = debug_loc {
+                        self.builder
+                            .set_current_debug_location(self.context, debug_loc);
+                    }
+                }
+                func_ptr
+            }
         })
     }
 
@@ -450,7 +482,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn compile_expression(
-        &self,
+        &mut self,
         exp: &ExpEnvironment,
         variables: &mut HashMap<String, PointerValue<'ctx>>,
         parent: Option<&FunctionValue<'ctx>>,
@@ -513,10 +545,6 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
                         // TODO: Is this needed
                         return Ok(self.custom_int(1, 0));
                     }
-                } else {
-                    if let CompExpression::Value(CompData::Func(_)) = *exp.expression {
-                        return Err("Cannot yet store functions in an array".to_string());
-                    };
                 }
                 let val = self.compile_expression(exp, variables, parent)?;
                 let mut mem_ptr = *variables.get(&mem.variable.get_name()).unwrap();
@@ -721,7 +749,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
     }
 
     fn create_function(
-        &self,
+        &mut self,
         func: &FunctionAst,
         name: &str,
     ) -> Result<FunctionValue<'ctx>, String> {
@@ -773,13 +801,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
         );
 
         let loc = self.dibuilder.create_debug_location(
-            &self.context,
+            self.context,
             /* line */ 0,
             /* column */ 0,
             /* current_scope */ lexical_block.as_debug_info_scope(),
             /* inlined_at */ None,
         );
-        self.builder.set_current_debug_location(&self.context, loc);
+        self.builder.set_current_debug_location(self.context, loc);
 
         let entry = self.context.append_basic_block(fn_val, "entry");
         self.builder.position_at_end(entry);
@@ -920,13 +948,14 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
     fpm.initialize();
     // make module
     let module = ctx.create_module("module");
-    let compiler = Compiler {
+    let mut compiler = Compiler {
         context: &ctx,
         builder: &builder,
         fpm: &fpm,
         module: &module,
         dibuilder,
         compile_unit,
+        counter: 0,
     };
 
     for (name, var) in ast.scope.clone().variables {
