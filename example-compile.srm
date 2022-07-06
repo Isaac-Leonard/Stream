@@ -1,7 +1,18 @@
 from "stdlib.srm" import {
     newLine, puts, getchar, putchar, midPoint, printInt, pow, modulo
 };
+
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
+
+let mapArrInt5=(arr:[Int; 5], fn:(Int):Int):[Int; 5]=>{
+    let x:Int=0;
+    let newArr:[Int; 5]=[0,0,0,0,0];
+    while x<5{
+        newArr[x]=fn(arr[x])
+    }
+    newArr
+}
+let double=(x:Int):Int=>x*2;
 
 let main=():Int => {
     let hello:Str<5> = "Hello"
@@ -64,5 +75,7 @@ arr2[0]=[4,3,2]
     }
     let testFn=addArr;
     let testRes=testFn([4,3]);
+    let arr5:[Int; 5]=[4,6,8,3,9];
+    let doubles=mapArrInt5(arr5, double);
     0
 }
