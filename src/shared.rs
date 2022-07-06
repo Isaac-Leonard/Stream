@@ -441,12 +441,31 @@ fn transform_ast(
     file: &str,
 ) -> (Program, Vec<CompError>) {
     let env = get_env_from_scope(scope);
-    let expression = transform_exp(ast, &env, scope, file);
+    let mut expression = transform_exp(ast, &env, scope, file);
     let mut prog = Program {
         scope: scope.clone(),
         body: expression.0,
     };
     prog.body.replace_arrays();
+    let functions = prog.body.get_functions();
+    for func in functions {
+        if let Some(prog2) = &func.body {
+            let variables = prog2.body.get_all_mentioned_variables();
+            let functions = prog2.body.get_functions();
+            for sub_func in functions {
+                if let Some(sub_prog) = &sub_func.body {
+                    let sub_variables = sub_prog.body.get_all_mentioned_variables();
+                    if sub_variables.iter().any(|x| variables.contains(x)) {
+                        expression.1.push(CompError::NotImplemented(
+                            "Closures that capture variables are not currently implemented"
+                                .to_string(),
+                            0..0,
+                        ))
+                    }
+                }
+            }
+        }
+    }
     (prog, expression.1)
 }
 

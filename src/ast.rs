@@ -594,6 +594,14 @@ impl ExpEnvironment {
         })
     }
 
+    pub fn get_all_mentioned_variables(&self) -> Vec<&CompVariable> {
+        self.map_each(&mut |x| match x.expression.as_ref() {
+            CompExpression::Assign(lvalue, _) => vec![&lvalue.variable],
+            CompExpression::Read(var) => vec![var],
+            _ => Vec::new(),
+        })
+    }
+
     pub fn map_inplace(&mut self, mapper: &mut dyn FnMut(&Self) -> Option<Self>) {
         if let Some(current) = mapper(self) {
             *self = current;
