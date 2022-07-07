@@ -164,7 +164,7 @@ fn transform_exp(
         Index(arr, index) => {
             CompExpression::Index(get_exp!(arr, env, scope), get_exp!(index, env, scope))
         }
-        TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
+        TypeDeclaration(_, _, _) => CompExpression::List(Vec::new()),
         InitAssign(_, _, name, _, exp) => {
             if scope.variable_initialised(&name.0) {
                 errs.push(CompError::RedeclareInSameScope(name.0.clone(), loc.clone()));
@@ -350,9 +350,16 @@ fn resolve_scope<'a>(
 ) -> &'a mut Scope {
     // TODO: Sort out errors and stuff here
     match ast {
-        Expression::TypeDeclaration(name, declared_type) => {
+        Expression::TypeDeclaration(name, generics, declared_type) => {
             if !scope.types.contains_key(name) {
-                let (ty, mut errors) = transform_type(declared_type, scope);
+                let mut subscope = scope.clone();
+                for name in generics {
+                    subscope.add_type(name.clone(), CompType::Generic(Box::new(CompType::Unknown)));
+                }
+                let (ty, mut errors) = transform_type(declared_type, &subscope);
+                if !errors.is_empty() {
+                    eprintln!("{:?}", errors);
+                }
                 scope.add_type(name.clone(), ty);
             }
             scope
@@ -901,7 +908,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Acce
             count_max_references_in_env(rhs, accesses);
             for access in &lvalue.accessing {
                 if let IndexOption::Index(env) = &access.0 {
-                    count_max_references_in_env(&env, accesses)
+                    count_max_references_in_env(env, accesses)
                 }
             }
             if let Some(mut access) = accesses

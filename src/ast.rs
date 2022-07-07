@@ -41,7 +41,7 @@ pub type SpannedExpression = (Range<usize>, Expression);
 pub enum Expression {
     DotAccess(Box<SpannedExpression>, (String, Range<usize>)),
     Struct(Vec<((String, Range<usize>), SpannedExpression)>),
-    TypeDeclaration(String, CustomType),
+    TypeDeclaration(String, Vec<String>, CustomType),
     Typeof(Box<SpannedExpression>),
     Array(Vec<SpannedExpression>),
     BinOp(Op, Box<SpannedExpression>, Box<SpannedExpression>),

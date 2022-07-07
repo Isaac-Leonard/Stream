@@ -309,10 +309,21 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 
         let type_declaration = just(Token::Type)
             .ignore_then(token_ident())
+            .then(
+                token_ident()
+                    .separated_by(separator())
+                    .at_least(1)
+                    .delimited_by(
+                        Token::Operator(String::from("<")),
+                        Token::Operator(String::from(">")),
+                    )
+                    .or_not()
+                    .map(Option::unwrap_or_default),
+            )
             .then_ignore(just(Token::Operator(String::from("="))))
             .then(type_parser())
             .labelled("Type assignment")
-            .map_with_span(|x, r| (r, TypeDeclaration(x.0, x.1)))
+            .map_with_span(|x, r| (r, TypeDeclaration(x.0 .0, x.0 .1, x.1)))
             .boxed();
 
         let reassign = index_parser
