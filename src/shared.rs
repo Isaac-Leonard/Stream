@@ -25,53 +25,46 @@ fn collect_ok_or_err<T, E>(
     }
 }
 
-pub fn transform_type(ty: &CustomType, scope: &Scope) -> Result<CompType, Vec<CompError>> {
-    match ty {
-        CustomType::Struct(data) => collect_ok_or_err(
-            data.iter()
-                .map(|x| Ok((x.0.clone(), transform_type(&x.1, scope)?))),
-        )
-        .unwrap_or_else(|| Ok(Vec::new()))
-        .map(CompType::Struct)
-        .map_err(|x: Vec<Vec<_>>| x.iter().flatten().cloned().collect()),
-        CustomType::Array(el_ty, len) => Ok(CompType::Array(
-            Box::new(transform_type(el_ty, scope)?),
-            *len as usize,
-        )),
+pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompError>) {
+    let mut errors = Vec::new();
+    macro_rules! get_type {
+        ($ty:expr) => {{
+            let mut res = transform_type($ty, scope);
+            errors.append(&mut res.1);
+            res.0
+        }};
+    }
+    let ty = match ty {
+        CustomType::Struct(data) => {
+            CompType::Struct(map_vec!(data, |x| { (x.0.clone(), get_type!(&x.1)) }))
+        }
+        CustomType::Array(el_ty, len) => {
+            let el_ty = get_type!(el_ty);
+            // TODO: replace len with an actual type and check it resolves to an Int
+            CompType::Array(Box::new(el_ty), *len as usize)
+        }
         CustomType::Union(sub_types) => {
-            collect_ok_or_err(sub_types.iter().map(|x| transform_type(x, scope)))
-                .map(|x| x.map_err(|x| x.iter().flatten().cloned().collect()))
-                .unwrap_or_else(|| Err(vec![CompError::EmptyType(0..0)]))
-                .map(|x| CompType::Union(x).flatten())
+            CompType::Union(map_vec!(sub_types, |x| get_type!(x))).flatten()
         }
 
         CustomType::Callible(args, ret) => {
-            let args = collect_ok_or_err(args.iter().cloned().map(|x| transform_type(&x, scope)))
-                .unwrap_or(Ok(Vec::new()));
-            let ret = transform_type(&*ret.clone(), scope);
-            match (args, ret) {
-                (Err(args), Err(ret)) => {
-                    Err(args.iter().flatten().chain(ret.iter()).cloned().collect())
-                }
-                (Err(args), _) => Err(args.iter().flatten().cloned().collect()),
-                (_, Err(ret)) => Err(ret),
-                (Ok(args), Ok(ret)) => Ok(CompType::Callible(args, Box::new(ret))),
-            }
+            let args = map_vec!(args, |x| get_type!(x));
+            let ret = get_type!(&ret);
+            CompType::Callible(args, Box::new(ret))
         }
         CustomType::Lone(ty) => {
             let x = scope.get_type(&ty.name);
-            if let Ok(x) = x {
-                Ok(x)
-            } else {
+            x.unwrap_or_else(|_|{
                 if ty.name == "Str" && ty.generics.len() == 1&&let                         CustomType::Constant(ConstantData::Int(len))=ty.generics[0].clone() {
-                    Ok(CompType::Str(len as u32))
+                    CompType::Str(len as u32)
                 } else {
-                    Err(vec![CompError::CannotFindType(ty.clone().name, 0..0)])
+errors.push(CompError::CannotFindType(ty.clone().name, 0..0));CompType::Unknown
                 }
-            }
+            })
         }
-        CustomType::Constant(data) => Ok(CompType::Constant(data.clone())),
-    }
+        CustomType::Constant(data) => CompType::Constant(data.clone()),
+    };
+    (ty, errors)
 }
 
 fn bin_exp(
@@ -137,6 +130,7 @@ fn transform_exp(
     mut scope: &mut Scope,
     file: &str,
 ) -> (ExpEnvironment, Vec<CompError>) {
+    use Expression::*;
     let mut errs = Vec::new();
     macro_rules! get_exp {
         ($exp:expr, $env:expr, $scope:expr) => {{
@@ -155,43 +149,23 @@ fn transform_exp(
     }
 
     let expression = match exp {
-        Expression::Struct(data) => {
-            let res = data
-                .iter()
-                .map(|(k, v)| (k.clone(), get_exp!(v, env, scope)));
-            CompExpression::Struct(res.collect())
-        }
-        Expression::Array(elements) => {
-            let mut oks = Vec::new();
-            let mut env = env.clone();
-            for exp in elements {
-                env = get_exp!(exp, &env, scope);
-                oks.push(env.clone());
-            }
-            CompExpression::Array(oks)
-        }
-        Expression::DotAccess(val, key) => {
-            CompExpression::DotAccess(get_exp!(val, env, scope), key.clone())
-        }
-        Expression::Conversion(exp, ty) => {
-            let ty = transform_type(ty, scope);
-            let ty = match ty {
-                Ok(ty) => ty,
-                Err(mut errors) => {
-                    errs.append(&mut errors);
-                    CompType::Unknown
-                }
-            };
+        Struct(data) => CompExpression::Struct(map_vec!(data, |(k, v)| (
+            k.clone(),
+            get_exp!(&v, env, scope)
+        ))),
+        Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, &env, scope))),
+        DotAccess(val, key) => CompExpression::DotAccess(get_exp!(val, env, scope), key.clone()),
+        Conversion(exp, ty) => {
+            let (ty, mut errors) = transform_type(ty, scope);
+            errs.append(&mut errors);
             CompExpression::Conversion(get_exp!(exp, env, scope), ty)
         }
-        Expression::Typeof(exp) => CompExpression::Typeof(get_exp!(exp, env, scope)),
-        Expression::Index(arr, index) => {
-            let arr_exp = get_exp!(arr, env, scope);
-            let index_exp = get_exp!(index, env, scope);
-            CompExpression::Index(arr_exp, index_exp)
+        Typeof(exp) => CompExpression::Typeof(get_exp!(exp, env, scope)),
+        Index(arr, index) => {
+            CompExpression::Index(get_exp!(arr, env, scope), get_exp!(index, env, scope))
         }
-        Expression::TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
-        Expression::InitAssign(_, _, name, _, exp) => {
+        TypeDeclaration(_, _) => CompExpression::List(Vec::new()),
+        InitAssign(_, _, name, _, exp) => {
             if scope.variable_initialised(&name.0) {
                 errs.push(CompError::RedeclareInSameScope(name.0.clone(), loc.clone()));
             }
@@ -224,7 +198,7 @@ fn transform_exp(
             };
             CompExpression::Assign(mem, exp)
         }
-        Expression::Assign(name, exp) => {
+        Assign(name, exp) => {
             let lhs = resolve_memory_location!(name, env, scope);
             let exp = get_exp!(exp, env, scope);
             if let Some(lhs) = lhs {
@@ -237,11 +211,11 @@ fn transform_exp(
                 CompExpression::List(Vec::new())
             }
         }
-        Expression::IfElse(cond, left, right) => {
+        IfElse(cond, left, right) => {
             let cond = get_exp!(cond, env, scope);
             let then = get_exp!(left, env, scope);
             let otherwise = get_exp!(right, env, scope);
-            CompExpression::IfElse(IfElse {
+            CompExpression::IfElse(crate::ast::IfElse {
                 cond,
                 then,
                 otherwise,
@@ -315,13 +289,9 @@ fn transform_exp(
                     let mut temp_variables = Vec::new();
                     for arg in func.args {
                         let arg_ty = if let Some(ty) = arg.1 {
-                            match transform_type(&ty, scope) {
-                                Ok(ty) => ty,
-                                Err(mut err) => {
-                                    errs.append(&mut err);
-                                    CompType::Unknown
-                                }
-                            }
+                            let (ty, mut errors) = transform_type(&ty, scope);
+                            errs.append(&mut errors);
+                            ty
                         } else {
                             CompType::Unknown
                         };
@@ -335,13 +305,8 @@ fn transform_exp(
                         });
                         temp_variables.push(var);
                     }
-                    let return_type = match transform_type(&func.return_type, scope) {
-                        Ok(ty) => ty,
-                        Err(mut err) => {
-                            errs.append(&mut err);
-                            CompType::Unknown
-                        }
-                    };
+                    let (return_type, mut errors) = transform_type(&func.return_type, scope);
+                    errs.append(&mut errors);
                     let arguments = temp_variables.clone();
                     let mut local_variables = HashMap::new();
                     for var in temp_variables {
@@ -383,12 +348,12 @@ fn resolve_scope<'a>(
     scope: &'a mut Scope,
     file: &str,
 ) -> &'a mut Scope {
+    // TODO: Sort out errors and stuff here
     match ast {
         Expression::TypeDeclaration(name, declared_type) => {
             if !scope.types.contains_key(name) {
-                if let Ok(ty) = transform_type(declared_type, scope) {
-                    scope.add_type(name.clone(), ty);
-                }
+                let (ty, mut errors) = transform_type(declared_type, scope);
+                scope.add_type(name.clone(), ty);
             }
             scope
         }
@@ -398,7 +363,7 @@ fn resolve_scope<'a>(
             } else {
                 let typing = match declared_type {
                     None => CompType::Unknown,
-                    Some(x) => transform_type(x, scope).unwrap(),
+                    Some(x) => transform_type(x, scope).0,
                 };
                 scope.add_variable(CompVariable::new(Variable {
                     name: name.0.clone(),
@@ -498,13 +463,9 @@ pub fn function_from_generics(
     let mut temp_variables = Vec::new();
     for x in func.args {
         let typing = if let Some(ty) = x.1.clone() {
-            match transform_type(&ty, &scope) {
-                Ok(ty) => ty,
-                Err(mut err) => {
-                    errs.append(&mut err);
-                    CompType::Unknown
-                }
-            }
+            let (ty, mut errors) = transform_type(&ty, &scope);
+            errs.append(&mut errors);
+            ty
         } else {
             CompType::Unknown
         };
@@ -517,13 +478,9 @@ pub fn function_from_generics(
             initialised: true,
         }));
     }
-    let return_type = match transform_type(&func.return_type, &scope) {
-        Ok(ty) => ty,
-        Err(mut err) => {
-            errs.append(&mut err);
-            CompType::Unknown
-        }
-    };
+    let (return_type, mut errors) = transform_type(&func.return_type, &scope);
+    errs.append(&mut errors);
+
     let arguments = temp_variables.clone();
     let mut local_variables = HashMap::new();
     for var in temp_variables {
