@@ -740,6 +740,14 @@ pub fn get_type(
         Call(var, args) => {
             let var = var.clone();
             let result_type = if let CompType::Callible(arg_types, ret) = var.get_type() {
+                if arg_types.len() != args.len() {
+                    errs.push(CompError::WrongArgumentsCount(
+                        var.get_name(),
+                        args.len(),
+                        arg_types.len(),
+                        located,
+                    ))
+                }
                 let mismatched_args = arg_types
                     .iter()
                     .zip(args)

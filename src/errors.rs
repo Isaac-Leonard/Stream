@@ -105,5 +105,6 @@ errors!(
     (19, MissingPropertyInUnion(key:String, ty:CompType), "The property '{}' does not exist for all variants of {}"),
     (20, PropertyDoesNotExistOnType(key:String, ty:CompType), "The property '{}' does not exist on type '{}'"),
     (21, ModuleNotFound(path:String), "Could not find a module at '{}'"),
-    (21, NotImplemented(custom_msg:String), " Not implemented: {}")
+    (22, NotImplemented(custom_msg:String), " Not implemented: {}"),
+    (23, WrongArgumentsCount(name:String, recieved:usize, expected:usize), " Attempted to call function '{}' with '{}' arguments but expected '{}' arguments")
 );
