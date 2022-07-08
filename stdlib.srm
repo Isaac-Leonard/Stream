@@ -29,9 +29,9 @@ extern let puts:Puts=(str:Ptr):Int;
 type Ptrcat=(Ptr,Ptr):Int
 extern const strcat:Ptrcat=(a:Ptr,b:Ptr):Int;
 extern const memcpy:Ptrcat=(a:Ptr,b:Ptr):Int;
-type Point={x:Float; y:Float};
+type Point<T> ={x:T; y:T};
 
-extern const midPoint=(a:Point, b:Point):Point=>({
+extern const midPoint=(a:Point<Float>, b:Point<Float>):Point<Float> =>({
     x:(a.x+b.x)/2.0,
     y:(a.y+b.y)/2.0
 });

@@ -57,9 +57,9 @@ arr2[0]=[4,3,2]
     puts(hello)
     newLine()
     let f=30.0;
-    type Point={x:Float;y:Float}
-    let p1:Point= {x:4.0, y:3.0+f};
-    let p2:Point={x:0.0, y:100.0}
+    type Point<T> ={x:T;y:T}
+    let p1:Point<Float> = {x:4.0, y:3.0+f};
+    let p2:Point<Float> ={x:0.0, y:100.0}
     p2.x=2.0;
     midPoint(p1,p2)
     let div=(p1.x+p2.x)/2.0;
