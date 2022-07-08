@@ -55,12 +55,9 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
         CustomType::Lone(ty) => {
             let x = scope.get_type(&ty.name);
             if let Ok(found_ty) = x {
-                eprintln!("scope: {:?}", scope.types);
-                eprintln!("{:?}", ty);
                 let generics = map_vec!(ty.generics, |x| get_type!(x));
-                eprintln!("{:?}", generics);
                 // We want to preserve lone generics
-                // As in we only want to substatute generics that are part of another type
+                // As in we only want to substitute generics that are part of another type
                 // Generics found here are ones that get substituted in themselves
                 if !matches!(found_ty, CompType::Generic(_, _)) {
                     let (ty, mut errs) = found_ty.substitute_generics(&generics);

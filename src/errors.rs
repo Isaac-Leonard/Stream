@@ -107,5 +107,6 @@ errors!(
     (21, ModuleNotFound(path:String), "Could not find a module at '{}'"),
     (22, NotImplemented(custom_msg:String), " Not implemented: {}"),
     (23, WrongArgumentsCount(name:String, recieved:usize, expected:usize), " Attempted to call function '{}' with '{}' arguments but expected '{}' arguments"),
-    (23, NotEnoughGenerics, " Need more generics")
+    (23, NotEnoughGenerics, " Need more generics"),
+    (24, MismatchedGenericConstraint(provided:CompType, super_ty:CompType), " Invalid generic argument provided, '{}' does not extend '{}'")
 );

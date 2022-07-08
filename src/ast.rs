@@ -1016,8 +1016,9 @@ impl CompType {
                 }
             }
             return true;
-        } else if self == &CompType::Unknown {
-            // Anything can be assigned to unknown but unknown can only be assigned to unknown
+        } else if self == &CompType::Unknown || ty == &CompType::Unknown {
+            // Return true if either is unknown
+            // Fix to make work properly with generics
             true
         } else {
             false
@@ -1052,12 +1053,29 @@ impl CompType {
             ),
             Generic(pos, extends_ty) => {
                 let substitute_ty = generics.get(*pos);
-                eprintln!("sub: {:?}", substitute_ty);
                 if let Some(ty) = substitute_ty {
-                    eprintln!("Happy");
-                    ty.clone()
+                    if ty.super_of(extends_ty) {
+                        ty.clone()
+                    } else if let CompType::Generic(_, sub_ty) = ty {
+                        if sub_ty.super_of(extends_ty) {
+                            ty.clone()
+                        } else {
+                            errors.push(CompError::MismatchedGenericConstraint(
+                                ty.clone(),
+                                extends_ty.as_ref().clone(),
+                                0..0,
+                            ));
+                            CompType::Unknown
+                        }
+                    } else {
+                        errors.push(CompError::MismatchedGenericConstraint(
+                            ty.clone(),
+                            extends_ty.as_ref().clone(),
+                            0..0,
+                        ));
+                        CompType::Unknown
+                    }
                 } else {
-                    eprintln!("Sad");
                     errors.push(CompError::NotEnoughGenerics(0..0));
                     CompType::Unknown
                 }
