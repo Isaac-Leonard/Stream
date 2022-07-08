@@ -364,7 +364,7 @@ fn resolve_scope<'a>(
                 let mut subscope = scope.clone();
                 for (pos, name) in generics.iter().enumerate() {
                     subscope.add_type(
-                        name.clone(),
+                        name.0.clone(),
                         CompType::Generic(pos, Box::new(CompType::Unknown)),
                     );
                 }

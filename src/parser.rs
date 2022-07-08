@@ -311,6 +311,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .ignore_then(token_ident())
             .then(
                 token_ident()
+                    .then(just(Token::Colon).ignore_then(type_parser()).or_not())
                     .separated_by(separator())
                     .at_least(1)
                     .delimited_by(
