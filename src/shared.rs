@@ -362,11 +362,19 @@ fn resolve_scope<'a>(
         Expression::TypeDeclaration(name, generics, declared_type) => {
             if !scope.types.contains_key(name) {
                 let mut subscope = scope.clone();
-                for (pos, name) in generics.iter().enumerate() {
-                    subscope.add_type(
-                        name.0.clone(),
-                        CompType::Generic(pos, Box::new(CompType::Unknown)),
-                    );
+                for (pos, (name, constraint)) in generics.iter().enumerate() {
+                    let constraint = match constraint {
+                        Some(ty) => {
+                            // TODO: Hacky error reporting until we clean this part up
+                            let (ty, errs) = transform_type(ty, scope);
+                            if !errs.is_empty() {
+                                eprintln!("{:?}", errs);
+                            }
+                            ty
+                        }
+                        None => CompType::Unknown,
+                    };
+                    subscope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
                 }
                 let (ty, mut errors) = transform_type(declared_type, &subscope);
                 if !errors.is_empty() {

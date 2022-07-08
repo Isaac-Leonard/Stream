@@ -1055,7 +1055,7 @@ impl CompType {
             Generic(pos, extends_ty) => {
                 let substitute_ty = generics.get(*pos);
                 if let Some(ty) = substitute_ty {
-                    if ty.super_of(extends_ty) {
+                    if extends_ty.super_of(ty) {
                         ty.clone()
                     } else if let CompType::Generic(_, sub_ty) = ty {
                         if sub_ty.super_of(extends_ty) {
