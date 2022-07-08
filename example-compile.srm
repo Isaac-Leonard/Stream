@@ -15,8 +15,9 @@ let mapArrInt5=(arr:[Int; 5], fn:(Int, Int):Int):[Int; 5]=>{
 }
 let double=(x:Int):Int=>x*2;
 
+type Str2<T> =Str<T>;
 let main=():Int => {
-    let hello:Str<5> = "Hello"
+    let hello:Str2<5> = "Hello"
     let world="World"
     puts("Enter 'A' for 'hello' or any other letter for 'world'\n")
     let helloWorld="xxxxxxxxxxxx"

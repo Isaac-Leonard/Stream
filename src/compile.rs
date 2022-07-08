@@ -58,11 +58,14 @@ impl CompType {
             Float => context.f32_type().as_basic_type_enum(),
             Null => context.custom_width_int_type(1).as_basic_type_enum(),
             Bool => context.custom_width_int_type(1).as_basic_type_enum(),
-            Str(len) => context
-                .i8_type()
-                .array_type(len + 1)
-                .ptr_type(inkwell::AddressSpace::Generic)
-                .as_basic_type_enum(),
+            Str(len) => match len.as_ref() {
+                Constant(ConstantData::Int(len)) => context
+                    .i8_type()
+                    .array_type(*len as u32 + 1)
+                    .ptr_type(inkwell::AddressSpace::Generic)
+                    .as_basic_type_enum(),
+                _ => panic!("Cannot compile strings without their length"),
+            },
             Struct(keys) => context
                 .struct_type(
                     keys.iter()

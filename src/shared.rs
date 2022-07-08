@@ -54,13 +54,25 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
         }
         CustomType::Lone(ty) => {
             let x = scope.get_type(&ty.name);
-            x.unwrap_or_else(|_|{
-                if ty.name == "Str" && ty.generics.len() == 1&&let                         CustomType::Constant(ConstantData::Int(len))=ty.generics[0].clone() {
-                    CompType::Str(len as u32)
+            if let Ok(found_ty) = x {
+                eprintln!("scope: {:?}", scope.types);
+                eprintln!("{:?}", ty);
+                let generics = map_vec!(ty.generics, |x| get_type!(x));
+                eprintln!("{:?}", generics);
+                // We want to preserve lone generics
+                // As in we only want to substatute generics that are part of another type
+                // Generics found here are ones that get substituted in themselves
+                if !matches!(found_ty, CompType::Generic(_, _)) {
+                    let (ty, mut errs) = found_ty.substitute_generics(&generics);
+                    errors.append(&mut errs);
+                    ty
                 } else {
-errors.push(CompError::CannotFindType(ty.clone().name, 0..0));CompType::Unknown
+                    found_ty
                 }
-            })
+            } else {
+                errors.push(CompError::CannotFindType(ty.clone().name, 0..0));
+                CompType::Unknown
+            }
         }
         CustomType::Constant(data) => CompType::Constant(data.clone()),
     };
@@ -353,8 +365,11 @@ fn resolve_scope<'a>(
         Expression::TypeDeclaration(name, generics, declared_type) => {
             if !scope.types.contains_key(name) {
                 let mut subscope = scope.clone();
-                for name in generics {
-                    subscope.add_type(name.clone(), CompType::Generic(Box::new(CompType::Unknown)));
+                for (pos, name) in generics.iter().enumerate() {
+                    subscope.add_type(
+                        name.clone(),
+                        CompType::Generic(pos, Box::new(CompType::Unknown)),
+                    );
                 }
                 let (ty, mut errors) = transform_type(declared_type, &subscope);
                 if !errors.is_empty() {
@@ -535,7 +550,9 @@ fn get_top_type(types: &[CompType]) -> CompType {
             Float | Constant(ConstantData::Float(_)) => Float,
             Null | Constant(ConstantData::Null) => Null,
             Bool | Constant(ConstantData::Bool(_)) => Bool,
-            Constant(ConstantData::Str(str)) => Str(str.len() as u32),
+            Constant(ConstantData::Str(str)) => {
+                Str(ConstantData::Int(str.len() as i32).to_type().boxed())
+            }
             x => x.clone(),
         });
     }

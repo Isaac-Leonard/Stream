@@ -278,9 +278,24 @@ impl Op {
                 _ => Err(self.invalid_comparison_msg(a, b)),
             },
             Add => Ok(match (a, b) {
-                (Str(a), Str(b)) => Str(*a + *b),
-                (Str(a), Constant(ConstantData::Str(b))) => Str(*a + b.len() as u32),
-                (Constant(ConstantData::Str(a)), Str(b)) => Str(a.len() as u32 + *b),
+                (Str(a), Str(b)) => match (a.as_ref(), b.as_ref()) {
+                    (Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+                        Str(ConstantData::Int(*a + *b).to_type().boxed())
+                    }
+                    _ => Unknown,
+                },
+                (Str(a), Constant(ConstantData::Str(b))) => match a.as_ref() {
+                    Constant(ConstantData::Int(a)) => {
+                        Str(ConstantData::Int(*a + b.len() as i32).to_type().boxed())
+                    }
+                    _ => Unknown,
+                },
+                (Constant(ConstantData::Str(a)), Str(b)) => match b.as_ref() {
+                    Constant(ConstantData::Int(b)) => Str(Box::new(CompType::Constant(
+                        ConstantData::Int(a.len() as i32 + *b),
+                    ))),
+                    _ => CompType::Str(Box::new(CompType::Int)),
+                },
                 (Constant(ConstantData::Str(a)), Constant(ConstantData::Str(b))) => {
                     Constant(ConstantData::Str(a.clone() + b))
                 }
@@ -385,7 +400,9 @@ impl CompData {
             Bool(b) => CompType::Constant(ConstantData::Bool(*b)),
             Int(i) => CompType::Constant(ConstantData::Int(*i)),
             Float(f) => CompType::Constant(ConstantData::Float(*f)),
-            Str(content) => CompType::Str(content.len() as u32),
+            Str(content) => CompType::Str(Box::new(CompType::Constant(ConstantData::Int(
+                content.len() as i32,
+            )))),
             Func(ast) => ast.as_type(),
         }
     }
@@ -882,10 +899,16 @@ pub enum ConstantData {
     Null,
 }
 impl ConstantData {
+    pub fn to_type(self) -> CompType {
+        CompType::Constant(self)
+    }
+
     pub fn widen(&self) -> CompType {
         use ConstantData::*;
         match self {
-            Str(data) => CompType::Str(data.len() as u32),
+            Str(data) => CompType::Str(Box::new(CompType::Constant(ConstantData::Int(
+                data.len() as i32
+            )))),
             Int(_) => CompType::Int,
             Float(_) => CompType::Float,
             Bool(_) => CompType::Bool,
@@ -931,15 +954,19 @@ pub enum CompType {
     Bool,
     Int,
     Float,
-    Str(u32),
+    Str(Box<CompType>),
     Ptr,
-    Generic(Box<CompType>),
+    Generic(usize, Box<CompType>),
     Type,
     Constant(ConstantData),
     Touple(Vec<Self>),
     Char,
 }
 impl CompType {
+    pub fn boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
+
     pub fn is_primitive(&self) -> bool {
         use CompType::*;
         !matches!(self, Str(_) | Array(_, _) | Struct(_))
@@ -972,7 +999,10 @@ impl CompType {
             types.contains(ty)
         } else if let CompType::Constant(data) = ty {
             match (self, data) {
-                (CompType::Str(len), ConstantData::Str(str)) => *len == str.len() as u32,
+                (CompType::Str(len), ConstantData::Str(str)) => match len.as_ref() {
+                    CompType::Constant(ConstantData::Int(len)) => *len == str.len() as i32,
+                    _ => false,
+                },
                 (CompType::Int, ConstantData::Int(_)) => true,
                 (CompType::Float, ConstantData::Float(_)) => true,
                 (CompType::Bool, ConstantData::Bool(_)) => true,
@@ -986,10 +1016,50 @@ impl CompType {
                 }
             }
             return true;
+        } else if self == &CompType::Unknown {
+            // Anything can be assigned to unknown but unknown can only be assigned to unknown
+            true
         } else {
             false
         }
     }
+
+    /// Recursively examines itself returning a new copy of itself with generic types substituted where they are found
+    /// TODO: Work out a way to determine if too many generics were provided
+    pub fn substitute_generics(&self, generics: &Vec<CompType>) -> (CompType, Vec<CompError>) {
+        eprintln!("{:?}", self);
+        eprintln!("{:?}", generics);
+        use CompType::*;
+        let mut errors = Vec::new();
+        macro_rules! substitute_generics {
+            ($ty:expr) => {{
+                let mut res = $ty.substitute_generics(generics);
+                errors.append(&mut res.1);
+                res.0
+            }};
+        }
+
+        let ty = match self {
+            Unknown | Char | Bool | Constant(_) | Null | Int | Float => self.clone(),
+            Str(len) => Str(substitute_generics!(len).boxed()),
+            Array(el_ty, len) => Array(substitute_generics!(el_ty).boxed(), *len),
+            Generic(pos, extends_ty) => {
+                let substitute_ty = generics.get(*pos);
+                eprintln!("sub: {:?}", substitute_ty);
+                if let Some(ty) = substitute_ty {
+                    eprintln!("Happy");
+                    ty.clone()
+                } else {
+                    eprintln!("Sad");
+                    errors.push(CompError::NotEnoughGenerics(0..0));
+                    CompType::Unknown
+                }
+            } // TODO: Hack till I can fill in the rest (I'm tired and its late)
+            _ => self.clone(),
+        };
+        (ty, errors)
+    }
+
     pub fn is_bool(&self) -> bool {
         matches!(
             *self,
@@ -1052,7 +1122,7 @@ impl CompType {
             Array(ty, len) => Array(ty.clone(), *len),
             Int => Int,
             Float => Float,
-            Str(len) => Str(*len),
+            Str(len) => Str(len.clone()),
             Bool => Bool,
             Null => Null,
             Callible(args, ret) => Callible(
@@ -1079,7 +1149,7 @@ impl CompType {
                     }
                 }
             }
-            Generic(name) => Generic(name.clone()),
+            Generic(pos, name) => Generic(*pos, name.clone()),
         }
     }
 }
@@ -1110,7 +1180,7 @@ impl Display for CompType {
             Not(ty) => write!(f, "Not<{}>", ty),
             Type => write!(f, "Type"),
             Array(ty, len) => write!(f, "[{}, {}]", ty, len),
-            Generic(name) => write!(f, "{}", name),
+            Generic(pos, name) => write!(f, "{}", name),
             Ptr => write!(f, "Ptr"),
             Int => write!(f, "Int"),
             Null => write!(f, "Null"),

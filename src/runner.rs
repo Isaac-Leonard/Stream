@@ -27,6 +27,10 @@ pub fn get_global_scope() -> Scope {
     types.insert("Ptr".to_string(), CompType::Ptr);
     types.insert("Bool".to_string(), CompType::Bool);
     types.insert("Null".to_string(), CompType::Null);
+    types.insert(
+        "Str".to_string(),
+        CompType::Str(CompType::Generic(0, CompType::Int.boxed()).boxed()),
+    );
     let variables = HashMap::new();
     Scope {
         preset_variables: HashMap::new(),
