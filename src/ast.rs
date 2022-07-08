@@ -1027,8 +1027,6 @@ impl CompType {
     /// Recursively examines itself returning a new copy of itself with generic types substituted where they are found
     /// TODO: Work out a way to determine if too many generics were provided
     pub fn substitute_generics(&self, generics: &Vec<CompType>) -> (CompType, Vec<CompError>) {
-        eprintln!("{:?}", self);
-        eprintln!("{:?}", generics);
         use CompType::*;
         let mut errors = Vec::new();
         macro_rules! substitute_generics {
@@ -1040,9 +1038,18 @@ impl CompType {
         }
 
         let ty = match self {
-            Unknown | Char | Bool | Constant(_) | Null | Int | Float => self.clone(),
+            Ptr | Type | Not(_) | Unknown | Char | Bool | Constant(_) | Null | Int | Float => {
+                self.clone()
+            }
             Str(len) => Str(substitute_generics!(len).boxed()),
             Array(el_ty, len) => Array(substitute_generics!(el_ty).boxed(), *len),
+            Struct(data) => Struct(map_vec!(data, |x| (x.0.clone(), substitute_generics!(x.1)))),
+            Union(types) => Union(map_vec!(types, |ty| substitute_generics!(ty))),
+            Touple(elements) => Touple(map_vec!(elements, |ty| substitute_generics!(ty))),
+            Callible(args, ret) => Callible(
+                map_vec!(args, |x| substitute_generics!(x)),
+                substitute_generics!(ret).boxed(),
+            ),
             Generic(pos, extends_ty) => {
                 let substitute_ty = generics.get(*pos);
                 eprintln!("sub: {:?}", substitute_ty);
@@ -1055,9 +1062,8 @@ impl CompType {
                     CompType::Unknown
                 }
             } // TODO: Hack till I can fill in the rest (I'm tired and its late)
-            _ => self.clone(),
         };
-        (ty, errors)
+        (ty.flatten(), errors)
     }
 
     pub fn is_bool(&self) -> bool {
