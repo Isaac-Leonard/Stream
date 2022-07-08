@@ -8,10 +8,11 @@ Check the road map section for what is likely to be implemented next.
 - Structs, arrays and String Objects.
 - Objects are pass by reference / pointer.
 - Primitives are pass by value.
-- Tagged union types.
+- Tagged union types although they're not very usable at the moment.
+- Basic generics although not for functions yet.
 - while Loops and if else expressions.
-- Functions.
-- LSP support.
+- named and anonymous functions, aka lambdas although they cannot currently capture variables.
+- LSP support though its currently broken.
 ** Running the compiler
 After installing dependencies run with
 #+begin_src:
@@ -26,14 +27,15 @@ The following is a list of features I intend to implement in the short term (nex
 In order of likely implementation:
 - Full generics support in the compiler.
 - Proper type narrowing on unions.
-- Publish code to cargo and split it up into modules.
-- Formatter.
 - Improved error checking and reporting.
+- Proper closures
 - More extensive options for controlling compilation including:
   - Specifying an output binary name,
   - multiple levels of optimization,
   - using precompiled binaries when linking allowing for full interoperability with existing compiled binaries (Note that Stubs would still have to be written to tell  the compiler what they should be called like such like is currently done with puts and getchar),
   - and better debugging.
 - Automatic memory management.
+- Publish code to cargo and split it up into modules.
+- Formatter.
 
 In the long term (next 6 months to a year) I intend to make the compiler completely bootstrappable and start writing some projects using it as well as working on multithreading support.
