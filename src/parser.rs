@@ -135,6 +135,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
             .map_with_span(|x, s| (s, Array(x)));
 
         let func_declaration = token_ident()
+            .then(just(Token::Colon).ignore_then(type_parser()).or_not())
             .separated_by(separator())
             .at_least(1)
             .delimited_by(

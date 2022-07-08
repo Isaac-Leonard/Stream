@@ -295,10 +295,26 @@ fn transform_exp(
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
                 RawData::Func(func) => {
+                    let mut scope = scope.clone();
+                    for (pos, (name, constraint)) in func.generics.iter().enumerate() {
+                        let constraint = match constraint {
+                            Some(ty) => {
+                                // TODO: Hacky error reporting until we clean this part up
+                                let (ty, errs) = transform_type(ty, &scope);
+                                if !errs.is_empty() {
+                                    eprintln!("{:?}", errs);
+                                }
+                                ty
+                            }
+                            None => CompType::Unknown,
+                        };
+                        scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+                    }
+
                     let mut temp_variables = Vec::new();
                     for arg in func.args {
                         let arg_ty = if let Some(ty) = arg.1 {
-                            let (ty, mut errors) = transform_type(&ty, scope);
+                            let (ty, mut errors) = transform_type(&ty, &scope);
                             errs.append(&mut errors);
                             ty
                         } else {
@@ -314,7 +330,7 @@ fn transform_exp(
                         });
                         temp_variables.push(var);
                     }
-                    let (return_type, mut errors) = transform_type(&func.return_type, scope);
+                    let (return_type, mut errors) = transform_type(&func.return_type, &scope);
                     errs.append(&mut errors);
                     let arguments = temp_variables.clone();
                     let mut local_variables = HashMap::new();
@@ -468,82 +484,6 @@ pub fn create_program(
 ) -> (Program, Vec<CompError>) {
     resolve_scope(ast, scope, &settings.input_name);
     transform_ast(ast, scope, &settings.input_name)
-}
-
-pub fn function_from_generics(
-    func: Function,
-    generics: Vec<CompType>,
-    scope: &mut Scope,
-    file: &str,
-) -> (FunctionAst, Vec<CompError>) {
-    let mut errs = Vec::new();
-    let mut scope = Scope {
-        parent: Some(Box::new(scope.clone())),
-        preset_variables: HashMap::new(),
-        variables: HashMap::new(),
-        types: HashMap::new(),
-    };
-    let generic_names = func.generics;
-    for gen in generic_names.into_iter().zip(generics) {
-        scope.add_type(gen.0, gen.1);
-    }
-    let mut temp_variables = Vec::new();
-    for x in func.args {
-        let typing = if let Some(ty) = x.1.clone() {
-            let (ty, mut errors) = transform_type(&ty, &scope);
-            errs.append(&mut errors);
-            ty
-        } else {
-            CompType::Unknown
-        };
-        temp_variables.push(CompVariable::new(Variable {
-            name: x.0 .0.clone(),
-            constant: true,
-            typing,
-            external: false,
-            declared_at: Some((file.to_string(), x.0 .1.clone())),
-            initialised: true,
-        }));
-    }
-    let (return_type, mut errors) = transform_type(&func.return_type, &scope);
-    errs.append(&mut errors);
-
-    let arguments = temp_variables.clone();
-    let mut local_variables = HashMap::new();
-    for var in temp_variables {
-        local_variables.insert(var.get_name(), var);
-    }
-    let func = match func.body {
-        Some(body) => {
-            let mut local_scope = Scope {
-                parent: Some(Box::new(scope.clone())),
-                preset_variables: local_variables,
-                variables: HashMap::new(),
-                types: HashMap::new(),
-            };
-            let local_scope = resolve_scope(&*body, &mut local_scope, file);
-
-            let env = get_env_from_scope(&scope);
-            let mut expression = transform_exp(&*body, &env, &mut scope, file);
-            let body = Program {
-                scope: local_scope.clone(),
-                body: expression.0,
-            };
-            errs.append(&mut expression.1);
-
-            FunctionAst {
-                arguments,
-                return_type,
-                body: Some(Box::new(body)),
-            }
-        }
-        None => FunctionAst {
-            arguments,
-            return_type,
-            body: None,
-        },
-    };
-    (func, errs)
 }
 
 fn get_top_type(types: &[CompType]) -> CompType {
