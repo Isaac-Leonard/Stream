@@ -295,71 +295,9 @@ fn transform_exp(
                 RawData::Bool(val) => CompData::Bool(val),
                 RawData::Null => CompData::Null,
                 RawData::Func(func) => {
-                    let mut scope = scope.clone();
-                    for (pos, (name, constraint)) in func.generics.iter().enumerate() {
-                        let constraint = match constraint {
-                            Some(ty) => {
-                                // TODO: Hacky error reporting until we clean this part up
-                                let (ty, errs) = transform_type(ty, &scope);
-                                if !errs.is_empty() {
-                                    eprintln!("{:?}", errs);
-                                }
-                                ty
-                            }
-                            None => CompType::Unknown,
-                        };
-                        scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
-                    }
-
-                    let mut temp_variables = Vec::new();
-                    for arg in func.args {
-                        let arg_ty = if let Some(ty) = arg.1 {
-                            let (ty, mut errors) = transform_type(&ty, &scope);
-                            errs.append(&mut errors);
-                            ty
-                        } else {
-                            CompType::Unknown
-                        };
-                        let var = CompVariable::new(Variable {
-                            name: arg.0 .0.clone(),
-                            constant: true,
-                            typing: arg_ty,
-                            external: false,
-                            declared_at: Some((file.to_string(), arg.0 .1)),
-                            initialised: true,
-                        });
-                        temp_variables.push(var);
-                    }
-                    let (return_type, mut errors) = transform_type(&func.return_type, &scope);
+                    let (func, mut errors) = transform_function(&func, scope, file);
                     errs.append(&mut errors);
-                    let arguments = temp_variables.clone();
-                    let mut local_variables = HashMap::new();
-                    for var in temp_variables {
-                        local_variables.insert(var.get_name(), var);
-                    }
-                    match func.body {
-                        Some(body) => {
-                            let mut local_scope = Scope {
-                                parent: Some(Box::new(scope.clone())),
-                                preset_variables: local_variables,
-                                variables: HashMap::new(),
-                                types: HashMap::new(),
-                            };
-                            let local_scope = resolve_scope(&*body, &mut local_scope, file);
-                            let (body, mut errors) = transform_ast(&*body, local_scope, file);
-                            errs.append(&mut errors);
-                            CompData::Func(FunctionAst {
-                                arguments,
-                                return_type,
-                                body: Some(Box::new(body)),
-                            })
-                        }
-                        None => CompData::Func(FunctionAst {
-                            arguments,
-                            return_type,
-                            body: None,
-                        }),
-                    }
+                    CompData::Func(func)
                 }
             }),
         },
@@ -904,4 +842,74 @@ fn count_max_references(func: &FunctionAst) -> Vec<Accesses> {
             capture: 1,
         })
     }
+}
+
+fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAst, Vec<CompError>) {
+    let mut errs = Vec::new();
+    let mut scope = scope.clone();
+    for (pos, (name, constraint)) in func.generics.iter().enumerate() {
+        let constraint = match constraint {
+            Some(ty) => {
+                // TODO: Hacky error reporting until we clean this part up
+                let (ty, errs) = transform_type(ty, &scope);
+                if !errs.is_empty() {
+                    eprintln!("{:?}", errs);
+                }
+                ty
+            }
+            None => CompType::Unknown,
+        };
+        scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+    }
+
+    let mut temp_variables = Vec::new();
+    for arg in &func.args {
+        let arg_ty = if let Some(ty) = &arg.1 {
+            let (ty, mut errors) = transform_type(ty, &scope);
+            errs.append(&mut errors);
+            ty
+        } else {
+            CompType::Unknown
+        };
+        let var = CompVariable::new(Variable {
+            name: arg.0 .0.clone(),
+            constant: true,
+            typing: arg_ty,
+            external: false,
+            declared_at: Some((file.to_string(), arg.0 .1.clone())),
+            initialised: true,
+        });
+        temp_variables.push(var);
+    }
+    let (return_type, mut errors) = transform_type(&func.return_type, &scope);
+    errs.append(&mut errors);
+    let arguments = temp_variables.clone();
+    let mut local_variables = HashMap::new();
+    for var in temp_variables {
+        local_variables.insert(var.get_name(), var);
+    }
+    let func = match &func.body {
+        Some(body) => {
+            let mut local_scope = Scope {
+                parent: Some(Box::new(scope.clone())),
+                preset_variables: local_variables,
+                variables: HashMap::new(),
+                types: HashMap::new(),
+            };
+            let local_scope = resolve_scope(body.as_ref(), &mut local_scope, file);
+            let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
+            errs.append(&mut errors);
+            FunctionAst {
+                arguments,
+                return_type,
+                body: Some(Box::new(body)),
+            }
+        }
+        None => FunctionAst {
+            arguments,
+            return_type,
+            body: None,
+        },
+    };
+    (func, errs)
 }
