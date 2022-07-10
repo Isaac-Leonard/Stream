@@ -1,7 +1,5 @@
 use std::process::Command;
 
-use crate::config::{OS, MACOS};
-
 pub struct Linker {
 	input_files: Vec<String>,
 	output_file: String,

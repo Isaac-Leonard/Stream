@@ -57,6 +57,6 @@ fn main() {
 		}
 
 		linker.output("testing");
-		linker.link().map_err(|x| panic!("{}", x));
+		linker.link().unwrap_or_else(|x| panic!("{}", x));
 	};
 }
