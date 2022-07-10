@@ -43,21 +43,21 @@ macro_rules! errors {
     };
 }
 pub struct FilePosition {
-    pub line: i32,
-    pub column: i32,
+	pub line: i32,
+	pub column: i32,
 }
 impl Display for FilePosition {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}: {}", self.line, self.column)
-    }
+	fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+		write!(f, "{}: {}", self.line, self.column)
+	}
 }
 pub fn get_pos(pos: i32, lines: &[i32]) -> FilePosition {
-    let line = lines.iter().position(|x| *x > pos).unwrap() as usize - 1;
-    let column = pos - lines[line];
-    FilePosition {
-        line: line as i32,
-        column,
-    }
+	let line = lines.iter().position(|x| *x > pos).unwrap() as usize - 1;
+	let column = pos - lines[line];
+	FilePosition {
+		line: line as i32,
+		column,
+	}
 }
 errors!(
     (
