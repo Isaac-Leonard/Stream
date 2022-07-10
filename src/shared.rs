@@ -5,26 +5,6 @@ use crate::settings::Settings;
 use std::collections::HashMap;
 use std::ops::Range;
 
-fn collect_ok_or_err<T, E>(
-    iter: impl IntoIterator<Item = Result<T, E>>,
-) -> Option<Result<Vec<T>, Vec<E>>> {
-    let mut errors = Vec::new();
-    let mut successes = Vec::new();
-    for v in iter {
-        match v {
-            Ok(success) => successes.push(success),
-            Err(error) => errors.push(error),
-        }
-    }
-    if errors.is_empty() && successes.is_empty() {
-        None
-    } else if errors.is_empty() {
-        Some(Ok(successes))
-    } else {
-        Some(Err(errors))
-    }
-}
-
 pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompError>) {
     let mut errors = Vec::new();
     macro_rules! get_type {
@@ -49,7 +29,7 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 
         CustomType::Callible(args, ret) => {
             let args = map_vec!(args, |x| get_type!(x));
-            let ret = get_type!(&ret);
+            let ret = get_type!(ret);
             CompType::Callible(args, Box::new(ret))
         }
         CustomType::Lone(ty) => {
@@ -103,9 +83,7 @@ fn resolve_memory(
     loop {
         match &exp.1 {
             Expression::Index(left, index) => {
-                accesses.push(IndexOption::Index(
-                    transform_exp(&index, env, scope, file).0,
-                ));
+                accesses.push(IndexOption::Index(transform_exp(index, env, scope, file).0));
                 exp = left.as_ref();
             }
             Expression::DotAccess(left, prop) => {
@@ -160,9 +138,9 @@ fn transform_exp(
     let expression = match exp {
         Struct(data) => CompExpression::Struct(map_vec!(data, |(k, v)| (
             k.clone(),
-            get_exp!(&v, env, scope)
+            get_exp!(v, env, scope)
         ))),
-        Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, &env, scope))),
+        Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, env, scope))),
         DotAccess(val, key) => CompExpression::DotAccess(get_exp!(val, env, scope), key.clone()),
         Conversion(exp, ty) => {
             let (ty, mut errors) = transform_type(ty, scope);
@@ -245,7 +223,7 @@ fn transform_exp(
             CompExpression::List(oks)
         }
         Expression::BinOp(op, l, r) => {
-            let mut exp = bin_exp(op, &*l, r, env, scope, file);
+            let mut exp = bin_exp(op, l.as_ref(), r, env, scope, file);
             errs.append(&mut exp.1);
             exp.0
         }
@@ -330,7 +308,7 @@ fn resolve_scope<'a>(
                     };
                     subscope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
                 }
-                let (ty, mut errors) = transform_type(declared_type, &subscope);
+                let (ty, errors) = transform_type(declared_type, &subscope);
                 if !errors.is_empty() {
                     eprintln!("{:?}", errors);
                 }
@@ -468,7 +446,7 @@ pub fn get_type(
 ) -> (CompType, Vec<CompError>) {
     use CompExpression::*;
     match exp {
-        Conversion(exp, ty) => (ty.clone(), errs),
+        Conversion(_exp, ty) => (ty.clone(), errs),
         DotAccess(val, (key, _)) => {
             if let CompType::Union(types) = &val.result_type {
                 let union = types
@@ -604,7 +582,7 @@ pub fn get_type(
                                 index.located.clone(),
                             ));
                             accesses.push((Index(index.clone()), CompType::Unknown))
-                        } else if let CompType::Array(el_ty, len) = var_ty {
+                        } else if let CompType::Array(el_ty, _len) = var_ty {
                             var_ty = el_ty.as_ref().clone();
                             accesses.push((Index(index.clone()), var_ty.clone()));
                         } else {
@@ -655,24 +633,17 @@ pub fn get_type(
                         located,
                     ))
                 }
-                let mismatched_args = arg_types
-                    .iter()
-                    .zip(args)
-                    .map(|(x, y)| {
-                        if !x.super_of(&y.result_type) {
-                            Some(CompError::InvalidAssignment(
-                                y.result_type.clone(),
-                                x.clone(),
-                                y.located.clone(),
-                            ))
-                        } else {
-                            None
-                        }
-                    })
-                    .find(|x| x.is_some())
-                    .flatten();
-                if let Some(err) = mismatched_args {
-                    errs.push(err);
+                let mut generic_substitutions = Vec::new();
+                for (x, y) in arg_types.iter().zip(args) {
+                    if x.contains_generic() {
+                        generic_substitutions.push((x, y))
+                    } else if !x.super_of(&y.result_type) {
+                        errs.push(CompError::InvalidAssignment(
+                            y.result_type.clone(),
+                            x.clone(),
+                            y.located.clone(),
+                        ))
+                    }
                 }
                 ret.as_ref().clone()
             } else {
@@ -708,7 +679,7 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
     }
 }
 
-fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Accesses>) {
+fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses>) {
     use CompExpression::*;
     match env.expression.as_ref() {
         List(envs) => {
@@ -716,12 +687,12 @@ fn count_max_references_in_env(env: &ExpEnvironment, mut accesses: &mut Vec<Acce
                 count_max_references_in_env(env, accesses)
             }
         }
-        IfElse(ifElse) => {
-            count_max_references_in_env(&ifElse.cond, accesses);
+        IfElse(ifelse) => {
+            count_max_references_in_env(&ifelse.cond, accesses);
             let mut then = Vec::new();
-            count_max_references_in_env(&ifElse.then, &mut then);
+            count_max_references_in_env(&ifelse.then, &mut then);
             let mut otherwise = Vec::new();
-            count_max_references_in_env(&ifElse.otherwise, &mut otherwise);
+            count_max_references_in_env(&ifelse.otherwise, &mut otherwise);
             for access in then.into_iter().chain(otherwise) {
                 let existing = accesses
                     .iter_mut()
@@ -851,10 +822,8 @@ fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAs
         let constraint = match constraint {
             Some(ty) => {
                 // TODO: Hacky error reporting until we clean this part up
-                let (ty, errs) = transform_type(ty, &scope);
-                if !errs.is_empty() {
-                    eprintln!("{:?}", errs);
-                }
+                let (ty, mut errors) = transform_type(ty, &scope);
+                errs.append(&mut errors);
                 ty
             }
             None => CompType::Unknown,
@@ -912,4 +881,16 @@ fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAs
         },
     };
     (func, errs)
+}
+
+impl FunctionAst {
+    #[warn(clippy::unimplemented)]
+    fn replace_all_constant_generic_calls(&mut self) {
+        if let Some(prog) = self.body.as_mut() {
+            prog.body.map_inplace(&mut |x| match x.expression.as_ref() {
+                CompExpression::Call(_name, _args) => None,
+                _ => None,
+            })
+        };
+    }
 }

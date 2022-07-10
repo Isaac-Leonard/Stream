@@ -968,6 +968,22 @@ impl CompType {
         Box::new(self)
     }
 
+    pub fn contains_generic(&self) -> bool {
+        use CompType::*;
+        match self {
+            Generic(_, _) => true,
+            Type | Char | Unknown | Bool | Ptr | Int | Float | Null | Constant(_) | Not(_) => false,
+            Array(element_ty, _) => element_ty.contains_generic(),
+            Touple(elements) => elements.iter().any(|x| x.contains_generic()),
+            Struct(elements) => elements.iter().any(|x| x.1.contains_generic()),
+            Union(tys) => tys.iter().any(|x| x.contains_generic()),
+            Callible(args, ret) => {
+                args.iter().any(|x| x.contains_generic()) || ret.contains_generic()
+            }
+            Str(len) => len.contains_generic(),
+        }
+    }
+
     pub fn is_primitive(&self) -> bool {
         use CompType::*;
         !matches!(self, Str(_) | Array(_, _) | Struct(_))
@@ -1016,7 +1032,7 @@ impl CompType {
                     return false;
                 }
             }
-            return true;
+            true
         } else if self == &CompType::Unknown || ty == &CompType::Unknown {
             // Return true if either is unknown
             // Fix to make work properly with generics
@@ -1177,6 +1193,40 @@ impl CompType {
             Generic(pos, name) => Generic(*pos, name.clone()),
         }
     }
+
+    pub fn match_generics<'a, 'b>(&'a self, ty: &'b Self) -> Vec<(&'a Self, &'b Self)> {
+        use CompType::*;
+        let mut matches = Vec::new();
+        if matches!(self, Generic(_, _)) {
+            matches.push((self, ty))
+        };
+        let mut sub_matches = match (self, ty) {
+            (Generic(_, sub), ty) => sub.match_generics(ty),
+            (Type, Type)
+            | (Char, Char)
+            | (Unknown, _)
+            | (Bool, Bool)
+            | (Ptr, Ptr)
+            | (Int, Int)
+            | (Float, Float)
+		| (Null, Null)
+		// TODO: Match on types here
+            | (Constant(_), Constant(_))
+            | (Not(_), Not(_)) => Vec::new(),
+	    (Array(a, _),Array(b,_)) => a.match_generics(b.as_ref()),
+	    (Touple(a), Touple(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(&x.1)).collect(),
+	    (Struct(a), Struct(b)) => a.iter().zip(b).flat_map(|x| x.0.1.match_generics(&x.1.1)).collect(),
+	    // TODO: Handling here is wrong and needs to be fixed
+	    (Union(a), Union(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(x.1)).collect(),
+ 	     (Callible(a_args, a_ret), Callible(b_args, b_ret)) => {
+let mut matches:Vec<_>=		 a_args.iter().zip(b_args).flat_map(|x| x.0.match_generics(x.1)).collect();
+matches.append(&mut 		 a_ret.match_generics(b_ret));
+matches            }
+	    (Str(a),Str(b)) => a.match_generics(b),
+(_, _)=>panic!("attempted to find generics of mismatched types: {}, {}", self,ty)        };
+        matches.append(&mut sub_matches);
+        matches
+    }
 }
 
 impl Display for CompType {
@@ -1205,7 +1255,7 @@ impl Display for CompType {
             Not(ty) => write!(f, "Not<{}>", ty),
             Type => write!(f, "Type"),
             Array(ty, len) => write!(f, "[{}, {}]", ty, len),
-            Generic(pos, name) => write!(f, "{}", name),
+            Generic(_pos, name) => write!(f, "{}", name),
             Ptr => write!(f, "Ptr"),
             Int => write!(f, "Int"),
             Null => write!(f, "Null"),
