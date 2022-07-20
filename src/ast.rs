@@ -47,7 +47,7 @@ pub enum Expression {
 	Array(Vec<SpannedExpression>),
 	BinOp(Op, Box<SpannedExpression>, Box<SpannedExpression>),
 	Terminal(Symbol),
-	FuncCall(String, Vec<SpannedExpression>),
+	FuncCall(String, Vec<CustomType>, Vec<SpannedExpression>),
 	Block(Vec<SpannedExpression>),
 	IfElse(
 		Box<SpannedExpression>,
@@ -438,7 +438,7 @@ pub enum CompExpression {
 	BinOp(Op, ExpEnvironment, ExpEnvironment),
 	Read(CompVariable),
 	OneOp(Prefix, ExpEnvironment),
-	Call(CompVariable, Vec<ExpEnvironment>),
+	Call(CompVariable, Vec<CompType>, Vec<ExpEnvironment>),
 	Assign(MemoryLocation, ExpEnvironment),
 	IfElse(IfElse),
 	WhileLoop {
@@ -476,7 +476,7 @@ impl ExpEnvironment {
 	}
 
 	pub fn is_call(&self) -> bool {
-		matches!(self.expression.as_ref(), CompExpression::Call(_, _))
+		matches!(self.expression.as_ref(), CompExpression::Call(_, _, _))
 	}
 
 	pub fn find_map<'a, T: 'a, F>(&'a self, matcher: &mut F) -> Option<T>
@@ -490,7 +490,7 @@ impl ExpEnvironment {
 		match self.expression.as_ref() {
 			CompExpression::List(exps)
 			| CompExpression::Array(exps)
-			| CompExpression::Call(_, exps) => exps.iter().find_map(|x| x.find_map(matcher)),
+			| CompExpression::Call(_, _, exps) => exps.iter().find_map(|x| x.find_map(matcher)),
 			CompExpression::Struct(key_vals) => key_vals.iter().find_map(|x| x.1.find_map(matcher)),
 			CompExpression::IfElse(ifelse) => {
 				let cond = ifelse.cond.find_map(matcher);
@@ -568,7 +568,7 @@ impl ExpEnvironment {
 		match self.expression.as_ref() {
 			CompExpression::List(exps)
 			| CompExpression::Array(exps)
-			| CompExpression::Call(_, exps) => {
+			| CompExpression::Call(_, _, exps) => {
 				current.append(&mut exps.iter().flat_map(|x| x.map_each(mapper)).collect());
 			}
 			CompExpression::Struct(key_vals) => {
@@ -627,7 +627,7 @@ impl ExpEnvironment {
 		match self.expression.as_mut() {
 			CompExpression::List(exps)
 			| CompExpression::Array(exps)
-			| CompExpression::Call(_, exps) => exps.iter_mut().for_each(|x| x.map_inplace(mapper)),
+			| CompExpression::Call(_, _, exps) => exps.iter_mut().for_each(|x| x.map_inplace(mapper)),
 			CompExpression::Struct(key_vals) => {
 				key_vals.iter_mut().for_each(|x| x.1.map_inplace(mapper))
 			}
@@ -740,7 +740,7 @@ impl ExpEnvironment {
 			| CompExpression::OneOp(_, _)
 			| CompExpression::BinOp(_, _, _)
 			| CompExpression::Assign(_, _)
-			| CompExpression::Call(_, _)
+			| CompExpression::Call(_, _, _)
 			| CompExpression::Conversion(_, _)
 			| CompExpression::DotAccess(_, _) => {
 				vec![self]

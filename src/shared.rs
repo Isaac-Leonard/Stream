@@ -227,7 +227,7 @@ fn transform_exp(
 			errs.append(&mut exp.1);
 			exp.0
 		}
-		Expression::FuncCall(name, arguments) => {
+		Expression::FuncCall(name, generics, arguments) => {
 			let mut args = Vec::new();
 			let mut env = env.clone();
 			for exp in arguments {
@@ -247,7 +247,12 @@ fn transform_exp(
 					initialised: false,
 				})
 			};
-			CompExpression::Call(func, args)
+			let generics = map_vec!(generics, |x| {
+				let (ty, mut errors) = transform_type(x, scope);
+				errs.append(&mut errors);
+				ty
+			});
+			CompExpression::Call(func, generics, args)
 		}
 		Expression::Terminal(sym) => match sym {
 			Symbol::Identifier(name) => {
@@ -622,7 +627,7 @@ pub fn get_type(
 		}
 		OneOp(_, val) => (val.result_type.clone(), errs),
 		Read(var) => (var.get_type(), errs),
-		Call(var, args) => {
+		Call(var, generics, args) => {
 			let var = var.clone();
 			let result_type = if let CompType::Callible(arg_types, ret) = var.get_type() {
 				if arg_types.len() != args.len() {
@@ -758,7 +763,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 				count_max_references_in_env(&env.1, accesses)
 			}
 		}
-		Call(func, envs) => {
+		Call(func, _, envs) => {
 			if let Some(access) = accesses.iter_mut().find(|access| &access.variable == func) {
 				access.read += 1;
 			} else {
@@ -888,7 +893,7 @@ impl FunctionAst {
 	fn replace_all_constant_generic_calls(&mut self) {
 		if let Some(prog) = self.body.as_mut() {
 			prog.body.map_inplace(&mut |x| match x.expression.as_ref() {
-				CompExpression::Call(_name, _args) => None,
+				CompExpression::Call(_name, _generics, _args) => Some(x.clone()),
 				_ => None,
 			})
 		};

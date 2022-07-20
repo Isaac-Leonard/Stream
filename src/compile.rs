@@ -474,7 +474,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 		parent: Option<&FunctionValue<'ctx>>,
 	) -> Result<BasicValueEnum<'ctx>, String> {
 		Ok(match exp.expression.as_ref() {
-			CompExpression::Call(var, args) => {
+			CompExpression::Call(var, _, args) => {
 				let compiled_args = map_vec!(args, |arg| {
 					let val = self
 						.compile_expression(arg, variables, parent)

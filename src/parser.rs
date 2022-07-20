@@ -170,11 +170,22 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 
 		let func_call = token_ident()
 			.then(
+				type_parser()
+					.separated_by(separator())
+					.at_least(1)
+					.delimited_by(
+						Token::Operator(String::from("<")),
+						Token::Operator(String::from(">")),
+					)
+					.or_not()
+					.map(Option::unwrap_or_default),
+			)
+			.then(
 				exp.clone()
 					.separated_by(separator())
 					.delimited_by(Token::StartBracket, Token::EndBracket),
 			)
-			.map_with_span(|(name, args), span| (span, FuncCall(name, args)))
+			.map_with_span(|((name, generics), args), span| (span, FuncCall(name, generics, args)))
 			.labelled("Call");
 
 		let struct_exp = token_ident()
