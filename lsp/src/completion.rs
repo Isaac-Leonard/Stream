@@ -1,12 +1,13 @@
-use crate::ast::*;
 use std::collections::HashMap;
+use stream::ast::*;
+
 pub enum ImCompleteCompletionItem {
 	Variable(String),
 	Function(String, Vec<String>),
 }
 /// return (need_to_continue_search, founded reference)
 pub fn completion(
-	ast: &crate::ExpEnvironment,
+	ast: &ExpEnvironment,
 	ident_offset: usize,
 ) -> HashMap<String, ImCompleteCompletionItem> {
 	let mut map = HashMap::new();

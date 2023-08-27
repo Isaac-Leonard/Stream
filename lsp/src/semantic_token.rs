@@ -1,5 +1,5 @@
-use crate::ast;
 use std::collections::HashMap;
+use stream::ast;
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokenType};
 
 pub const LEGEND_TYPE: &[SemanticTokenType] = &[

@@ -1,5 +1,5 @@
-use crate::ast::*;
 use std::ops::Range;
+use stream::ast::*;
 
 use im_rc::Vector;
 

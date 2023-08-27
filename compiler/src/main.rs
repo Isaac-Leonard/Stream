@@ -1,20 +1,13 @@
 #![feature(let_chains)]
-mod ast;
-mod compile;
 mod config;
-mod errors;
-mod lexer;
 mod linker;
-mod macros;
-mod parser;
-mod runner;
-mod settings;
-mod shared;
-use crate::compile::compile;
-use runner::*;
-use settings::Settings;
+
 use std::collections::HashMap;
 use std::env;
+use stream::compile::compile;
+use stream::runner::*;
+use stream::settings::Settings;
+
 fn main() {
 	let entry_name = env::args().nth(1).expect("Expected file argument");
 	let name = resolve_path(&entry_name);

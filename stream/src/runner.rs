@@ -5,7 +5,7 @@ use crate::map_vec;
 use crate::parser::*;
 use crate::settings::Settings;
 use crate::shared::*;
-use chumsky::{Parser, Stream};
+use chumsky::Parser;
 use std::path::Path;
 use std::{collections::HashMap, fs};
 pub fn calc_lines(file: &str) -> Vec<i32> {
@@ -107,7 +107,7 @@ pub fn parse_files(
 		.map_err(|x| panic!("{:?}", x))
 		.unwrap();
 	let len = tokens.len();
-	let parsed = parser().parse(Stream::from_iter(len..len + 1, tokens.into_iter()));
+	let parsed = parser().parse(chumsky::Stream::from_iter(len..len + 1, tokens.into_iter()));
 	match parsed {
 		Ok(ast) => {
 			let imports = normalise_deps(ast.0);

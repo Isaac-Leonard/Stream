@@ -1,6 +1,5 @@
 use std::ops::Range;
-
-use crate::ast::*;
+use stream::ast::*;
 
 /// return (need_to_continue_search, founded reference)
 type Spanned<T> = (T, Range<usize>);

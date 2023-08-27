@@ -1,16 +1,8 @@
-[package]
-name = "borrow-script-parser"
-version = "0.1.0"
-edition = "2021"
-default-run="compiler"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[[bin]]
-name="compiler"
-path="src/main.rs"
-[[bin]]
-name="lsp"
-path="src/lsp/main.rs"
-[dependencies]
+[workspace]
+members=["compiler", "lsp", "stream"]
+workspace.resolver = "2"
+
+[workspace.dependencies]
 chumsky = "0.7.0"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm13-0"] }
 fxhash = "0.2.1"
@@ -23,3 +15,4 @@ serde = { version = "1.0", features = ["derive"] }
 dashmap = "5.1.0"
 log = "0.4.14"
 im-rc = "15.0.0"
+stream = { path="./stream"}

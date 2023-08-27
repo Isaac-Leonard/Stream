@@ -70,24 +70,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "borrow-script-parser"
-version = "0.1.0"
-dependencies = [
- "chumsky",
- "dashmap",
- "env_logger",
- "fxhash",
- "im-rc",
- "inkwell",
- "log",
- "ropey",
- "serde",
- "serde_json",
- "tokio",
- "tower-lsp",
-]
-
-[[package]]
 name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -118,6 +100,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "091823bc52a25302827bc0d34813ecf770b84d663a3aaac396b5d0dbd4ef1dcb"
 dependencies = [
  "ahash",
+]
+
+[[package]]
+name = "compiler"
+version = "0.1.0"
+dependencies = [
+ "chumsky",
+ "stream",
 ]
 
 [[package]]
@@ -401,6 +391,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6389c490849ff5bc16be905ae24bc913a9c8892e19b2341dbc175e14c341c2b8"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "lsp"
+version = "0.1.0"
+dependencies = [
+ "dashmap",
+ "env_logger",
+ "im-rc",
+ "log",
+ "ropey",
+ "serde",
+ "serde_json",
+ "stream",
+ "tokio",
+ "tower-lsp",
 ]
 
 [[package]]
@@ -763,6 +769,15 @@ name = "str_indices"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f026164926842ec52deb1938fae44f83dfdb82d0a5b0270c5bd5935ab74d6dd"
+
+[[package]]
+name = "stream"
+version = "0.1.0"
+dependencies = [
+ "chumsky",
+ "fxhash",
+ "inkwell",
+]
 
 [[package]]
 name = "syn"

@@ -1,4 +1,5 @@
-use crate::ast::*;
+use stream::ast::*;
+
 macro_rules! find_in_list {
 	($list:expr,$pos:expr) => {
 		for arg in $list {
@@ -25,9 +26,7 @@ pub fn hover(ast: &ExpEnvironment, pos: u32) -> Option<CompType> {
 		Assign(lhs, rhs) => find_in_list!([lhs, rhs], pos),
 		WhileLoop { cond, body } => find_in_list!([cond, body], pos),
 		IfElse(if_exp) => find_in_list!([&if_exp.cond, &if_exp.then, &if_exp.otherwise], pos),
-		IfOnly { cond, then } => find_in_list!([cond, then,], pos),
 		Index(arr, index) => find_in_list!([arr, index], pos),
-		Prog(prog) => return hover(&prog.body, pos),
 		BinOp(_, lhs, rhs) => find_in_list!([lhs, rhs], pos),
 		OneOp(_, exp) => return hover(exp, pos),
 		Typeof(exp) => return hover(exp, pos),

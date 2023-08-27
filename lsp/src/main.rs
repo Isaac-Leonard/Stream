@@ -1,42 +1,25 @@
 #![feature(let_chains)]
-#[path = "../ast.rs"]
-pub mod ast;
-#[path = "../compile.rs"]
-pub mod compile;
 pub mod completion;
-#[path = "../errors.rs"]
-pub mod errors;
 mod hover;
 mod jump_definition;
-#[path = "../lexer.rs"]
-mod lexer;
-#[path = "../macros.rs"]
-pub mod macros;
-#[path = "../parser.rs"]
-pub mod parser;
 pub mod reference;
-#[path = "../runner.rs"]
-pub mod runner;
 pub mod semantic_token;
-#[path = "../settings.rs"]
-pub mod settings;
-#[path = "../shared.rs"]
-pub mod shared;
-use crate::runner::*;
-use ast::*;
+
 use dashmap::DashMap;
-use errors::CompError;
 use hover::hover;
+use ropey::Rope;
 use semantic_token::semantic_token_from_ast;
 use semantic_token::ImCompleteSemanticToken;
 use semantic_token::LEGEND_TYPE;
-use settings::Settings;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
+use stream::ast::*;
+use stream::errors::CompError;
+use stream::runner::*;
+use stream::settings::Settings;
 use tower_lsp::jsonrpc::Error;
-
-use ropey::Rope;
-use serde_json::Value;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
