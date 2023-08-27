@@ -169,14 +169,14 @@ fn transform_exp(
 				var
 			} else {
 				errs.push(CompError::CannotFindVariable(name.0.clone(), loc.clone()));
-				CompVariable::new(Variable {
+				CompVariable {
 					name: name.0.clone(),
 					typing: exp_ty.clone(),
 					constant: false,
 					external: false,
 					declared_at: None,
 					initialised: false,
-				})
+				}
 			};
 
 			let mem = MemoryLocation {
@@ -238,14 +238,14 @@ fn transform_exp(
 				var
 			} else {
 				errs.push(CompError::CannotFindVariable(name.clone(), loc.clone()));
-				CompVariable::new(Variable {
+				CompVariable {
 					name: name.clone(),
 					constant: false,
 					external: false,
 					typing: CompType::Unknown,
 					declared_at: None,
 					initialised: false,
-				})
+				}
 			};
 			let generics = map_vec!(generics, |x| {
 				let (ty, mut errors) = transform_type(x, scope);
@@ -260,14 +260,14 @@ fn transform_exp(
 					var
 				} else {
 					errs.push(CompError::CannotFindVariable(name.clone(), loc.clone()));
-					CompVariable::new(Variable {
+					CompVariable {
 						name: name.clone(),
 						constant: false,
 						external: false,
 						typing: CompType::Unknown,
 						declared_at: None,
 						initialised: false,
-					})
+					}
 				};
 				CompExpression::Read(var)
 			}
@@ -329,14 +329,14 @@ fn resolve_scope<'a>(
 					None => CompType::Unknown,
 					Some(x) => transform_type(x, scope).0,
 				};
-				scope.add_variable(CompVariable::new(Variable {
+				scope.add_variable(CompVariable {
 					name: name.0.clone(),
 					constant: *constant,
 					typing,
 					initialised: false,
 					external: *external,
 					declared_at: Some((file.to_string(), name.1.clone())),
-				}))
+				})
 			}
 		}
 		Expression::Block(expressions) => {
@@ -845,14 +845,14 @@ fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAs
 		} else {
 			CompType::Unknown
 		};
-		let var = CompVariable::new(Variable {
+		let var = CompVariable {
 			name: arg.0 .0.clone(),
 			constant: true,
 			typing: arg_ty,
 			external: false,
 			declared_at: Some((file.to_string(), arg.0 .1.clone())),
 			initialised: true,
-		});
+		};
 		temp_variables.push(var);
 	}
 	let (return_type, mut errors) = transform_type(&func.return_type, &scope);

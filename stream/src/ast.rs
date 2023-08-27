@@ -121,7 +121,7 @@ impl CustomTypeStruct {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Variable {
+pub struct CompVariable {
 	pub name: String,
 	pub typing: CompType,
 	pub initialised: bool,
@@ -130,43 +130,38 @@ pub struct Variable {
 	pub declared_at: Option<(String, Range<usize>)>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct CompVariable(Rc<RefCell<Variable>>);
 impl CompVariable {
-	pub fn new(init: Variable) -> Self {
-		CompVariable(Rc::new(RefCell::new(init)))
+	pub fn get_name(&self) -> String {
+		self.name.clone()
 	}
 
-	pub fn get_name(&self) -> String {
-		self.0.borrow().name.clone()
-	}
 	pub fn get_type(&self) -> CompType {
 		// TODO: implement a version that returns a reference if possible
-		self.0.borrow().typing.clone()
+		self.typing.clone()
 	}
 
-	pub fn set_type(&self, ty: CompType) {
-		self.0.borrow_mut().typing = ty;
+	pub fn set_type(&mut self, ty: CompType) {
+		self.typing = ty;
 	}
 
 	pub fn is_const(&self) -> bool {
-		self.0.borrow().constant
+		self.constant
 	}
 
 	pub fn is_extern(&self) -> bool {
-		self.0.borrow().external
+		self.external
 	}
 
 	pub fn get_declaration_location(&self) -> Option<(String, Range<usize>)> {
-		self.0.borrow().declared_at.clone()
+		self.declared_at.clone()
 	}
 
 	pub fn is_initialised(&self) -> bool {
-		self.0.borrow_mut().initialised
+		self.initialised
 	}
 
-	pub fn set_initialised(&self) {
-		self.0.borrow_mut().initialised = true;
+	pub fn set_initialised(&mut self) {
+		self.initialised = true;
 	}
 }
 
@@ -176,6 +171,7 @@ pub struct FunctionAst {
 	pub return_type: CompType,
 	pub body: Option<Box<Program>>,
 }
+
 impl FunctionAst {
 	pub fn as_type(&self) -> CompType {
 		CompType::Callible(
@@ -685,14 +681,14 @@ impl ExpEnvironment {
 		let mut count = 0;
 		self.map_inplace(&mut |x| match x.expression.as_ref() {
 			CompExpression::Array(elements) => {
-				let var = CompVariable::new(Variable {
+				let var = CompVariable {
 					name: ".array".to_string() + &count.to_string(),
 					initialised: false,
 					declared_at: None,
 					typing: x.result_type.clone(),
 					constant: false,
 					external: false,
-				});
+				};
 				count += 1;
 				let mut list: Vec<ExpEnvironment> = elements
 					.iter()
@@ -902,6 +898,7 @@ impl Scope {
 			}
 		}
 	}
+
 	pub fn variable_has_type(&self, name: &String) -> bool {
 		if let Some(var) = self.variables.get(name) {
 			var.get_type() != CompType::Unknown
