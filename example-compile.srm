@@ -81,5 +81,8 @@ arr2[0]=[4,3,2]
     let doubles=mapArrInt5(arr5, (x:Int, i:Int):Int=>x*2);
     printInt(doubles[4]);
     newLine()
+    puts("Length of arr2 is: ")
+    printInt(arr2.length);
+    newLine()
     0
 }

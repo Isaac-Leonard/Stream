@@ -489,6 +489,18 @@ pub fn get_type(
 					CompType::Unknown
 				};
 				(result_type, errs)
+			} else if let CompType::Array(_, len) = &val.result_type {
+				let result_type = if key == "length" {
+					CompType::Constant(ConstantData::Int(*len as i32))
+				} else {
+					errs.push(CompError::PropertyDoesNotExistOnType(
+						key.clone(),
+						val.result_type.clone(),
+						located,
+					));
+					CompType::Unknown
+				};
+				(result_type, errs)
 			} else {
 				errs.push(CompError::PropertyDoesNotExistOnType(
 					key.clone(),

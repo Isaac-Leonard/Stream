@@ -680,19 +680,25 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 				let ptr = self.calc_pos(arr, index, variables, parent)?;
 				self.builder.build_load(ptr, "indexing")
 			}
-			CompExpression::DotAccess(val, key) => {
-				let keys = match &val.result_type {
-					CompType::Struct(data) => data,
-					_ => unreachable!(),
-				};
-				let index = keys.clone().iter().position(|x| x.0 == key.0).unwrap();
-				let val = self.compile_expression(val, variables, parent)?;
-				let ptr = self
-					.builder
-					.build_struct_gep(val.into_pointer_value(), index as u32, "")
-					.unwrap();
-				self.builder.build_load(ptr, "")
-			}
+			CompExpression::DotAccess(val, key) => match &val.result_type {
+				CompType::Struct(data) => {
+					let index = data.clone().iter().position(|x| x.0 == key.0).unwrap();
+					let val = self.compile_expression(val, variables, parent)?;
+					let ptr = self
+						.builder
+						.build_struct_gep(val.into_pointer_value(), index as u32, "")
+						.unwrap();
+					self.builder.build_load(ptr, "")
+				}
+				CompType::Array(_, len) => {
+					if key.0 == "length" {
+						self.get_value(&CompData::Int(*len as i32)).unwrap()
+					} else {
+						panic!("Something has gone wrong: {} is not allowed as a property access for arrays, at {:?}", key.0, key.1)
+					}
+				}
+				_ => unreachable!(),
+			},
 			CompExpression::Typeof(exp) => {
 				// TODO: Optimise away once we introduce purity specifiers
 				let res_exp = self.compile_expression(exp, variables, parent)?;
