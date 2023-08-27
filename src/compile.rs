@@ -982,12 +982,12 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
 	let model = CodeModel::Default;
 	let path = Path::new(&settings.object_name);
 	let target =
-		Target::from_name("x86-64").ok_or_else(|| "Could not find target from name".to_string())?;
+		Target::from_name("arm64").ok_or_else(|| "Could not find target from name".to_string())?;
 	let target_machine = target
 		.create_target_machine(
 			&TargetMachine::get_default_triple(),
-			"x86-64",
-			"+avx2",
+			"apple-m1",
+			"",
 			opt,
 			reloc,
 			model,
