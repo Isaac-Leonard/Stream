@@ -1296,30 +1296,31 @@ pub struct Accesses {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IRVariable {}
+pub struct IRVariable {
+	ty: CompType,
+}
 #[derive(Debug, PartialEq, Clone)]
 pub enum Readable {
 	Variable(IRVariable),
 	Value(ConstantData),
 	Property(IRVariable, u32),
-	Index(IRVariable, u32),
+	Index(IRVariable, IRVariable),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Assignable {
 	Variable(IRVariable),
 	Property(IRVariable, u32),
-	Index(IRVariable, u32),
+	Index(IRVariable, IRVariable),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum IRExpression {
 	Typeof(Readable),
 	BinOp(Op, Readable, Readable),
-	OneOp(Prefix, Readable),
 	Call(Readable, Vec<Readable>),
 	Assign(Assignable, Readable),
-	IfElse(IRVariable, Vec<Self>, Vec<Self>),
-	WhileLoop(IRVariable, Vec<Self>),
+	IfElse(Readable, Vec<Self>, Vec<Self>),
+	WhileLoop(Readable, Vec<Self>),
 	Conversion(Readable, CompType),
 }
