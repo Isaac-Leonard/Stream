@@ -430,35 +430,56 @@ pub struct MemoryLocation {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
+	/// Accessing an objects properties via dot notation
 	DotAccess(ExpEnvironment, (String, Range<usize>)),
+	/// A literal value used in code
 	Value(CompData),
+	/// The list of expressions that make up an literal array
 	Array(Vec<ExpEnvironment>),
+	/// Getting the type of an expression
 	Typeof(ExpEnvironment),
+	/// Declaring a struct with its properties and expressions assigned to them
 	Struct(Vec<((String, Range<usize>), ExpEnvironment)>),
+	/// A binary operation
 	BinOp(Op, ExpEnvironment, ExpEnvironment),
+	/// Reading the value of a variable
 	Read(CompVariable),
+	/// An unary operation
 	OneOp(Prefix, ExpEnvironment),
+	/// Calling a function
 	Call(CompVariable, Vec<CompType>, Vec<ExpEnvironment>),
+	/// Assigning to something
 	Assign(MemoryLocation, ExpEnvironment),
+	/// Branching code based on some condition
 	IfElse(IfElse),
+	/// repeat some code while some condition is true
 	WhileLoop {
 		cond: ExpEnvironment,
 		body: ExpEnvironment,
 	},
+	/// Read a value at an array index
 	Index(ExpEnvironment, ExpEnvironment),
+	/// A list of expressions
 	List(Vec<ExpEnvironment>),
+	/// Converting the return type of an expression to a specified type
 	Conversion(ExpEnvironment, CompType),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ExpEnvironment {
+	/// The code that makes up this environment
 	// Probably should be boxing where recursion actually occurs but this reduces the amount of code
 	pub expression: Box<CompExpression>,
+	/// Hashmap of varables and their types
 	pub var_types: HashMap<String, CompType>,
+	/// The type this environment returns
 	pub result_type: CompType,
+	/// The span in the file of the section of code that makes up this environment
 	pub located: Range<usize>,
+	/// List of compilation errors
 	pub errors: Vec<CompError>,
 }
+
 impl ExpEnvironment {
 	pub fn is_if_else(&self) -> bool {
 		matches!(self.expression.as_ref(), CompExpression::IfElse(_))
@@ -781,6 +802,7 @@ pub struct Program {
 	pub scope: Scope,
 	pub body: ExpEnvironment,
 }
+
 impl Program {
 	pub fn get_exported(&self) -> Vec<CompVariable> {
 		self.scope
@@ -799,6 +821,7 @@ pub struct Scope {
 	pub preset_variables: HashMap<String, CompVariable>,
 	pub parent: Option<Box<Self>>,
 }
+
 impl Scope {
 	pub fn variable_exists(&self, name: &String) -> bool {
 		if self.variables.contains_key(name) || self.preset_variables.contains_key(name) {
@@ -899,6 +922,7 @@ pub enum ConstantData {
 	Bool(bool),
 	Null,
 }
+
 impl ConstantData {
 	pub fn to_type(self) -> CompType {
 		CompType::Constant(self)
@@ -963,6 +987,7 @@ pub enum CompType {
 	Touple(Vec<Self>),
 	Char,
 }
+
 impl CompType {
 	pub fn boxed(self) -> Box<Self> {
 		Box::new(self)
@@ -1299,6 +1324,7 @@ pub struct Accesses {
 pub struct IRVariable {
 	ty: CompType,
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Readable {
 	Variable(IRVariable),
