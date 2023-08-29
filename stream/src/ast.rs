@@ -275,6 +275,7 @@ impl Op {
 				_ => Err(self.invalid_comparison_msg(a, b)),
 			},
 			Add => Ok(match (a, b) {
+				// TODO: Make this recursive and allow for unknown or generic length strings
 				(Str(a), Str(b)) => match (a.as_ref(), b.as_ref()) {
 					(Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
 						Str(ConstantData::Int(*a + *b).to_type().boxed())
@@ -300,20 +301,36 @@ impl Op {
 					return Err(self.invalid_comparison_msg(a, b))
 				}
 				(Int, Int) => Int,
-				(Float, Float) => Float,
 				(Int, Constant(ConstantData::Int(_))) => Int,
 				(Constant(ConstantData::Int(_)), Int) => Int,
+				(Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+					Constant(ConstantData::Int(a + b))
+				}
+				(Float, Float) => Float,
 				(Float, Constant(ConstantData::Float(_))) => Float,
 				(Constant(ConstantData::Float(_)), Float) => Float,
 				(Constant(ConstantData::Float(a)), Constant(ConstantData::Float(b))) => {
 					Constant(ConstantData::Float(a + b))
 				}
-				(Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
-					Constant(ConstantData::Int(a + b))
-				}
 				_ => return Err(self.invalid_comparison_msg(a, b)),
 			}),
-			Sub | Div | Mult => match (a, b) {
+			Mult => match (a, b) {
+				(Int, Int) => Ok(Int),
+				(Int, Constant(ConstantData::Int(_))) | (Constant(ConstantData::Int(_)), Int) => {
+					Ok(Int)
+				}
+				(Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
+					Ok(Constant(ConstantData::Int(a * b)))
+				}
+				(Float, Float) => Ok(Float),
+				(Float, Constant(ConstantData::Float(_)))
+				| (Constant(ConstantData::Float(_)), Float) => Ok(Float),
+				(Constant(ConstantData::Float(a)), Constant(ConstantData::Float(b))) => {
+					Ok(Constant(ConstantData::Float(a * b)))
+				}
+				_ => Err(self.invalid_comparison_msg(a, b)),
+			},
+			Sub | Div => match (a, b) {
 				(Int, Int) => Ok(Int),
 				(Float, Float) => Ok(Float),
 				(Float, Constant(ConstantData::Float(_)))
