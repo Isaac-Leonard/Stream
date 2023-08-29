@@ -98,7 +98,7 @@ pub enum CustomType {
 	Callible(Vec<Self>, Box<Self>),
 	Union(Vec<Self>),
 	Lone(UseType),
-	Array(Box<Self>, i32),
+	Array(Box<Self>, Box<Self>),
 	Struct(Vec<(String, Self)>),
 	Constant(ConstantData),
 }

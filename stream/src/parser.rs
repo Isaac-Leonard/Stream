@@ -65,13 +65,7 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
 			.clone()
 			.map(Box::new)
 			.then_ignore(just(Token::Terminator))
-			.then(filter_map(|e, x| {
-				extract_or!(
-					x,
-					Token::Int,
-					Cheap::expected_input_found(e, Vec::new(), None)
-				)
-			}))
+			.then(ty.clone().map(Box::new))
 			.delimited_by(Token::StartArray, Token::EndArray)
 			.map(|x| CustomType::Array(x.0, x.1));
 

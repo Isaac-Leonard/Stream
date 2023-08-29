@@ -20,11 +20,9 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 		}
 		CustomType::Array(el_ty, len) => {
 			let el_ty = get_type!(el_ty);
+			let len = get_type!(len);
 			// TODO: replace len with an actual type and check it resolves to an Int
-			CompType::Array(
-				el_ty.boxed(),
-				CompType::Constant(ConstantData::Int(*len)).boxed(),
-			)
+			CompType::Array(el_ty.boxed(), len.boxed())
 		}
 		CustomType::Union(sub_types) => {
 			CompType::Union(map_vec!(sub_types, |x| get_type!(x))).flatten()
