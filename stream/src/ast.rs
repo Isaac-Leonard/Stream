@@ -921,6 +921,15 @@ pub enum ConstantData {
 }
 
 impl ConstantData {
+	pub fn to_comp_data(self) -> CompData {
+		match self {
+			Self::Int(val) => CompData::Int(val),
+			Self::Float(val) => CompData::Float(val),
+			Self::Bool(val) => CompData::Bool(val),
+			Self::Str(val) => CompData::Str(val),
+			Self::Null => CompData::Null,
+		}
+	}
 	pub fn to_type(self) -> CompType {
 		CompType::Constant(self)
 	}
@@ -970,7 +979,7 @@ pub enum CompType {
 	Not(Box<Self>),
 	Callible(Vec<Self>, Box<Self>),
 	Union(Vec<Self>),
-	Array(Box<CompType>, usize),
+	Array(Box<CompType>, Box<CompType>),
 	Struct(Vec<(String, CompType)>),
 	Null,
 	Bool,
@@ -1014,6 +1023,7 @@ impl CompType {
 	pub fn widen(&self) -> Self {
 		match self {
 			Self::Constant(data) => data.widen(),
+			Self::Array(el_ty, len) => Self::Array(el_ty.widen().boxed(), len.widen().boxed()),
 			x => x.clone(),
 		}
 	}
@@ -1082,7 +1092,10 @@ impl CompType {
 				self.clone()
 			}
 			Str(len) => Str(substitute_generics!(len).boxed()),
-			Array(el_ty, len) => Array(substitute_generics!(el_ty).boxed(), *len),
+			Array(el_ty, len) => Array(
+				substitute_generics!(el_ty).boxed(),
+				substitute_generics!(len).boxed(),
+			),
 			Struct(data) => Struct(map_vec!(data, |x| (x.0.clone(), substitute_generics!(x.1)))),
 			Union(types) => Union(map_vec!(types, |ty| substitute_generics!(ty))),
 			Touple(elements) => Touple(map_vec!(elements, |ty| substitute_generics!(ty))),
@@ -1142,7 +1155,7 @@ impl CompType {
 			// TODO: Match on types here
 				| (Constant(_), Constant(_))
 				| (Not(_), Not(_)) => Vec::new(),
-			(Array(a, _),Array(b,_)) => a.match_generics(b.as_ref()),
+			(Array(a, a_len),Array(b, b_len)) => a.match_generics(b.as_ref()).into_iter().chain(a_len.match_generics(b_len.as_ref())).collect(),
 			(Touple(a), Touple(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(x.1)).collect(),
 			(Struct(a), Struct(b)) => a.iter().zip(b).flat_map(|x| x.0.1.match_generics(&x.1.1)).collect(),
 			// TODO: Handling here is wrong and needs to be fixed
@@ -1164,6 +1177,7 @@ impl CompType {
 			CompType::Bool | CompType::Constant(ConstantData::Bool(_))
 		)
 	}
+
 	fn is_null(&self) -> bool {
 		self == &CompType::Null
 	}
@@ -1193,6 +1207,7 @@ impl CompType {
 	pub fn is_callable(&self) -> bool {
 		matches!(self, CompType::Callible(_, _))
 	}
+
 	pub fn flatten(&self) -> CompType {
 		use CompType::*;
 		match self {
@@ -1217,7 +1232,7 @@ impl CompType {
 			Type => Type,
 			Unknown => Unknown,
 			Ptr => Ptr,
-			Array(ty, len) => Array(ty.clone(), *len),
+			Array(ty, len) => Array(ty.clone(), len.clone()),
 			Int => Int,
 			Float => Float,
 			Str(len) => Str(len.clone()),

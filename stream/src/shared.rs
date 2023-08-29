@@ -21,7 +21,10 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 		CustomType::Array(el_ty, len) => {
 			let el_ty = get_type!(el_ty);
 			// TODO: replace len with an actual type and check it resolves to an Int
-			CompType::Array(Box::new(el_ty), *len as usize)
+			CompType::Array(
+				el_ty.boxed(),
+				CompType::Constant(ConstantData::Int(*len)).boxed(),
+			)
 		}
 		CustomType::Union(sub_types) => {
 			CompType::Union(map_vec!(sub_types, |x| get_type!(x))).flatten()
@@ -491,7 +494,7 @@ pub fn get_type(
 				(result_type, errs)
 			} else if let CompType::Array(_, len) = &val.result_type {
 				let result_type = if key == "length" {
-					CompType::Constant(ConstantData::Int(*len as i32))
+					len.as_ref().clone()
 				} else {
 					errs.push(CompError::PropertyDoesNotExistOnType(
 						key.clone(),
@@ -522,7 +525,14 @@ pub fn get_type(
 			let el_types = map_vec!(elements, |el| el.result_type.widen());
 			// TODO: Fix this as its hacky and will cause a crash
 			(
-				CompType::Array(Box::new(el_types[0].clone()), elements.len()),
+				CompType::Array(
+					el_types
+						.first()
+						.cloned()
+						.unwrap_or(CompType::Unknown)
+						.boxed(),
+					CompType::Constant(ConstantData::Int(elements.len() as i32)).boxed(),
+				),
 				errs,
 			)
 		}
@@ -613,7 +623,10 @@ pub fn get_type(
 				}
 			}
 			let exp_ty = if let CompType::Touple(elements) = exp_ty {
-				CompType::Array(Box::new(get_top_type(&elements)), elements.len())
+				CompType::Array(
+					get_top_type(&elements).boxed(),
+					CompType::Constant(ConstantData::Int(elements.len() as i32)).boxed(),
+				)
 			} else {
 				exp_ty
 			};

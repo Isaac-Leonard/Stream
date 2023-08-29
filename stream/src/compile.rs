@@ -47,11 +47,14 @@ impl CompType {
 					.ptr_type(inkwell::AddressSpace::Generic)
 					.as_basic_type_enum()
 			}
-			Array(ty, len) => ty
-				.get_compiler_type(context)?
-				.array_type(len as u32)
-				.ptr_type(inkwell::AddressSpace::Generic)
-				.as_basic_type_enum(),
+			Array(ty, len) => match len.as_ref() {
+				Constant(ConstantData::Int(len)) => ty
+					.get_compiler_type(context)?
+					.array_type(*len as u32)
+					.ptr_type(inkwell::AddressSpace::Generic)
+					.as_basic_type_enum(),
+				_ => panic!("Cannot compile arrays without their length"),
+			},
 			Type => context.i32_type().as_basic_type_enum(),
 			Int => context.i32_type().as_basic_type_enum(),
 			Char => context.i8_type().as_basic_type_enum(),
@@ -691,8 +694,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 					self.builder.build_load(ptr, "")
 				}
 				CompType::Array(_, len) => {
-					if key.0 == "length" {
-						self.get_value(&CompData::Int(*len as i32)).unwrap()
+					if key.0 == "length"&&let CompType::Constant(len)=len.as_ref() {
+						let len = len.clone().to_comp_data();
+						self.get_value(&len).unwrap()
 					} else {
 						panic!("Something has gone wrong: {} is not allowed as a property access for arrays, at {:?}", key.0, key.1)
 					}
@@ -847,7 +851,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 					.into_pointer_type()
 					.get_element_type()
 					.into_array_type();
-				let len = if let CompType::Array(_, len) = ty {
+				let len = if let CompType::Array(_, len) = ty && let &CompType::Constant(ConstantData::Int(len))=len.as_ref(){
 					len
 				} else {
 					panic!("Exprected array here, wtf")
