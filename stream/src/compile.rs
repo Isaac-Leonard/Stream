@@ -1,13 +1,13 @@
+use crate::ast1::{ConstantData, Op};
+use crate::ast3::*;
 use crate::settings::Settings;
-use crate::{ast::*, map_vec};
+use crate::{ast2::*, map_vec};
 use fxhash::hash32;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-
 use inkwell::debug_info::{AsDIScope, DICompileUnit, DebugInfoBuilder};
 use inkwell::module::{Linkage, Module};
 use inkwell::passes::PassManager;
-
 use inkwell::targets::{
 	CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
@@ -18,7 +18,6 @@ use inkwell::values::{
 	AggregateValue, BasicMetadataValueEnum, BasicValueEnum, CallableValue, FloatMathValue,
 	IntMathValue, IntValue, PointerValue,
 };
-/// Some parts of this file have been directly taken from the collider scope example from inkwell
 use inkwell::values::{BasicValue, FunctionValue};
 use inkwell::OptimizationLevel;
 use std::collections::HashMap;

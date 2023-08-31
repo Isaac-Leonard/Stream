@@ -1,4 +1,7 @@
-use crate::ast::*;
+use crate::ast1::*;
+use crate::ast2::*;
+use crate::ast3::*;
+
 use crate::errors::CompError;
 use crate::lexer;
 use crate::map_vec;

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use stream::ast::*;
+use stream::ast1::*;
 
 pub enum ImCompleteCompletionItem {
 	Variable(String),
@@ -45,7 +45,7 @@ pub fn get_completion_of(
 			true => get_completion_of(&rhs, definition_map, ident_offset),
 			false => false,
 		},
-		Call(callee, args) => {
+		Call(callee, _, args) => {
 			definition_map.insert(
 				callee.name.clone(),
 				ImCompleteCompletionItem::Variable(callee.name.clone()),

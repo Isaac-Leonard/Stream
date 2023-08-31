@@ -1,7 +1,6 @@
-use std::ops::Range;
-
-use crate::{ast::*, extract_or, lexer::Token};
+use crate::{ast1::*, extract_or, lexer::Token};
 use chumsky::{error::Cheap, prelude::*, recursive::Recursive};
+use std::ops::Range;
 
 fn raw_data_parser() -> impl Parser<Token, RawData, Error = Cheap<Token>> {
 	filter_map(|e, x| match x {
@@ -51,11 +50,30 @@ fn type_parser() -> impl Parser<Token, CustomType, Error = Cheap<Token>> {
 			)
 			.map(|x| CustomType::Lone(UseType::complex(x.0, x.1.unwrap_or_default())))
 			.boxed();
-		let callible = (ty.clone().separated_by(separator()))
-			.delimited_by(Token::StartBracket, Token::EndBracket)
-			.then(just(Token::Colon).ignore_then(ty.clone()))
-			.map(|x| CustomType::Callible(x.0, Box::new(x.1)))
+
+		let generics = token_ident()
+			.then(just(Token::Colon).ignore_then(ty.clone()).or_not())
+			.separated_by(separator())
+			.at_least(1)
+			.delimited_by(
+				Token::Operator(String::from("<")),
+				Token::Operator(String::from(">")),
+			)
+			.or_not()
+			.map(Option::unwrap_or_default)
 			.boxed();
+
+		let callible = generics
+			.clone()
+			.then(
+				ty.clone()
+					.separated_by(separator())
+					.delimited_by(Token::StartBracket, Token::EndBracket)
+					.then(just(Token::Colon).ignore_then(ty.clone())),
+			)
+			.map(|(generics, (args, ret))| CustomType::Callible(generics, args, Box::new(ret)))
+			.boxed();
+
 		let union = (constant.clone())
 			.or(singular.clone().or(callible.clone()))
 			.separated_by(just(Token::Operator("|".to_string())))
@@ -128,7 +146,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 			.delimited_by(Token::StartArray, Token::EndArray)
 			.map_with_span(|x, s| (s, Array(x)));
 
-		let func_declaration = token_ident()
+		let generics = token_ident()
 			.then(just(Token::Colon).ignore_then(type_parser()).or_not())
 			.separated_by(separator())
 			.at_least(1)
@@ -138,6 +156,10 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 			)
 			.or_not()
 			.map(Option::unwrap_or_default)
+			.boxed();
+
+		let func_declaration = generics
+			.clone()
 			.then(
 				token_ident()
 					.map_with_span(|n, s| (n, s))
@@ -315,18 +337,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 
 		let type_declaration = just(Token::Type)
 			.ignore_then(token_ident())
-			.then(
-				token_ident()
-					.then(just(Token::Colon).ignore_then(type_parser()).or_not())
-					.separated_by(separator())
-					.at_least(1)
-					.delimited_by(
-						Token::Operator(String::from("<")),
-						Token::Operator(String::from(">")),
-					)
-					.or_not()
-					.map(Option::unwrap_or_default),
-			)
+			.then(generics.clone())
 			.then_ignore(just(Token::Operator(String::from("="))))
 			.then(type_parser())
 			.labelled("Type assignment")

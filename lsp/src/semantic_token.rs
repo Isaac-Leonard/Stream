@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use stream::ast;
+use stream::ast1;
 use tower_lsp::lsp_types::{SemanticToken, SemanticTokenType};
 
 pub const LEGEND_TYPE: &[SemanticTokenType] = &[
@@ -19,7 +19,7 @@ pub struct ImCompleteSemanticToken {
 	pub token_type: usize,
 }
 
-pub fn semantic_token_from_ast(ast: &ast::ExpEnvironment) -> Vec<ImCompleteSemanticToken> {
+pub fn semantic_token_from_ast(ast: &ast1::ExpEnvironment) -> Vec<ImCompleteSemanticToken> {
 	let mut semantic_tokens = vec![];
 
 	semantic_token_from_expr(ast, &mut semantic_tokens);
@@ -27,10 +27,10 @@ pub fn semantic_token_from_ast(ast: &ast::ExpEnvironment) -> Vec<ImCompleteSeman
 }
 
 pub fn semantic_token_from_expr(
-	expr: &ast::ExpEnvironment,
+	expr: &ast1::ExpEnvironment,
 	semantic_tokens: &mut Vec<ImCompleteSemanticToken>,
 ) {
-	use ast::CompExpression::*;
+	use ast1::CompExpression::*;
 	match expr.expression.as_ref() {
 		Value(_) => {}
 		List(_) => {}
@@ -59,7 +59,7 @@ pub fn semantic_token_from_expr(
 			semantic_token_from_expr(lhs, semantic_tokens);
 			semantic_token_from_expr(rhs, semantic_tokens);
 		}
-		Call(var, params) => {
+		Call(var, _, params) => {
 			semantic_tokens.push(ImCompleteSemanticToken {
 				start: expr.located.start,
 				length: expr.located.start

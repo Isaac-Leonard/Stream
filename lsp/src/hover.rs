@@ -1,4 +1,4 @@
-use stream::ast::*;
+use stream::ast1::*;
 
 macro_rules! find_in_list {
 	($list:expr,$pos:expr) => {
@@ -17,7 +17,7 @@ pub fn hover(ast: &ExpEnvironment, pos: u32) -> Option<CompType> {
 	};
 	match ast.expression.as_ref() {
 		Read(var) => return Some(var.typing.clone()),
-		Call(var, args) => {
+		Call(var, _, args) => {
 			find_in_list!(args, pos);
 			return Some(var.typing.clone());
 		}

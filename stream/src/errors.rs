@@ -1,4 +1,6 @@
-use crate::ast::*;
+use crate::ast1::*;
+use crate::ast2::*;
+use crate::ast3::*;
 use std::fmt::{Display, Formatter, Result};
 use std::ops::Range;
 

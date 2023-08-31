@@ -1,4 +1,6 @@
-use crate::ast::*;
+use crate::ast1::*;
+use crate::ast2::*;
+use crate::ast3::*;
 use crate::errors::*;
 use crate::map_vec;
 use crate::settings::Settings;
@@ -9,11 +11,12 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 	let mut errors = Vec::new();
 	macro_rules! get_type {
 		($ty:expr) => {{
-			let mut res = transform_type($ty, scope);
+			let mut res = transform_type($ty, &scope);
 			errors.append(&mut res.1);
 			res.0
 		}};
 	}
+
 	let ty = match ty {
 		CustomType::Struct(data) => {
 			CompType::Struct(map_vec!(data, |x| { (x.0.clone(), get_type!(&x.1)) }))
@@ -28,14 +31,25 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 			CompType::Union(map_vec!(sub_types, |x| get_type!(x))).flatten()
 		}
 
-		CustomType::Callible(args, ret) => {
+		CustomType::Callible(generics, args, ret) => {
+			let generics = map_vec!(generics, |(name, ty)| (
+				name,
+				ty.as_ref()
+					.map(|ty| get_type!(ty))
+					.unwrap_or(CompType::Unknown)
+			));
+			let mut scope = scope.clone();
+			for (pos, (name, ty)) in generics.into_iter().enumerate() {
+				eprint!("{}", name);
+				scope.add_type(name.to_string(), CompType::Generic(pos, ty.boxed()));
+			}
 			let args = map_vec!(args, |x| get_type!(x));
 			let ret = get_type!(ret);
 			CompType::Callible(args, Box::new(ret))
 		}
 		CustomType::Lone(ty) => {
-			let x = scope.get_type(&ty.name);
-			if let Ok(found_ty) = x {
+			let found_type = scope.get_type(&ty.name);
+			if let Ok(found_ty) = found_type {
 				let generics = map_vec!(ty.generics, |x| get_type!(x));
 				// We want to preserve lone generics
 				// As in we only want to substitute generics that are part of another type
@@ -203,7 +217,7 @@ fn transform_exp(
 			let cond = get_exp!(cond, env, scope);
 			let then = get_exp!(left, env, scope);
 			let otherwise = get_exp!(right, env, scope);
-			CompExpression::IfElse(crate::ast::IfElse {
+			CompExpression::IfElse(crate::ast2::IfElse {
 				cond,
 				then,
 				otherwise,
@@ -661,11 +675,10 @@ pub fn get_type(
 						located,
 					))
 				}
-				let mut generic_substitutions = Vec::new();
 				for (x, y) in arg_types.iter().zip(args) {
-					if x.contains_generic() {
-						generic_substitutions.push((x, y))
-					} else if !x.super_of(&y.result_type) {
+					let (x, mut errors) = x.substitute_generics(generics);
+					errs.append(&mut errors);
+					if !x.super_of(&y.result_type) {
 						errs.push(CompError::InvalidAssignment(
 							y.result_type.clone(),
 							x.clone(),
@@ -673,7 +686,9 @@ pub fn get_type(
 						))
 					}
 				}
-				ret.as_ref().clone()
+				let (ret, mut errors) = ret.substitute_generics(generics);
+				errs.append(&mut errors);
+				ret
 			} else {
 				errs.push(CompError::NonfunctionCall(
 					var.get_name(),

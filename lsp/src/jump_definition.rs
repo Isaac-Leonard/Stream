@@ -1,5 +1,5 @@
 use std::ops::Range;
-use stream::ast::*;
+use stream::ast1::*;
 
 /// return (need_to_continue_search, founded reference)
 type Spanned<T> = (T, Range<usize>);
@@ -30,7 +30,7 @@ pub fn get_definition_of_expr(
 			(false, None) => (false, None),
 			(true, Some(value)) | (false, Some(value)) => (false, Some(value)),
 		},
-		Call(callee, args) => {
+		Call(callee, _, args) => {
 			if let Some(loc) = &callee.declared_at {
 				let call_end = args
 					.get(0)

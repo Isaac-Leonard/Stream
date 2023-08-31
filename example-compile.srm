@@ -4,9 +4,9 @@ from "stdlib.srm" import {
 
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
-let mapArrInt5=(arr:[Int; 5], fn:(Int, Int):Int):[Int; 5]=>{
+let mapArrInt5= <T>(arr:[T; 5], fn:(T, Int):T):[T; 5]=>{
     let x:Int=0;
-    let newArr:[Int; 5]=[0,0,0,0,0];
+    let newArr:[T; 5]=[0,0,0,0,0];
     while x<5{
         newArr[x]=fn(arr[x], x)
 	x=x+1

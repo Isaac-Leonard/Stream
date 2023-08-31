@@ -1,5 +1,5 @@
 use std::ops::Range;
-use stream::ast::*;
+use stream::ast1::*;
 
 use im_rc::Vector;
 
@@ -78,7 +78,7 @@ pub fn get_reference_of_expr(
 				include_self,
 			);
 		}
-		Call(callee, args) => {}
+		Call(callee, _, args) => {}
 		IfElse(if_exp) => {
 			get_reference_of_expr(
 				&if_exp.cond,

@@ -1,5 +1,7 @@
 #![feature(let_chains)]
-pub mod ast;
+pub mod ast1;
+pub mod ast2;
+pub mod ast3;
 pub mod compile;
 pub mod errors;
 pub mod lexer;
