@@ -401,8 +401,6 @@ pub struct ExpEnvironment {
 	/// The code that makes up this environment
 	// Probably should be boxing where recursion actually occurs but this reduces the amount of code
 	pub expression: Box<CompExpression>,
-	/// Hashmap of varables and their types
-	pub var_types: HashMap<String, CompType>,
 	/// The type this environment returns
 	pub result_type: CompType,
 	/// The span in the file of the section of code that makes up this environment
@@ -638,7 +636,6 @@ impl ExpEnvironment {
 											i as i32,
 										))),
 										result_type: CompType::Int,
-										var_types: x.var_types.clone(),
 										located: 0..0,
 										errors: Vec::new(),
 									}),
@@ -648,7 +645,6 @@ impl ExpEnvironment {
 							element.clone(),
 						)),
 						result_type: element.result_type.clone(),
-						var_types: x.var_types.clone(),
 						located: 0..0,
 						errors: Vec::new(),
 					})
@@ -657,14 +653,12 @@ impl ExpEnvironment {
 				list.push(ExpEnvironment {
 					expression: Box::new(CompExpression::Read(var)),
 					result_type: x.result_type.clone(),
-					var_types: x.var_types.clone(),
 					located: x.located.clone(),
 					errors: Vec::new(),
 				});
 				Some(ExpEnvironment {
 					expression: Box::new(CompExpression::List(list)),
 					result_type: x.result_type.clone(),
-					var_types: x.var_types.clone(),
 					located: x.located.clone(),
 					errors: x.errors.clone(),
 				})

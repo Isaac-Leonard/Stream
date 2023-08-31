@@ -327,12 +327,6 @@ fn resolve_scope<'a>(
 
 fn get_env_from_scope(scope: &Scope) -> ExpEnvironment {
 	ExpEnvironment {
-		var_types: scope
-			.variables
-			.iter()
-			.map(|x| (x.0.clone(), x.1.get_type()))
-			.clone()
-			.collect(),
 		result_type: CompType::Null,
 		located: 0..0,
 		expression: Box::new(CompExpression::List(Vec::new())),
