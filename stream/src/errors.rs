@@ -1,6 +1,6 @@
 use crate::ast1::*;
 use crate::ast2::*;
-use crate::ast3::*;
+
 use std::fmt::{Display, Formatter, Result};
 use std::ops::Range;
 
@@ -54,7 +54,7 @@ impl Display for FilePosition {
 	}
 }
 pub fn get_pos(pos: i32, lines: &[i32]) -> FilePosition {
-	let line = lines.iter().position(|x| *x > pos).unwrap() as usize - 1;
+	let line = lines.iter().position(|x| *x > pos).unwrap() - 1;
 	let column = pos - lines[line];
 	FilePosition {
 		line: line as i32,

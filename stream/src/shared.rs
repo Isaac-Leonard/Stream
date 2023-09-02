@@ -4,7 +4,7 @@ use crate::ast3::*;
 use crate::errors::*;
 use crate::map_vec;
 use crate::settings::Settings;
-use std::collections::HashMap;
+
 use std::ops::Range;
 
 pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompError>) {
@@ -90,7 +90,7 @@ fn bin_exp(
 pub fn transform_exp(
 	(loc, exp): &SpannedExpression,
 	env: &ExpEnvironment,
-	mut scope: &mut Scope,
+	scope: &mut Scope,
 	file: &str,
 ) -> (ExpEnvironment, Vec<CompError>) {
 	use Expression::*;
@@ -137,7 +137,7 @@ pub fn transform_exp(
 			let exp_ty = exp.result_type.clone();
 			let has_type = scope.variable_has_type(&name.0);
 			if !has_type {
-				scope = scope.set_variable_type(&name.0, &exp_ty);
+				scope.set_variable_type(&name.0, &exp_ty);
 			}
 			scope.set_variable_initialised(&name.0);
 			let var = scope.get_variable(&name.0);
@@ -273,7 +273,7 @@ fn resolve_scope<'a>(
 	// TODO: Sort out errors and stuff here
 	match ast {
 		Expression::TypeDeclaration(name, generics, declared_type) => {
-			if !scope.types.contains_key(name) {
+			if scope.get_type(name).is_err() {
 				let mut subscope = scope.clone();
 				for (pos, (name, constraint)) in generics.iter().enumerate() {
 					let constraint = match constraint {
@@ -298,7 +298,7 @@ fn resolve_scope<'a>(
 			scope
 		}
 		Expression::InitAssign(external, constant, name, declared_type, _exp) => {
-			if scope.variables.contains_key(&name.0) {
+			if scope.variable_exists(&name.0) {
 				scope
 			} else {
 				let typing = match declared_type {
@@ -325,12 +325,11 @@ fn resolve_scope<'a>(
 	}
 }
 
-fn get_env_from_scope(scope: &Scope) -> ExpEnvironment {
+fn get_env_from_scope(_scope: &Scope) -> ExpEnvironment {
 	ExpEnvironment {
 		result_type: CompType::Null,
 		located: 0..0,
 		expression: Box::new(CompExpression::List(Vec::new())),
-		errors: Vec::new(),
 	}
 }
 
@@ -407,7 +406,6 @@ pub fn get_env(
 			expression: Box::new(exp.clone()),
 			result_type: ty,
 			located,
-			..env.clone()
 		},
 		errs,
 	)
@@ -677,14 +675,17 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
 	}
 }
 
-fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAst, Vec<CompError>) {
+fn transform_function(
+	func: &Function,
+	scope: &mut Scope,
+	file: &str,
+) -> (FunctionAst, Vec<CompError>) {
 	let mut errs = Vec::new();
-	let mut scope = scope.clone();
 	for (pos, (name, constraint)) in func.generics.iter().enumerate() {
 		let constraint = match constraint {
 			Some(ty) => {
 				// TODO: Hacky error reporting until we clean this part up
-				let (ty, mut errors) = transform_type(ty, &scope);
+				let (ty, mut errors) = transform_type(ty, scope);
 				errs.append(&mut errors);
 				ty
 			}
@@ -693,40 +694,30 @@ fn transform_function(func: &Function, scope: &Scope, file: &str) -> (FunctionAs
 		scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
 	}
 
-	let mut temp_variables = Vec::new();
+	let mut arguments = Vec::new();
 	for arg in &func.args {
 		let arg_ty = if let Some(ty) = &arg.1 {
-			let (ty, mut errors) = transform_type(ty, &scope);
+			let (ty, mut errors) = transform_type(ty, scope);
 			errs.append(&mut errors);
 			ty
 		} else {
 			CompType::Unknown
 		};
-		let var = CompVariable {
+		arguments.push(CompVariable {
 			name: arg.0 .0.clone(),
 			constant: true,
 			typing: arg_ty,
 			external: false,
 			declared_at: Some((file.to_string(), arg.0 .1.clone())),
 			initialised: true,
-		};
-		temp_variables.push(var);
+		});
 	}
-	let (return_type, mut errors) = transform_type(&func.return_type, &scope);
+	let (return_type, mut errors) = transform_type(&func.return_type, scope);
 	errs.append(&mut errors);
-	let arguments = temp_variables.clone();
-	let mut local_variables = HashMap::new();
-	for var in temp_variables {
-		local_variables.insert(var.get_name(), var);
-	}
+	let arguments = arguments;
 	let func = match &func.body {
 		Some(body) => {
-			let mut local_scope = Scope {
-				parent: Some(Box::new(scope.clone())),
-				preset_variables: local_variables,
-				variables: HashMap::new(),
-				types: HashMap::new(),
-			};
+			let mut local_scope = scope.create_child(arguments.clone());
 			let local_scope = resolve_scope(body.as_ref(), &mut local_scope, file);
 			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
 			errs.append(&mut errors);

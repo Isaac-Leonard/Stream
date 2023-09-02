@@ -1,6 +1,6 @@
 use crate::ast1::*;
 use crate::ast2::*;
-use crate::ast3::*;
+
 
 use crate::errors::CompError;
 use crate::lexer;
@@ -10,6 +10,7 @@ use crate::settings::Settings;
 use crate::shared::*;
 use chumsky::Parser;
 use std::path::Path;
+
 use std::{collections::HashMap, fs};
 pub fn calc_lines(file: &str) -> Vec<i32> {
 	let newlines_positions = file.split('\n').map(|x| x.len()).collect::<Vec<_>>();
@@ -22,26 +23,6 @@ pub fn calc_lines(file: &str) -> Vec<i32> {
 	positions
 }
 
-pub fn get_global_scope() -> Scope {
-	let mut types = HashMap::new();
-	types.insert("Char".to_string(), CompType::Char);
-	types.insert("Int".to_string(), CompType::Int);
-	types.insert("Float".to_string(), CompType::Float);
-	types.insert("Ptr".to_string(), CompType::Ptr);
-	types.insert("Bool".to_string(), CompType::Bool);
-	types.insert("Null".to_string(), CompType::Null);
-	types.insert(
-		"Str".to_string(),
-		CompType::Str(CompType::Generic(0, CompType::Int.boxed()).boxed()),
-	);
-	let variables = HashMap::new();
-	Scope {
-		preset_variables: HashMap::new(),
-		variables,
-		types,
-		parent: None,
-	}
-}
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImportMap {
 	//TODO: Change string to path
@@ -151,7 +132,7 @@ pub fn parse_files(
 }
 
 pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
-	let mut global_scope = get_global_scope();
+	let mut global_scope = Scope::get_global_scope();
 	let mut import_errors = Vec::new();
 	if let Some(program) = programs.get(name) {
 		for import in program.depends_on.clone() {
@@ -159,15 +140,15 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
 				transform_files(&import.file, programs);
 				if let Some(prog) = programs.get(&import.file)  && let Some(ref prog)=&prog.program {
                     if let Import::All(None) = import.imports {
-                        prog.get_exported().iter().for_each(|x| {
-                            global_scope.variables.insert(x.get_name(), x.clone());
-                        });
+						for variable in prog.get_exported(){
+                            global_scope.add_variable(variable);
+                        };
                     } else if let Import::Specific(imports) = import.imports {
-                        prog.get_exported().iter().for_each(|x| {
+						for x in                        prog.get_exported(){
                             if imports.iter().any(|y| y.0 == x.get_name()) {
-                                global_scope.variables.insert(x.get_name(), x.clone());
+                                global_scope.add_variable(x);
                             }
-                        });
+                        };
                     } else {
                         panic!("Renaming imports is currently not supported, sorry")
                     }
@@ -190,5 +171,23 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
 		program.program = Some(prog.0);
 		program.errors = import_errors;
 		program.errors.append(&mut prog.1);
+	}
+}
+
+impl Scope {
+	pub fn get_global_scope() -> Scope {
+		let mut global_scope = Scope::default();
+
+		global_scope.add_type("Char".to_string(), CompType::Char);
+		global_scope.add_type("Int".to_string(), CompType::Int);
+		global_scope.add_type("Float".to_string(), CompType::Float);
+		global_scope.add_type("Ptr".to_string(), CompType::Ptr);
+		global_scope.add_type("Bool".to_string(), CompType::Bool);
+		global_scope.add_type("Null".to_string(), CompType::Null);
+		global_scope.add_type(
+			"Str".to_string(),
+			CompType::Str(CompType::Generic(0, CompType::Int.boxed()).boxed()),
+		);
+		global_scope
 	}
 }

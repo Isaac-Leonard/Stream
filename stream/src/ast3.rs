@@ -2,11 +2,11 @@ use crate::ast1::*;
 use crate::ast2::*;
 use crate::errors::CompError;
 use crate::map_vec;
-use std::cell::RefCell;
-use std::fmt::{self, Display, Formatter};
-use std::hash::{self, Hasher};
-use std::rc::Rc;
-use std::{collections::HashMap, ops::Range};
+
+
+use std::hash::{Hasher};
+
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Accesses {
@@ -103,7 +103,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 		Read(var) => {
 			let exists = accesses.iter_mut().find(|access| &access.variable == var);
 			if var.get_type().is_primitive() {
-				if let Some(mut access) = exists {
+				if let Some(access) = exists {
 					access.read += 1;
 				} else {
 					accesses.push(Accesses {
@@ -113,18 +113,16 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 						capture: 0,
 					})
 				}
-			} else {
-				if let Some(access) = exists {
-					access.capture += 1;
-				} else {
-					accesses.push(Accesses {
-						variable: var.clone(),
-						read: 0,
-						write: 0,
-						capture: 1,
-					})
-				}
-			}
+			} else if let Some(access) = exists {
+   					access.capture += 1;
+   				} else {
+   					accesses.push(Accesses {
+   						variable: var.clone(),
+   						read: 0,
+   						write: 0,
+   						capture: 1,
+   					})
+   				}
 		}
 		WhileLoop { cond, body } => {
 			count_max_references_in_env(cond, accesses);
@@ -176,7 +174,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 					count_max_references_in_env(env, accesses)
 				}
 			}
-			if let Some(mut access) = accesses
+			if let Some(access) = accesses
 				.iter_mut()
 				.find(|access| access.variable == lvalue.variable)
 			{
@@ -233,6 +231,7 @@ pub fn resolve_memory(
 		}
 	}
 }
+
 impl FunctionAst {
 	#[warn(clippy::unimplemented)]
 	fn replace_all_constant_generic_calls(&mut self) {

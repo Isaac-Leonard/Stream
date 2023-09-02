@@ -2,10 +2,11 @@ use crate::ast1::*;
 use crate::ast3::*;
 use crate::errors::CompError;
 use crate::map_vec;
+use std::cell::Ref;
 use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter};
-use std::hash::{self, Hasher};
-use std::rc::Rc;
+use std::hash::{Hasher};
+use std::sync::Arc;
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Debug, PartialEq, Clone, Hash)]
@@ -405,8 +406,6 @@ pub struct ExpEnvironment {
 	pub result_type: CompType,
 	/// The span in the file of the section of code that makes up this environment
 	pub located: Range<usize>,
-	/// List of compilation errors
-	pub errors: Vec<CompError>,
 }
 
 impl ExpEnvironment {
@@ -637,7 +636,6 @@ impl ExpEnvironment {
 										))),
 										result_type: CompType::Int,
 										located: 0..0,
-										errors: Vec::new(),
 									}),
 									element.result_type.clone(),
 								)],
@@ -646,7 +644,6 @@ impl ExpEnvironment {
 						)),
 						result_type: element.result_type.clone(),
 						located: 0..0,
-						errors: Vec::new(),
 					})
 					.collect();
 
@@ -654,13 +651,11 @@ impl ExpEnvironment {
 					expression: Box::new(CompExpression::Read(var)),
 					result_type: x.result_type.clone(),
 					located: x.located.clone(),
-					errors: Vec::new(),
 				});
 				Some(ExpEnvironment {
 					expression: Box::new(CompExpression::List(list)),
 					result_type: x.result_type.clone(),
 					located: x.located.clone(),
-					errors: x.errors.clone(),
 				})
 			}
 			_ => None,
@@ -722,7 +717,7 @@ impl ExpEnvironment {
 	}
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Program {
 	pub scope: Scope,
 	pub body: ExpEnvironment,
@@ -730,110 +725,156 @@ pub struct Program {
 
 impl Program {
 	pub fn get_exported(&self) -> Vec<CompVariable> {
-		self.scope
+		self.scope.get_exported()
+	}
+}
+
+#[derive(Debug, PartialEq, Default)]
+struct InnerScope {
+	parent: Option<Scope>,
+	types: HashMap<String, CompType>,
+	variables: HashMap<String, CompVariable>,
+	preset_variables: HashMap<String, CompVariable>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Scope(Arc<RefCell<InnerScope>>);
+
+impl PartialEq for Scope {
+	fn eq(&self, other: &Self) -> bool {
+		*self.0.borrow() == *other.0.borrow()
+	}
+}
+
+impl Scope {
+	fn get_inner(&self) -> Ref<'_, InnerScope> {
+		self.0.borrow()
+	}
+
+	/// Returns an option referencing the parent scope if it exists
+	pub fn get_parent(&self) -> Option<Self> {
+		self.0.borrow().parent.clone()
+	}
+
+	pub fn get_variables(&self) -> HashMap<String, CompVariable> {
+		self.get_inner().variables.clone()
+	}
+
+	pub fn get_types(&self) -> HashMap<String, CompType> {
+		self.get_inner().types.clone()
+	}
+
+	/// Takes in an active scope and a list of varables this scope will have that the parent doesn't
+	pub fn create_child(&self, preset_variables: Vec<CompVariable>) -> Self {
+		Self(Arc::new(RefCell::new(InnerScope {
+			parent: Some(self.clone()),
+			types: HashMap::new(),
+			preset_variables: preset_variables
+				.into_iter()
+				.map(|var| (var.get_name(), var))
+				.collect(),
+			variables: HashMap::new(),
+		})))
+	}
+
+	pub fn get_exported(&self) -> Vec<CompVariable> {
+		self.0
+			.borrow()
 			.variables
 			.iter()
 			.filter(|x| x.1.is_extern())
 			.map(|x| x.1.clone())
 			.collect()
 	}
-}
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Scope {
-	pub types: HashMap<String, CompType>,
-	pub variables: HashMap<String, CompVariable>,
-	pub preset_variables: HashMap<String, CompVariable>,
-	pub parent: Option<Box<Self>>,
-}
-
-impl Scope {
 	pub fn variable_exists(&self, name: &String) -> bool {
-		if self.variables.contains_key(name) || self.preset_variables.contains_key(name) {
+		if self.0.borrow().variables.contains_key(name)
+			|| self.0.borrow().preset_variables.contains_key(name)
+		{
 			true
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).variable_exists(name),
+			match self.get_parent() {
+				Some(parent) => parent.variable_exists(name),
 				None => false,
 			}
 		}
 	}
 
 	pub fn add_variable(&mut self, var: CompVariable) -> &mut Scope {
-		self.variables.insert(var.get_name(), var);
+		self.0.borrow_mut().variables.insert(var.get_name(), var);
 		self
 	}
 
 	pub fn add_type(&mut self, name: String, ty: CompType) -> &mut Scope {
-		self.types.insert(name, ty);
+		self.0.borrow_mut().types.insert(name, ty);
 		self
 	}
 
 	pub fn set_variable_initialised(&mut self, name: &String) {
-		if let Some(var) = self.variables.get_mut(name) {
+		if let Some(var) = self.0.borrow_mut().variables.get_mut(name) {
 			var.set_initialised();
 		}
 	}
 
 	pub fn set_variable_type<'a>(&'a mut self, name: &String, ty: &CompType) -> &'a mut Scope {
-		if let Some(v) = self.variables.get_mut(name) {
+		if let Some(v) = self.0.borrow_mut().variables.get_mut(name) {
 			v.set_type(ty.clone());
 		}
 		self
 	}
 
 	pub fn get_variable(&self, name: &String) -> Result<CompVariable, String> {
-		if let Some(var) = self.variables.get(name) {
+		if let Some(var) = self.0.borrow().variables.get(name) {
 			Ok(var.clone())
-		} else if let Some(var) = self.preset_variables.get(name) {
+		} else if let Some(var) = self.0.borrow().preset_variables.get(name) {
 			Ok(var.clone())
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).get_variable(name),
+			match self.get_parent() {
+				Some(parent) => parent.get_variable(name),
 				None => Err(format!("Cannot find variable '{}'", name)),
 			}
 		}
 	}
 
 	pub fn get_type(&self, name: &String) -> Result<CompType, CompError> {
-		if let Some(ty) = self.types.get(name) {
+		if let Some(ty) = self.0.borrow().types.get(name) {
 			Ok(ty.clone())
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).get_type(name),
+			match self.get_parent() {
+				Some(parent) => parent.get_type(name),
 				None => Err(CompError::CannotFindType(name.clone(), 0..0)),
 			}
 		}
 	}
 
 	pub fn constant_exists(&self, name: &String) -> bool {
-		if let Some(var) = self.variables.get(name) {
+		if let Some(var) = self.0.borrow().variables.get(name) {
 			var.is_const()
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).constant_exists(name),
+			match self.get_parent() {
+				Some(parent) => parent.constant_exists(name),
 				None => false,
 			}
 		}
 	}
 
 	pub fn variable_initialised(&self, name: &String) -> bool {
-		if let Some(var) = self.variables.get(name) {
+		if let Some(var) = self.0.borrow().variables.get(name) {
 			var.is_initialised()
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).constant_exists(name),
+			match self.get_parent() {
+				Some(parent) => parent.constant_exists(name),
 				None => false,
 			}
 		}
 	}
 
 	pub fn variable_has_type(&self, name: &String) -> bool {
-		if let Some(var) = self.variables.get(name) {
+		if let Some(var) = self.0.borrow().variables.get(name) {
 			var.get_type() != CompType::Unknown
 		} else {
-			match &self.parent {
-				Some(parent) => (*parent).constant_exists(name),
+			match self.get_parent() {
+				Some(parent) => parent.constant_exists(name),
 				None => false,
 			}
 		}
@@ -872,6 +913,7 @@ pub struct IfElse {
 	pub then: ExpEnvironment,
 	pub otherwise: ExpEnvironment,
 }
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct CompVariable {
 	pub name: String,
@@ -917,7 +959,7 @@ impl CompVariable {
 	}
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionAst {
 	pub arguments: Vec<CompVariable>,
 	pub return_type: CompType,
@@ -1136,6 +1178,7 @@ impl Prefix {
 		}
 	}
 }
+
 impl ConstantData {
 	pub fn to_comp_data(self) -> CompData {
 		match self {

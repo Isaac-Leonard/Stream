@@ -976,7 +976,7 @@ pub fn compile(ast: &Program, settings: Settings) -> Result<(), String> {
 		counter: 0,
 	};
 
-	for (name, var) in ast.scope.clone().variables {
+	for (name, var) in ast.scope.get_variables() {
 		if var.get_type().is_callable() {
 			let fn_val = compiler.create_function_shape(&var.get_type().clone())?;
 			compiler.module.add_function(&name, fn_val, None);
