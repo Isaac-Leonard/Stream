@@ -70,8 +70,7 @@ impl CompType {
 			},
 			Struct(keys) => context
 				.struct_type(
-					keys.iter()
-						.map(|(_, ty)| ty.get_compiler_type(context))
+					keys.values().map(|ty| ty.get_compiler_type(context))
 						.collect::<Result<Vec<_>, _>>()?
 						.as_slice(),
 					false,
@@ -561,7 +560,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 						IndexOption::Dot(prop) => {
 							let index = if let CompType::Struct(data) = &mem_ty {
 								data.iter()
-									.position(|x| &x.0 == prop)
+									.position(|x| x.0 == prop)
 									.ok_or_else(|| "Failed to get prop of struct".to_string())?
 							} else {
 								return Err("attempted to get prop of non-struct".to_string());
@@ -682,9 +681,9 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 				let ptr = self.calc_pos(arr, index, variables, parent)?;
 				self.builder.build_load(ptr, "indexing")
 			}
-			CompExpression::DotAccess(val, key) => match &val.result_type {
+			CompExpression::DotAccess(val, (key, key_location)) => match &val.result_type {
 				CompType::Struct(data) => {
-					let index = data.clone().iter().position(|x| x.0 == key.0).unwrap();
+					let index = data.clone().iter().position(|(k,_)| k == key).unwrap();
 					let val = self.compile_expression(val, variables, parent)?;
 					let ptr = self
 						.builder
@@ -693,11 +692,11 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 					self.builder.build_load(ptr, "")
 				}
 				CompType::Array(_, len) => {
-					if key.0 == "length"&&let CompType::Constant(len)=len.as_ref() {
+					if key == "length"&&let CompType::Constant(len)=len.as_ref() {
 						let len = len.clone().to_comp_data();
 						self.get_value(&len).unwrap()
 					} else {
-						panic!("Something has gone wrong: {} is not allowed as a property access for arrays, at {:?}", key.0, key.1)
+						panic!("Something has gone wrong: {} is not allowed as a property access for arrays, at {:?}", key, key_location)
 					}
 				}
 				_ => unreachable!(),
@@ -711,25 +710,19 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 					self.i32(exp.result_type.get_discriminant() as i32)
 				}
 			}
-			CompExpression::Struct(data) => {
+			CompExpression::Struct(fields) => {
 				let mem = self.builder.build_pointer_cast(
 					// TODO: Actually calculate it instead of guessing
-					self.alloc_heap(data.len() * 4)?,
+					self.alloc_heap(fields.len() * 4)?,
 					exp.result_type
 						.get_compiler_type(self.context)?
 						.into_pointer_type(),
 					"",
 				);
-				if let CompType::Struct(keys) = &exp.result_type {
-					let raw_data: Vec<BasicValueEnum<'ctx>> = keys
-						.iter()
-						.map(|(k, _)| {
-							self.compile_expression(
-								&data.iter().find(|x| &x.0 .0 == k).unwrap().1,
-								variables,
-								parent,
-							)
-						})
+				if let CompType::Struct(_keys) = &exp.result_type {
+					let raw_data: Vec<BasicValueEnum<'ctx>> = fields
+						.values()
+						.map(|(_, exp)|self.compile_expression(exp, variables, parent))
 						.collect::<Result<_, _>>()?;
 					for (i, element) in raw_data.iter().enumerate() {
 						let ptr = self

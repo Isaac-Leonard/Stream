@@ -4,8 +4,9 @@ use crate::errors::CompError;
 use crate::map_vec;
 use std::cell::Ref;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
-use std::hash::{Hasher};
+use std::hash::Hasher;
 use std::sync::Arc;
 use std::{collections::HashMap, ops::Range};
 
@@ -16,7 +17,7 @@ pub enum CompType {
 	Callible(Vec<Self>, Box<Self>),
 	Union(Vec<Self>),
 	Array(Box<CompType>, Box<CompType>),
-	Struct(Vec<(String, CompType)>),
+	Struct(BTreeMap<String, CompType>),
 	Null,
 	Bool,
 	Int,
@@ -77,7 +78,7 @@ impl CompType {
 		}
 	}
 
-	pub fn super_of(&self, ty: &CompType) -> bool {
+	pub fn super_type_of(&self, ty: &CompType) -> bool {
 		if self == ty || (self == &CompType::Ptr && ty.is_str()) {
 			true
 		} else if let CompType::Union(types) = self {
@@ -97,7 +98,7 @@ impl CompType {
 			}
 		} else if let (Self::Struct(data), Self::Struct(sub)) = (self, ty) {
 			for (a, b) in data.iter().zip(sub) {
-				if !a.1.super_of(&b.1) {
+				if !a.1.super_type_of(b.1) {
 					return false;
 				}
 			}
@@ -133,33 +134,28 @@ impl CompType {
 				substitute_generics!(el_ty).boxed(),
 				substitute_generics!(len).boxed(),
 			),
-			Struct(data) => Struct(map_vec!(data, |x| (x.0.clone(), substitute_generics!(x.1)))),
+			Struct(data) => Struct(
+				data.iter()
+					.map(|(key, ty)| (key.clone(), substitute_generics!(ty)))
+					.collect(),
+			),
 			Union(types) => Union(map_vec!(types, |ty| substitute_generics!(ty))),
 			Touple(elements) => Touple(map_vec!(elements, |ty| substitute_generics!(ty))),
 			Callible(args, ret) => Callible(
 				map_vec!(args, |x| substitute_generics!(x)),
 				substitute_generics!(ret).boxed(),
 			),
-			Generic(pos, extends_ty) => {
-				let substitute_ty = generics.get(*pos);
-				if let Some(ty) = substitute_ty {
-					if extends_ty.super_of(ty) {
-						ty.clone()
-					} else if let CompType::Generic(_, sub_ty) = ty {
-						if sub_ty.super_of(extends_ty) {
-							ty.clone()
-						} else {
-							errors.push(CompError::MismatchedGenericConstraint(
-								ty.clone(),
-								extends_ty.as_ref().clone(),
-								0..0,
-							));
-							CompType::Unknown
-						}
+			Generic(position, extends_type) => {
+				let substitute_type = generics.get(*position);
+				if let Some(substitute) = substitute_type {
+					if extends_type.super_type_of(substitute) {
+						substitute.clone()
+					} else if let CompType::Generic(_, substitute) = substitute && substitute.super_type_of(extends_type) {
+							substitute.as_ref().clone()
 					} else {
 						errors.push(CompError::MismatchedGenericConstraint(
-							ty.clone(),
-							extends_ty.as_ref().clone(),
+							substitute.clone(),
+							extends_type.as_ref().clone(),
 							0..0,
 						));
 						CompType::Unknown
@@ -194,7 +190,7 @@ impl CompType {
 				| (Not(_), Not(_)) => Vec::new(),
 			(Array(a, a_len),Array(b, b_len)) => a.match_generics(b.as_ref()).into_iter().chain(a_len.match_generics(b_len.as_ref())).collect(),
 			(Touple(a), Touple(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(x.1)).collect(),
-			(Struct(a), Struct(b)) => a.iter().zip(b).flat_map(|x| x.0.1.match_generics(&x.1.1)).collect(),
+			(Struct(a), Struct(b)) => a.iter().zip(b).flat_map(|x| x.0.1.match_generics(x.1.1)).collect(),
 			// TODO: Handling here is wrong and needs to be fixed
 			(Union(a), Union(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(x.1)).collect(),
 			(Callible(a_args, a_ret), Callible(b_args, b_ret)) => {
@@ -251,12 +247,11 @@ impl CompType {
 			Char => Char,
 			Touple(elements) => Touple(map_vec!(elements, |el| el.flatten())),
 			Constant(data) => Constant(data.clone()),
-			Struct(keys) => {
-				let mut keys = keys
+			Struct(fields) => {
+				let keys = fields
 					.iter()
 					.map(|(k, v)| (k.clone(), v.flatten()))
-					.collect::<Vec<_>>();
-				keys.sort_by(|a, b| a.0.cmp(&b.0));
+					.collect();
 				Struct(keys)
 			}
 			Not(ty) => {
@@ -360,6 +355,7 @@ impl Display for CompType {
 }
 
 pub const NEVER: CompType = CompType::Union(Vec::new());
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum CompExpression {
 	/// Accessing an objects properties via dot notation
@@ -371,7 +367,8 @@ pub enum CompExpression {
 	/// Getting the type of an expression
 	Typeof(ExpEnvironment),
 	/// Declaring a struct with its properties and expressions assigned to them
-	Struct(Vec<((String, Range<usize>), ExpEnvironment)>),
+	/// We must attach the key location to the value to allow for accessing without knowing the location it was declared at while still keeping track of the location
+	Struct(BTreeMap<String, (Range<usize>, ExpEnvironment)>),
 	/// A binary operation
 	BinOp(Op, ExpEnvironment, ExpEnvironment),
 	/// Reading the value of a variable
@@ -440,7 +437,7 @@ impl ExpEnvironment {
 			CompExpression::List(exps)
 			| CompExpression::Array(exps)
 			| CompExpression::Call(_, _, exps) => exps.iter().find_map(|x| x.find_map(matcher)),
-			CompExpression::Struct(key_vals) => key_vals.iter().find_map(|x| x.1.find_map(matcher)),
+			CompExpression::Struct(fields) => fields.iter().find_map(|x| x.1 .1.find_map(matcher)),
 			CompExpression::IfElse(ifelse) => {
 				let cond = ifelse.cond.find_map(matcher);
 				if cond.is_some() {
@@ -520,8 +517,13 @@ impl ExpEnvironment {
 			| CompExpression::Call(_, _, exps) => {
 				current.append(&mut exps.iter().flat_map(|x| x.map_each(mapper)).collect());
 			}
-			CompExpression::Struct(key_vals) => {
-				current.append(&mut key_vals.iter().flat_map(|x| x.1.map_each(mapper)).collect());
+			CompExpression::Struct(fields) => {
+				current.append(
+					&mut fields
+						.iter()
+						.flat_map(|x| x.1 .1.map_each(mapper))
+						.collect(),
+				);
 			}
 			CompExpression::IfElse(ifelse) => {
 				current.append(&mut ifelse.cond.map_each(mapper));
@@ -577,8 +579,8 @@ impl ExpEnvironment {
 			CompExpression::List(exps)
 			| CompExpression::Array(exps)
 			| CompExpression::Call(_, _, exps) => exps.iter_mut().for_each(|x| x.map_inplace(mapper)),
-			CompExpression::Struct(key_vals) => {
-				key_vals.iter_mut().for_each(|x| x.1.map_inplace(mapper))
+			CompExpression::Struct(fields) => {
+				fields.iter_mut().for_each(|x| x.1 .1.map_inplace(mapper))
 			}
 			CompExpression::IfElse(ifelse) => {
 				ifelse.cond.map_inplace(mapper);

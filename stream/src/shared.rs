@@ -18,9 +18,11 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 	}
 
 	let ty = match ty {
-		CustomType::Struct(data) => {
-			CompType::Struct(map_vec!(data, |x| { (x.0.clone(), get_type!(&x.1)) }))
-		}
+		CustomType::Struct(data) => CompType::Struct(
+			data.iter()
+				.map(|(key, value)| (key.clone(), get_type!(value)))
+				.collect(),
+		),
 		CustomType::Array(el_ty, len) => {
 			let el_ty = get_type!(el_ty);
 			let len = get_type!(len);
@@ -112,10 +114,11 @@ pub fn transform_exp(
 	}
 
 	let expression = match exp {
-		Struct(data) => CompExpression::Struct(map_vec!(data, |(k, v)| (
-			k.clone(),
-			get_exp!(v, env, scope)
-		))),
+		Struct(data) => CompExpression::Struct(
+			data.iter()
+				.map(|(key, value)| (key.0.clone(), (key.1.clone(), get_exp!(value, env, scope))))
+				.collect(),
+		),
 		Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, env, scope))),
 		DotAccess(val, key) => CompExpression::DotAccess(get_exp!(val, env, scope), key.clone()),
 		Conversion(exp, ty) => {
@@ -400,7 +403,7 @@ pub fn get_env(
 	located: Range<usize>,
 	errs: Vec<CompError>,
 ) -> (ExpEnvironment, Vec<CompError>) {
-	let (ty, errs) = get_type(&mut exp, env, located.clone(), errs);
+	let (ty, errs) = resolve_type(&mut exp, env, located.clone(), errs);
 	(
 		ExpEnvironment {
 			expression: Box::new(exp.clone()),
@@ -411,7 +414,17 @@ pub fn get_env(
 	)
 }
 
-pub fn get_type(
+pub fn get_shared_access_types(types: &[CompType], key: &str) -> Vec<CompType> {
+	types
+		.iter()
+		.filter_map(|x| match x {
+			CompType::Struct(fields) => fields.get(key).cloned(),
+			_ => None,
+		})
+		.collect::<Vec<_>>()
+}
+
+pub fn resolve_type(
 	exp: &mut CompExpression,
 	_env: &ExpEnvironment,
 	located: Range<usize>,
@@ -422,18 +435,7 @@ pub fn get_type(
 		Conversion(_exp, ty) => (ty.clone(), errs),
 		DotAccess(val, (key, _)) => {
 			if let CompType::Union(types) = &val.result_type {
-				let union = types
-					.clone()
-					.iter()
-					.filter_map(|x| match x {
-						CompType::Struct(keys) => keys
-							.clone()
-							.iter()
-							.find(|x| &x.0 == key)
-							.map(|x| x.1.clone()),
-						_ => None,
-					})
-					.collect::<Vec<_>>();
+				let union = get_shared_access_types(types, key);
 				let result_type = if union.len() != types.len() {
 					errs.push(CompError::MissingPropertyInUnion(
 						key.clone(),
@@ -445,9 +447,9 @@ pub fn get_type(
 					CompType::Union(union)
 				};
 				(result_type, errs)
-			} else if let CompType::Struct(keys) = &val.result_type {
-				let result_type = if let Some(ty) = &keys.clone().iter().find(|x| &x.0 == key) {
-					ty.1.clone()
+			} else if let CompType::Struct(fields) = &val.result_type {
+				let result_type = if let Some(ty) = fields.get(key) {
+					ty.clone()
 				} else {
 					errs.push(CompError::PropertyDoesNotExistOnType(
 						key.clone(),
@@ -478,11 +480,13 @@ pub fn get_type(
 				(CompType::Unknown, errs)
 			}
 		}
-		Struct(keys) => {
-			let result_type = CompType::Struct(map_vec!(keys, |(k, v)| (
-				k.0.clone(),
-				v.result_type.clone()
-			)))
+		Struct(fields) => {
+			let result_type = CompType::Struct(
+				fields
+					.iter()
+					.map(|(k, v)| (k.clone(), v.1.result_type.clone()))
+					.collect(),
+			)
 			.flatten();
 			(result_type, errs)
 		}
@@ -557,10 +561,9 @@ pub fn get_type(
 				use IndexOption::*;
 				match &access.0 {
 					Dot(prop) => {
-						if let CompType::Struct(data) = &var_ty {
-							let pair = data.iter().find(|x| &x.0 == prop).unwrap().clone();
+						if let CompType::Struct(fields) = &var_ty {
 							accesses.push((Dot(prop.clone()), var_ty.clone()));
-							var_ty = pair.1.clone();
+							var_ty = fields.get(prop).unwrap().clone();
 						} else {
 							errs.push(CompError::CannotIndexType(var_ty.clone(), 0..0));
 							accesses.push(access.clone());
@@ -595,7 +598,7 @@ pub fn get_type(
 			} else {
 				exp_ty
 			};
-			if !var_ty.super_of(&exp_ty) {
+			if !var_ty.super_type_of(&exp_ty) {
 				errs.push(CompError::InvalidAssignment(
 					var_ty.clone(),
 					exp_ty.clone(),
@@ -631,7 +634,7 @@ pub fn get_type(
 				for (x, y) in arg_types.iter().zip(args) {
 					let (x, mut errors) = x.substitute_generics(generics);
 					errs.append(&mut errors);
-					if !x.super_of(&y.result_type) {
+					if !x.super_type_of(&y.result_type) {
 						errs.push(CompError::InvalidAssignment(
 							y.result_type.clone(),
 							x.clone(),

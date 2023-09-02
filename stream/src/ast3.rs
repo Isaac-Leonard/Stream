@@ -3,10 +3,7 @@ use crate::ast2::*;
 use crate::errors::CompError;
 use crate::map_vec;
 
-
-use std::hash::{Hasher};
-
-
+use std::hash::Hasher;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Accesses {
@@ -114,15 +111,15 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 					})
 				}
 			} else if let Some(access) = exists {
-   					access.capture += 1;
-   				} else {
-   					accesses.push(Accesses {
-   						variable: var.clone(),
-   						read: 0,
-   						write: 0,
-   						capture: 1,
-   					})
-   				}
+				access.capture += 1;
+			} else {
+				accesses.push(Accesses {
+					variable: var.clone(),
+					read: 0,
+					write: 0,
+					capture: 1,
+				})
+			}
 		}
 		WhileLoop { cond, body } => {
 			count_max_references_in_env(cond, accesses);
@@ -147,7 +144,7 @@ fn count_max_references_in_env(env: &ExpEnvironment, accesses: &mut Vec<Accesses
 		}
 		Struct(envs) => {
 			for env in envs {
-				count_max_references_in_env(&env.1, accesses)
+				count_max_references_in_env(&env.1 .1, accesses)
 			}
 		}
 		Call(func, _, envs) => {
