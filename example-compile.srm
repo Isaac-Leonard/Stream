@@ -1,18 +1,19 @@
 from "stdlib.srm" import {
-    newLine, puts, getchar, putchar, midPoint, printInt, pow, modulo
+    newLine, puts, getchar, putchar, midPoint, printInt, pow, modulo, newArray
 };
 
 let addArr=(arr:[Int; 2]):Int=> arr[0]+arr[1]
 
-let mapArrInt5= <T>(arr:[T; 5], fn:(T, Int):T):[T; 5]=>{
+let mapIntArr= <T:Int>(arr:[Int; T], fn:(Int, Int):Int):[Int; T]=>{
     let x:Int=0;
-    let newArr:[T; 5]=[0,0,0,0,0];
-    while x<5{
+    let newArr = newArray<T>(arr.length);
+    while x<arr.length{
         newArr[x]=fn(arr[x], x)
 	x=x+1
     }
     newArr
 }
+
 let double=(x:Int):Int=>x*2;
 
 type Str2<T:Int> =Str<T>;
@@ -78,11 +79,15 @@ arr2[0]=[4,3,2]
     let testFn=addArr;
     let testRes=testFn([4,3]);
     let arr5:[Int; 5]=[4,6,8,3,9];
-    let doubles=mapArrInt5(arr5, (x:Int, i:Int):Int=>x*2);
+    let doubles=mapIntArr<5>(arr5, (x:Int, i:Int):Int=>x*2);
     printInt(doubles[4]);
     newLine()
     puts("Length of arr2 is: ")
     printInt(arr2.length);
     newLine()
+    let myArray = newArray<7>(7);
+    puts("The length of my array is:");
+    printInt(myArray.length);
+    newLine();
     0
 }
