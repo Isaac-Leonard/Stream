@@ -1,7 +1,6 @@
 use crate::ast1::*;
 use crate::ast2::*;
 
-
 use crate::errors::CompError;
 use crate::lexer;
 use crate::map_vec;
@@ -182,12 +181,21 @@ impl Scope {
 		global_scope.add_type("Int".to_string(), CompType::Int);
 		global_scope.add_type("Float".to_string(), CompType::Float);
 		global_scope.add_type("Ptr".to_string(), CompType::Ptr);
+		global_scope.add_type("IntPtr".to_string(), CompType::IntPtr);
 		global_scope.add_type("Bool".to_string(), CompType::Bool);
 		global_scope.add_type("Null".to_string(), CompType::Null);
 		global_scope.add_type(
 			"Str".to_string(),
 			CompType::Str(CompType::Generic(0, CompType::Int.boxed()).boxed()),
 		);
+		global_scope.add_variable(CompVariable {
+			name: "malloc".to_string(),
+			constant: true,
+			initialised: true,
+			external: false,
+			typing: CompType::Callible(vec![CompType::Int], CompType::Ptr.boxed()),
+			declared_at: None,
+		});
 		global_scope
 	}
 }

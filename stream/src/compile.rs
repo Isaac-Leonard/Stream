@@ -12,7 +12,7 @@ use inkwell::targets::{
 	CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::types::{
-	AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
+	AnyType, AnyTypeEnum, ArrayType, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
 use inkwell::values::{
 	AggregateValue, BasicMetadataValueEnum, BasicValueEnum, CallableValue, FloatMathValue,
@@ -52,7 +52,23 @@ impl CompType {
 					.array_type(*len as u32)
 					.ptr_type(inkwell::AddressSpace::Generic)
 					.as_basic_type_enum(),
-				_ => panic!("Cannot compile arrays without their length"),
+				Int => ty
+					.get_compiler_type(context)?
+					.ptr_type(inkwell::AddressSpace::Generic)
+					.as_basic_type_enum(),
+				Generic(_, len) => match len.as_ref() {
+					Constant(ConstantData::Int(len)) => ty
+						.get_compiler_type(context)?
+						.array_type(*len as u32)
+						.ptr_type(inkwell::AddressSpace::Generic)
+						.as_basic_type_enum(),
+					Int => ty
+						.get_compiler_type(context)?
+						.ptr_type(inkwell::AddressSpace::Generic)
+						.as_basic_type_enum(),
+					_ => panic!("Something went very wrong when compiling this array"),
+				},
+				_ => panic!("Something went very wrong when compiling this array"),
 			},
 			Type => context.i32_type().as_basic_type_enum(),
 			Int => context.i32_type().as_basic_type_enum(),
@@ -70,7 +86,8 @@ impl CompType {
 			},
 			Struct(keys) => context
 				.struct_type(
-					keys.values().map(|ty| ty.get_compiler_type(context))
+					keys.values()
+						.map(|ty| ty.get_compiler_type(context))
 						.collect::<Result<Vec<_>, _>>()?
 						.as_slice(),
 					false,
@@ -79,6 +96,10 @@ impl CompType {
 				.as_basic_type_enum(),
 			Ptr => context
 				.i8_type()
+				.ptr_type(inkwell::AddressSpace::Generic)
+				.as_basic_type_enum(),
+			IntPtr => context
+				.i32_type()
 				.ptr_type(inkwell::AddressSpace::Generic)
 				.as_basic_type_enum(),
 			Union(_) => context
@@ -91,6 +112,7 @@ impl CompType {
 				)
 				.as_basic_type_enum(),
 			Constant(data) => data.widen().get_compiler_type(context)?,
+			Generic(pos, extends) => extends.get_compiler_type(context)?,
 			_ => {
 				return Err(format!(
 					"get_compiler_type not implemented for type '{}'",
@@ -155,7 +177,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 		self.builder
 			.build_call(
 				malloc,
-				&[BasicMetadataValueEnum::from(self.i64(bytes as i64))],
+				&[BasicMetadataValueEnum::from(self.i32(bytes as i32))],
 				"malloc",
 			)
 			.try_as_basic_value()
@@ -518,12 +540,17 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 				let val = self.compile_expression(exp, variables, parent)?;
 				// Assume only int and char conversions for now
 				// TODO: implement properly
-				if ty.is_int() {
-					self.cast_to_i32(val.into_int_value())
+				if ty.is_int_ptr(){
+					self.builder.build_bitcast(val.into_pointer_value(), 				self
+					.context
+					.i32_type()
+					.ptr_type(inkwell::AddressSpace::Generic),"").as_basic_value_enum()
+				} else				if ty.is_int() {
+					self.cast_to_i32(val.into_int_value()).as_basic_value_enum()
 				} else {
-					self.cast_to_i8(val.into_int_value())
+					self.cast_to_i8(val.into_int_value())				.as_basic_value_enum()
+
 				}
-				.as_basic_value_enum()
 			}
 			CompExpression::Assign(mem, exp) => {
 				if mem.accessing.is_empty() {
@@ -572,6 +599,13 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 						}
 					}
 				}
+				// This is hacky but should be safe as casts should've been checked sooner
+				let val = if val.get_type().as_any_type_enum()!=mem_ptr.get_type().get_element_type() && !mem_ty.is_union(){
+					eprintln!("{}",mem.variable.name);
+					self.builder.build_bitcast(val,mem_ptr.get_type().get_element_type().into_pointer_type(), "").as_basic_value_enum()
+				}else {
+					val
+				};
 
 				if mem_ty.is_union() {
 					let ty = &exp.result_type;
@@ -863,7 +897,7 @@ impl<'a, 'ctx> Compiler<'a, 'ctx> {
 		self.dibuilder.finalize();
 		if !fn_val.verify(true) {
 			self.module.print_to_stderr();
-			return Err("Invalid generated function.".to_string());
+			return Err(format!("Invalid generated function {}", name));
 		}
 		self.fpm.run_on(&fn_val);
 

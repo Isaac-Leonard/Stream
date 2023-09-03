@@ -1,10 +1,6 @@
-
-
-
-
 use std::hash::{self, Hasher};
 
-use std::{ops::Range};
+use std::ops::Range;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Symbol {
@@ -72,7 +68,7 @@ pub struct Function {
 	pub generics: Vec<(String, Option<CustomType>)>,
 	pub args: Vec<((String, Range<usize>), Option<CustomType>)>,
 	pub body: Option<Box<SpannedExpression>>,
-	pub return_type: CustomType,
+	pub return_type: (CustomType, Range<usize>),
 }
 
 /// A type name and a list of generics to fill it out

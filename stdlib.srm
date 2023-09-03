@@ -68,9 +68,8 @@ extern const printInt=(val:Int)=>{
     }
 };
 
-type Mallock=(Int):Ptr;
-const mallock:Malloc=(bytes:Int):Ptr;
 
-extern const newArray= <T:Int>(len:T): [Int; T] =>{
-    mallock(len*4)
+type NewArray = <L:Int>(L):[Int;L];
+extern const newArray: NewArray = <L:Int>(len:L): [Int; L] =>{
+    malloc(len*4) as IntPtr
 }

@@ -7,11 +7,15 @@ use crate::settings::Settings;
 
 use std::ops::Range;
 
-pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompError>) {
+pub fn transform_type(
+	ty: &CustomType,
+	scope: &Scope,
+	location: Range<usize>,
+) -> (CompType, Vec<CompError>) {
 	let mut errors = Vec::new();
 	macro_rules! get_type {
-		($ty:expr) => {{
-			let mut res = transform_type($ty, &scope);
+		($ty:expr, $scope:expr) => {{
+			let mut res = transform_type($ty, $scope, location.clone());
 			errors.append(&mut res.1);
 			res.0
 		}};
@@ -20,51 +24,66 @@ pub fn transform_type(ty: &CustomType, scope: &Scope) -> (CompType, Vec<CompErro
 	let ty = match ty {
 		CustomType::Struct(data) => CompType::Struct(
 			data.iter()
-				.map(|(key, value)| (key.clone(), get_type!(value)))
+				.map(|(key, value)| (key.clone(), get_type!(value, &scope)))
 				.collect(),
 		),
 		CustomType::Array(el_ty, len) => {
-			let el_ty = get_type!(el_ty);
-			let len = get_type!(len);
+			let el_ty = get_type!(el_ty, &scope);
+			let len = get_type!(len, &scope);
 			// TODO: replace len with an actual type and check it resolves to an Int
 			CompType::Array(el_ty.boxed(), len.boxed())
 		}
 		CustomType::Union(sub_types) => {
-			CompType::Union(map_vec!(sub_types, |x| get_type!(x))).flatten()
+			CompType::Union(map_vec!(sub_types, |x| get_type!(x, &scope))).flatten()
 		}
 
 		CustomType::Callible(generics, args, ret) => {
-			let generics = map_vec!(generics, |(name, ty)| (
-				name,
-				ty.as_ref()
-					.map(|ty| get_type!(ty))
-					.unwrap_or(CompType::Unknown)
-			));
-			let mut scope = scope.clone();
-			for (pos, (name, ty)) in generics.into_iter().enumerate() {
-				eprint!("{}", name);
-				scope.add_type(name.to_string(), CompType::Generic(pos, ty.boxed()));
+			let mut scope = scope.create_child(Vec::new());
+			if !generics.is_empty() {
+				eprintln!("Generics: {:?}", generics);
 			}
-			let args = map_vec!(args, |x| get_type!(x));
-			let ret = get_type!(ret);
-			CompType::Callible(args, Box::new(ret))
+			for (pos, (name, ty)) in generics.iter().enumerate() {
+				let ty = ty
+					.as_ref()
+					.map(|ty| get_type!(ty, &scope))
+					.unwrap_or(CompType::Unknown);
+				scope.add_type(name.to_string(), CompType::Generic(pos, ty.clone().boxed()));
+				if !generics.is_empty() {
+					eprintln!(
+						"Generic type in scope {} extends {:?}",
+						name,
+						scope.get_type(name).unwrap()
+					);
+				}
+			}
+			let args = map_vec!(args, |x| get_type!(x, &scope));
+			let ret = get_type!(ret, &scope);
+			let ty = CompType::Callible(args, Box::new(ret));
+			if !generics.is_empty() {
+				eprintln!("Returning type {:?}", ty);
+			}
+			ty
 		}
-		CustomType::Lone(ty) => {
-			let found_type = scope.get_type(&ty.name);
-			if let Ok(found_ty) = found_type {
-				let generics = map_vec!(ty.generics, |x| get_type!(x));
+		CustomType::Lone(referenced_type) => {
+			let found_type = scope.get_type(&referenced_type.name);
+			if let Ok(found_type) = found_type {
+				let generics = map_vec!(referenced_type.generics, |x| get_type!(x, &scope));
 				// We want to preserve lone generics
 				// As in we only want to substitute generics that are part of another type
 				// Generics found here are ones that get substituted in themselves
-				if !matches!(found_ty, CompType::Generic(_, _)) {
-					let (ty, mut errs) = found_ty.substitute_generics(&generics);
+				if !matches!(found_type, CompType::Generic(_, _)) {
+					let (ty, mut errs) = found_type.substitute_generics(&generics, location);
 					errors.append(&mut errs);
 					ty
 				} else {
-					found_ty
+					eprintln!("Found type: {:?} for {}", found_type, referenced_type.name);
+					found_type
 				}
 			} else {
-				errors.push(CompError::CannotFindType(ty.clone().name, 0..0));
+				errors.push(CompError::CannotFindType(
+					referenced_type.clone().name,
+					0..0,
+				));
 				CompType::Unknown
 			}
 		}
@@ -122,7 +141,7 @@ pub fn transform_exp(
 		Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, env, scope))),
 		DotAccess(val, key) => CompExpression::DotAccess(get_exp!(val, env, scope), key.clone()),
 		Conversion(exp, ty) => {
-			let (ty, mut errors) = transform_type(ty, scope);
+			let (ty, mut errors) = transform_type(ty, scope, loc.clone());
 			errs.append(&mut errors);
 			CompExpression::Conversion(get_exp!(exp, env, scope), ty)
 		}
@@ -227,7 +246,7 @@ pub fn transform_exp(
 				}
 			};
 			let generics = map_vec!(generics, |x| {
-				let (ty, mut errors) = transform_type(x, scope);
+				let (ty, mut errors) = transform_type(x, scope, loc.clone());
 				errs.append(&mut errors);
 				ty
 			});
@@ -269,7 +288,7 @@ pub fn transform_exp(
 }
 
 fn resolve_scope<'a>(
-	(_, ast): &SpannedExpression,
+	(loc, ast): &SpannedExpression,
 	scope: &'a mut Scope,
 	file: &str,
 ) -> &'a mut Scope {
@@ -282,7 +301,7 @@ fn resolve_scope<'a>(
 					let constraint = match constraint {
 						Some(ty) => {
 							// TODO: Hacky error reporting until we clean this part up
-							let (ty, errs) = transform_type(ty, scope);
+							let (ty, errs) = transform_type(ty, scope, loc.clone());
 							if !errs.is_empty() {
 								eprintln!("{:?}", errs);
 							}
@@ -292,7 +311,7 @@ fn resolve_scope<'a>(
 					};
 					subscope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
 				}
-				let (ty, errors) = transform_type(declared_type, &subscope);
+				let (ty, errors) = transform_type(declared_type, &subscope, loc.clone());
 				if !errors.is_empty() {
 					eprintln!("{:?}", errors);
 				}
@@ -306,7 +325,13 @@ fn resolve_scope<'a>(
 			} else {
 				let typing = match declared_type {
 					None => CompType::Unknown,
-					Some(x) => transform_type(x, scope).0,
+					Some(x) => {
+						let (ty, errs) = transform_type(x, scope, loc.clone());
+						for err in errs {
+							eprintln!("{}", err.get_msg_without_lines());
+						}
+						ty
+					}
 				};
 				scope.add_variable(CompVariable {
 					name: name.0.clone(),
@@ -492,7 +517,6 @@ pub fn resolve_type(
 		}
 		Array(elements) => {
 			let el_types = map_vec!(elements, |el| el.result_type.widen());
-			// TODO: Fix this as its hacky and will cause a crash
 			(
 				CompType::Array(
 					el_types
@@ -598,10 +622,14 @@ pub fn resolve_type(
 			} else {
 				exp_ty
 			};
+			if var.variable.name == "newArray" {
+				eprintln!("{:?}", var.variable);
+				eprintln!("{:?}", exp_ty);
+			}
 			if !var_ty.super_type_of(&exp_ty) {
 				errs.push(CompError::InvalidAssignment(
-					var_ty.clone(),
 					exp_ty.clone(),
+					var_ty.clone(),
 					located,
 				));
 			}
@@ -628,11 +656,11 @@ pub fn resolve_type(
 						var.get_name(),
 						args.len(),
 						arg_types.len(),
-						located,
+						located.clone(),
 					))
 				}
 				for (x, y) in arg_types.iter().zip(args) {
-					let (x, mut errors) = x.substitute_generics(generics);
+					let (x, mut errors) = x.substitute_generics(generics, located.clone());
 					errs.append(&mut errors);
 					if !x.super_type_of(&y.result_type) {
 						errs.push(CompError::InvalidAssignment(
@@ -642,7 +670,7 @@ pub fn resolve_type(
 						))
 					}
 				}
-				let (ret, mut errors) = ret.substitute_generics(generics);
+				let (ret, mut errors) = ret.substitute_generics(generics, located.clone());
 				errs.append(&mut errors);
 				ret
 			} else {
@@ -683,12 +711,23 @@ fn transform_function(
 	scope: &mut Scope,
 	file: &str,
 ) -> (FunctionAst, Vec<CompError>) {
+	if func.generics
+		== vec![(
+			"T".to_string(),
+			Some(CustomType::Lone(UseType {
+				name: "Int".to_string(),
+				generics: Vec::new(),
+			})),
+		)] {
+		return transform_function_single_constant_int(func, scope, file);
+	}
+
 	let mut errs = Vec::new();
 	for (pos, (name, constraint)) in func.generics.iter().enumerate() {
 		let constraint = match constraint {
 			Some(ty) => {
 				// TODO: Hacky error reporting until we clean this part up
-				let (ty, mut errors) = transform_type(ty, scope);
+				let (ty, mut errors) = transform_type(ty, scope, 0..0);
 				errs.append(&mut errors);
 				ty
 			}
@@ -700,7 +739,7 @@ fn transform_function(
 	let mut arguments = Vec::new();
 	for arg in &func.args {
 		let arg_ty = if let Some(ty) = &arg.1 {
-			let (ty, mut errors) = transform_type(ty, scope);
+			let (ty, mut errors) = transform_type(ty, scope, arg.0 .1.clone());
 			errs.append(&mut errors);
 			ty
 		} else {
@@ -715,7 +754,8 @@ fn transform_function(
 			initialised: true,
 		});
 	}
-	let (return_type, mut errors) = transform_type(&func.return_type, scope);
+	let (return_type, mut errors) =
+		transform_type(&func.return_type.0, scope, func.return_type.1.clone());
 	errs.append(&mut errors);
 	let arguments = arguments;
 	let func = match &func.body {
@@ -725,13 +765,116 @@ fn transform_function(
 			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
 			errs.append(&mut errors);
 			FunctionAst {
+				generic_arguments: arguments.clone(),
 				arguments,
+				generic_return_type: return_type.clone(),
 				return_type,
 				body: Some(Box::new(body)),
 			}
 		}
 		None => FunctionAst {
+			generic_arguments: arguments.clone(),
 			arguments,
+			generic_return_type: return_type.clone(),
+			return_type,
+			body: None,
+		},
+	};
+	(func, errs)
+}
+
+fn transform_function_single_constant_int(
+	func: &Function,
+	scope: &mut Scope,
+	file: &str,
+) -> (FunctionAst, Vec<CompError>) {
+	let mut errs = Vec::new();
+	let (name, constraint) = func.generics.first().unwrap();
+	let mut local_scope = scope.create_child(Vec::new());
+	local_scope.add_type(name.clone(), CompType::Int);
+
+	let mut arguments = Vec::new();
+	for arg in &func.args {
+		let arg_ty = if let Some(ty) = &arg.1 {
+			let (ty, mut errors) = transform_type(ty, &local_scope, arg.0 .1.clone());
+			errs.append(&mut errors);
+			ty
+		} else {
+			CompType::Unknown
+		};
+		arguments.push(CompVariable {
+			name: arg.0 .0.clone(),
+			constant: true,
+			typing: arg_ty,
+			external: false,
+			declared_at: Some((file.to_string(), arg.0 .1.clone())),
+			initialised: true,
+		});
+	}
+	let (return_type, mut errors) = transform_type(
+		&func.return_type.0,
+		&local_scope,
+		func.return_type.1.clone(),
+	);
+	errs.append(&mut errors);
+	let arguments = arguments;
+	let (generic_arguments, generic_return_type) = {
+		let mut generic_scope = scope.create_child(Vec::new());
+		for (pos, (name, constraint)) in func.generics.iter().enumerate() {
+			let constraint = match constraint {
+				Some(ty) => {
+					// TODO: Hacky error reporting until we clean this part up
+					let (ty, mut errors) = transform_type(ty, &generic_scope, 0..0);
+					errs.append(&mut errors);
+					ty
+				}
+				None => CompType::Unknown,
+			};
+			generic_scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+		}
+
+		let mut arguments = Vec::new();
+		for arg in &func.args {
+			let arg_ty = if let Some(ty) = &arg.1 {
+				let (ty, mut errors) = transform_type(ty, &generic_scope, arg.0 .1.clone());
+				errs.append(&mut errors);
+				ty
+			} else {
+				CompType::Unknown
+			};
+			arguments.push(CompVariable {
+				name: arg.0 .0.clone(),
+				constant: true,
+				typing: arg_ty,
+				external: false,
+				declared_at: Some((file.to_string(), arg.0 .1.clone())),
+				initialised: true,
+			});
+		}
+		let (return_type, mut errors) =
+			transform_type(&func.return_type.0, scope, func.return_type.1.clone());
+		errs.append(&mut errors);
+		(arguments, return_type)
+	};
+
+	let func = match &func.body {
+		Some(body) => {
+			let mut local_scope = scope.create_child(arguments.clone());
+			let local_scope = resolve_scope(body.as_ref(), &mut local_scope, file);
+			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
+			errs.append(&mut errors);
+			FunctionAst {
+				generic_arguments,
+				arguments,
+				generic_return_type,
+				return_type,
+				body: Some(Box::new(body)),
+			}
+		}
+		None => FunctionAst {
+			generic_arguments,
+			arguments,
+			generic_return_type,
 			return_type,
 			body: None,
 		},

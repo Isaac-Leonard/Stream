@@ -24,6 +24,7 @@ pub enum CompType {
 	Float,
 	Str(Box<CompType>),
 	Ptr,
+	IntPtr,
 	/// Stores the position of the generic and the type it extends
 	Generic(usize, Box<CompType>),
 	Type,
@@ -41,7 +42,8 @@ impl CompType {
 		use CompType::*;
 		match self {
 			Generic(_, _) => true,
-			Type | Char | Unknown | Bool | Ptr | Int | Float | Null | Constant(_) | Not(_) => false,
+			IntPtr | Type | Char | Unknown | Bool | Ptr | Int | Float | Null | Constant(_)
+			| Not(_) => false,
 			Array(element_ty, _) => element_ty.contains_generic(),
 			Touple(elements) => elements.iter().any(|x| x.contains_generic()),
 			Struct(elements) => elements.iter().any(|x| x.1.contains_generic()),
@@ -61,7 +63,7 @@ impl CompType {
 	pub fn widen(&self) -> Self {
 		match self {
 			Self::Constant(data) => data.widen(),
-			Self::Array(el_ty, len) => Self::Array(el_ty.widen().boxed(), len.widen().boxed()),
+			Self::Array(el_ty, len) => Self::Array(el_ty.widen().boxed(), len.clone()),
 			x => x.clone(),
 		}
 	}
@@ -78,16 +80,21 @@ impl CompType {
 		}
 	}
 
-	pub fn super_type_of(&self, ty: &CompType) -> bool {
-		if self == ty || (self == &CompType::Ptr && ty.is_str()) {
+	pub fn super_type_of(&self, sub_type: &CompType) -> bool {
+		if self == sub_type {
+			true
+		} else if let CompType::Generic(_, extends_type) = sub_type {
+			self.super_type_of(extends_type)
+		} else if self.is_ptr() && sub_type.is_str() {
 			true
 		} else if let CompType::Union(types) = self {
 			// TODO: Do deeper checking here
-			types.contains(ty)
-		} else if let CompType::Constant(data) = ty {
+			types.contains(sub_type)
+		} else if let CompType::Constant(data) = sub_type {
 			match (self, data) {
 				(CompType::Str(len), ConstantData::Str(str)) => match len.as_ref() {
 					CompType::Constant(ConstantData::Int(len)) => *len == str.len() as i32,
+					CompType::Int => true,
 					_ => false,
 				},
 				(CompType::Int, ConstantData::Int(_)) => true,
@@ -96,14 +103,14 @@ impl CompType {
 				(CompType::Null, ConstantData::Null) => true,
 				_ => false,
 			}
-		} else if let (Self::Struct(data), Self::Struct(sub)) = (self, ty) {
+		} else if let (Self::Struct(data), Self::Struct(sub)) = (self, sub_type) {
 			for (a, b) in data.iter().zip(sub) {
 				if !a.1.super_type_of(b.1) {
 					return false;
 				}
 			}
 			true
-		} else if self == &CompType::Unknown || ty == &CompType::Unknown {
+		} else if self == &CompType::Unknown || sub_type == &CompType::Unknown {
 			// Return true if either is unknown
 			// Fix to make work properly with generics
 			true
@@ -114,21 +121,24 @@ impl CompType {
 
 	/// Recursively examines itself returning a new copy of itself with generic types substituted where they are found
 	/// TODO: Work out a way to determine if too many generics were provided
-	pub fn substitute_generics(&self, generics: &Vec<CompType>) -> (CompType, Vec<CompError>) {
+	pub fn substitute_generics(
+		&self,
+		generics: &Vec<CompType>,
+		location: Range<usize>,
+	) -> (CompType, Vec<CompError>) {
 		use CompType::*;
 		let mut errors = Vec::new();
 		macro_rules! substitute_generics {
 			($ty:expr) => {{
-				let mut res = $ty.substitute_generics(generics);
+				let mut res = $ty.substitute_generics(generics, location.clone());
 				errors.append(&mut res.1);
 				res.0
 			}};
 		}
 
 		let ty = match self {
-			Ptr | Type | Not(_) | Unknown | Char | Bool | Constant(_) | Null | Int | Float => {
-				self.clone()
-			}
+			IntPtr | Ptr | Type | Not(_) | Unknown | Char | Bool | Constant(_) | Null | Int
+			| Float => self.clone(),
 			Str(len) => Str(substitute_generics!(len).boxed()),
 			Array(el_ty, len) => Array(
 				substitute_generics!(el_ty).boxed(),
@@ -150,19 +160,17 @@ impl CompType {
 				if let Some(substitute) = substitute_type {
 					if extends_type.super_type_of(substitute) {
 						substitute.clone()
-					} else if let CompType::Generic(_, substitute) = substitute && substitute.super_type_of(extends_type) {
-							substitute.as_ref().clone()
 					} else {
 						errors.push(CompError::MismatchedGenericConstraint(
 							substitute.clone(),
 							extends_type.as_ref().clone(),
-							0..0,
+							location,
 						));
 						CompType::Unknown
 					}
 				} else {
-					errors.push(CompError::NotEnoughGenerics(0..0));
-					CompType::Unknown
+					// Pass it Straight through
+					self.clone()
 				}
 			} // TODO: Hack till I can fill in the rest (I'm tired and its late)
 		};
@@ -193,7 +201,7 @@ impl CompType {
 			(Struct(a), Struct(b)) => a.iter().zip(b).flat_map(|x| x.0.1.match_generics(x.1.1)).collect(),
 			// TODO: Handling here is wrong and needs to be fixed
 			(Union(a), Union(b)) => a.iter().zip(b).flat_map(|x| x.0.match_generics(x.1)).collect(),
-			(Callible(a_args, a_ret), Callible(b_args, b_ret)) => {
+			(Callible(a_args, a_ret), Callible(b_args, b_ret)) => {eprintln!("Matching function generics");
 				let mut matches:Vec<_>= a_args.iter().zip(b_args).flat_map(|x| x.0.match_generics(x.1)).collect();
 				matches.append(&mut  a_ret.match_generics(b_ret));
 				matches
@@ -222,6 +230,14 @@ impl CompType {
 		)
 	}
 
+	pub fn is_int_ptr(&self) -> bool {
+		matches!(*self, CompType::IntPtr)
+	}
+
+	pub fn is_ptr(&self) -> bool {
+		matches!(*self, CompType::Ptr)
+	}
+
 	pub fn is_str(&self) -> bool {
 		matches!(
 			self,
@@ -245,6 +261,7 @@ impl CompType {
 		use CompType::*;
 		match self {
 			Char => Char,
+			IntPtr => IntPtr,
 			Touple(elements) => Touple(map_vec!(elements, |el| el.flatten())),
 			Constant(data) => Constant(data.clone()),
 			Struct(fields) => {
@@ -304,6 +321,7 @@ impl Display for CompType {
 		use CompType::*;
 		match self {
 			Char => write!(f, "Char"),
+			IntPtr => write!(f, "IntPtr"),
 			Touple(elements) => write!(
 				f,
 				"[{}]",
@@ -840,6 +858,9 @@ impl Scope {
 
 	pub fn get_type(&self, name: &String) -> Result<CompType, CompError> {
 		if let Some(ty) = self.0.borrow().types.get(name) {
+			if name == "NewArray" {
+				eprintln!("NewArray: {:?}", ty);
+			}
 			Ok(ty.clone())
 		} else {
 			match self.get_parent() {
@@ -904,7 +925,7 @@ impl CompData {
 			Str(content) => CompType::Str(Box::new(CompType::Constant(ConstantData::Int(
 				content.len() as i32,
 			)))),
-			Func(ast) => ast.as_type(),
+			Func(ast) => ast.as_generic_type(),
 		}
 	}
 }
@@ -964,7 +985,9 @@ impl CompVariable {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionAst {
 	pub arguments: Vec<CompVariable>,
+	pub generic_arguments: Vec<CompVariable>,
 	pub return_type: CompType,
+	pub generic_return_type: CompType,
 	pub body: Option<Box<Program>>,
 }
 
@@ -973,6 +996,18 @@ impl FunctionAst {
 		CompType::Callible(
 			self.arguments.iter().map(|x| x.get_type()).collect(),
 			Box::new(self.return_type.clone()),
+		)
+	}
+
+	/// We need this so the compiler can work with fully defined types but this can be called generically
+	/// TODO: Rewrite to make this unneeded
+	pub fn as_generic_type(&self) -> CompType {
+		CompType::Callible(
+			self.generic_arguments
+				.iter()
+				.map(|x| x.get_type())
+				.collect(),
+			Box::new(self.generic_return_type.clone()),
 		)
 	}
 
@@ -1098,9 +1133,9 @@ impl Op {
 			}),
 			Mult => match (a, b) {
 				(Int, Int) => Ok(Int),
-				(Int, Constant(ConstantData::Int(_))) | (Constant(ConstantData::Int(_)), Int) => {
-					Ok(Int)
-				}
+				(Int, Constant(ConstantData::Int(_)))
+				| (Constant(ConstantData::Int(_)), Int)
+				| (Generic(_, _), Constant(ConstantData::Int(_))) => Ok(Int),
 				(Constant(ConstantData::Int(a)), Constant(ConstantData::Int(b))) => {
 					Ok(Constant(ConstantData::Int(a * b)))
 				}

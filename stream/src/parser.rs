@@ -166,7 +166,15 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 					.then(just(Token::Colon).ignore_then(type_parser()).or_not())
 					.separated_by(just(Token::Separator))
 					.delimited_by(Token::StartBracket, Token::EndBracket)
-					.then(just(Token::Colon).ignore_then(type_parser()).or_not())
+					.then(
+						just(Token::Colon)
+							.ignore_then(type_parser())
+							.or_not()
+							.map(|x| {
+								x.unwrap_or(CustomType::Lone(UseType::simple("Null".to_string())))
+							})
+							.map_with_span(|v, s| (v, s)),
+					)
 					.then(
 						just(Token::Operator(String::from("=>")))
 							.ignore_then(exp.clone().map(Box::new))
@@ -177,8 +185,7 @@ fn exp_parser<'a>() -> impl Parser<Token, (Range<usize>, Expression), Error = Ch
 				generics,
 				args,
 				body,
-				return_type: ret
-					.unwrap_or_else(|| CustomType::Lone(UseType::simple("Null".to_string()))),
+				return_type: ret,
 			})
 			.map(RawData::Func)
 			.map(Symbol::Data)

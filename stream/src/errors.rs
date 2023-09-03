@@ -32,6 +32,14 @@ macro_rules! errors {
                 }
             }
 
+			pub fn get_msg_without_lines(&self) -> String {
+                match self {
+		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
+			format!("Error [{}]: {}, at {:?}", self.get_code(), format!($msg, $($($arg_name,)*)?), loc)
+		    })*
+                }
+            }
+
             pub fn get_pos(&self, lines:&Vec<i32>) -> (FilePosition, FilePosition) {
                 match self {
 		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
@@ -95,7 +103,7 @@ errors!(
 		"The comparison expression in a while loop must resolve to type 'Bool', found '{}' instead"
 	),
 	(9, BoolInIf(ty:CompType), "The comparison expression in an if expression must resolve to type  'Bool', found '{}' instead"),
-	(10, InvalidAssignment(attempted:CompType, allowed:CompType), "Type '{}' is not assignable to type '{}'"),
+	(10, InvalidAssignment(attempted:CompType, allowed:CompType), "Type '{:?}' is not assignable to type '{:?}'"),
 	(11, NonfunctionCall(name:String, var:CompType), "Cannot call variable '{}' of type '{}'"),
 	(12, UntypedExternal(name:String), "External variable '{}' must be declared with a type"),
 	(13, RedeclareInSameScope(name:String), "Cannot redeclare variable '{}' in the same scope"),
