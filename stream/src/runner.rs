@@ -6,7 +6,6 @@ use crate::lexer;
 use crate::map_vec;
 use crate::parser::*;
 use crate::settings::Settings;
-use crate::shared::*;
 use chumsky::Parser;
 use std::path::Path;
 

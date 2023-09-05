@@ -112,7 +112,7 @@ impl CompType {
 				)
 				.as_basic_type_enum(),
 			Constant(data) => data.widen().get_compiler_type(context)?,
-			Generic(pos, extends) => extends.get_compiler_type(context)?,
+			Generic(_pos, extends) => extends.get_compiler_type(context)?,
 			_ => {
 				return Err(format!(
 					"get_compiler_type not implemented for type '{}'",

@@ -200,7 +200,7 @@ pub fn resolve_memory(
 		match &exp.1 {
 			Expression::Index(left, index) => {
 				accesses.push(IndexOption::Index(
-					crate::shared::transform_exp(index, env, scope, file).0,
+					crate::ast2::transform_exp(index, env, scope, file).0,
 				));
 				exp = left.as_ref();
 			}
