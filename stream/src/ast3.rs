@@ -3,8 +3,6 @@ use crate::ast2::*;
 use crate::errors::CompError;
 use crate::map_vec;
 
-use std::hash::Hasher;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Accesses {
 	pub variable: CompVariable,

@@ -8,7 +8,6 @@ use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
-use std::hash::Hasher;
 use std::sync::Arc;
 use std::{collections::HashMap, ops::Range};
 
@@ -1263,7 +1262,6 @@ impl Op {
 				}
 				_ => Err(self.invalid_comparison_msg(a, b)),
 			},
-			_ => Err(self.invalid_comparison_msg(a, b)),
 		}
 	}
 	fn invalid_comparison_msg(&self, a: &CompType, b: &CompType) -> CompError {
@@ -1548,19 +1546,6 @@ pub fn create_program(
 	scope.resolve_scope(ast, &settings.input_name);
 	transform_ast(ast, scope, &settings.input_name)
 }
-fn bin_exp(
-	op: &Op,
-	left: &SpannedExpression,
-	right: &SpannedExpression,
-	env: &ExpEnvironment,
-	scope: &mut Scope,
-	file: &str,
-) -> WithErrors<CompExpression> {
-	let mut errors = Vec::new();
-	let left = transform_exp(left, env, scope, file).collect_errors_into(&mut errors);
-	let right = transform_exp(right, env, scope, file).collect_errors_into(&mut errors);
-	WithErrors::new(CompExpression::BinOp(op.clone(), left, right), errors)
-}
 
 pub fn transform_type(
 	ty: &CustomType,
@@ -1583,8 +1568,7 @@ pub fn transform_type(
 		CustomType::Array(el_ty, len) => {
 			let el_ty =
 				transform_type(el_ty, scope, location.clone()).collect_errors_into(&mut errors);
-			let len =
-				transform_type(len, scope, location.clone()).collect_errors_into(&mut errors);
+			let len = transform_type(len, scope, location.clone()).collect_errors_into(&mut errors);
 			CompType::Array(el_ty.boxed(), len.boxed())
 		}
 		CustomType::Union(sub_types) => CompType::Union(map_vec!(sub_types, |x| {
@@ -1638,7 +1622,7 @@ pub fn transform_type(
 }
 
 impl Function {
-	fn transform_function(&self, scope: &mut Scope, file: &str) -> (FunctionAst, Vec<CompError>) {
+	fn transform_function(&self, scope: &mut Scope, file: &str) -> WithErrors<FunctionAst> {
 		if self.generics
 			== vec![(
 				"T".to_string(),
@@ -1700,14 +1684,14 @@ impl Function {
 				body: None,
 			},
 		};
-		(func, errs)
+		WithErrors::new(func, errs)
 	}
 
 	fn transform_function_single_constant_int(
 		&self,
-		scope: &mut Scope,
+		scope: &Scope,
 		file: &str,
-	) -> (FunctionAst, Vec<CompError>) {
+	) -> WithErrors<FunctionAst> {
 		let mut errs = Vec::new();
 		let (name, _constraint) = self.generics.first().unwrap();
 		let mut local_scope = scope.create_child(Vec::new());
@@ -1793,7 +1777,7 @@ impl Function {
 				body: None,
 			},
 		};
-		(func, errs)
+		WithErrors::new(func, errs)
 	}
 }
 pub fn resolve_type(
@@ -2110,11 +2094,10 @@ impl RawData {
 			RawData::Str(val) => CompData::Str(val.clone()),
 			RawData::Bool(val) => CompData::Bool(*val),
 			RawData::Null => CompData::Null,
-			RawData::Func(func) => {
-				let (func, mut errs) = func.transform_function(scope, file);
-				errors.append(&mut errs);
-				CompData::Func(func)
-			}
+			RawData::Func(func) => CompData::Func(
+				func.transform_function(scope, file)
+					.collect_errors_into(&mut errors),
+			),
 		};
 		WithErrors { data, errors }
 	}

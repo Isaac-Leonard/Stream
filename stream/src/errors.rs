@@ -23,7 +23,7 @@ macro_rules! errors {
 		    },)*
 		}
 	    }
-            pub fn get_msg(&self, lines:&Vec<i32>) -> String {
+            pub fn get_msg(&self, lines:&[i32]) -> String {
                 match self {
 		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
 			let pos = get_pos(loc.start as i32, lines);
@@ -40,7 +40,7 @@ macro_rules! errors {
                 }
             }
 
-            pub fn get_pos(&self, lines:&Vec<i32>) -> (FilePosition, FilePosition) {
+            pub fn get_pos(&self, lines:&[i32]) -> (FilePosition, FilePosition) {
                 match self {
 		    $(CompError::$Name($($($arg_name,)*)? loc) =>{
 			// We have to pretend to use the variables otherwise the compiler complains, also we can't use _s
