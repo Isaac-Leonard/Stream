@@ -3,6 +3,7 @@ use crate::ast3::*;
 use crate::errors::CompError;
 use crate::map_vec;
 use crate::settings::Settings;
+use crate::utils::WithErrors;
 use std::cell::Ref;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -1474,18 +1475,9 @@ pub fn transform_exp(
 				};
 				CompExpression::Read(var)
 			}
-			Symbol::Data(data) => CompExpression::Value(match data.clone() {
-				RawData::Int(val) => CompData::Int(val),
-				RawData::Float(val) => CompData::Float(val),
-				RawData::Str(val) => CompData::Str(val),
-				RawData::Bool(val) => CompData::Bool(val),
-				RawData::Null => CompData::Null,
-				RawData::Func(func) => {
-					let (func, mut errors) = transform_function(&func, scope, file);
-					errs.append(&mut errors);
-					CompData::Func(func)
-				}
-			}),
+			Symbol::Data(data) => {
+				CompExpression::Value(data.transform(scope, file).collect_errors_into(&mut errs))
+			}
 		},
 		Expression::Invalid => panic!("invalid {:?}", loc),
 	};
@@ -1622,137 +1614,37 @@ pub fn transform_type(
 	(ty, errors)
 }
 
-fn transform_function(
-	func: &Function,
-	scope: &mut Scope,
-	file: &str,
-) -> (FunctionAst, Vec<CompError>) {
-	if func.generics
-		== vec![(
-			"T".to_string(),
-			Some(CustomType::Lone(UseType {
-				name: "Int".to_string(),
-				generics: Vec::new(),
-			})),
-		)] {
-		return transform_function_single_constant_int(func, scope, file);
-	}
-
-	let mut errs = Vec::new();
-	for (pos, (name, constraint)) in func.generics.iter().enumerate() {
-		let constraint = match constraint {
-			Some(ty) => {
-				// TODO: Hacky error reporting until we clean this part up
-				let (ty, mut errors) = transform_type(ty, scope, 0..0);
-				errs.append(&mut errors);
-				ty
-			}
-			None => CompType::Unknown,
-		};
-		scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
-	}
-
-	let mut arguments = Vec::new();
-	for arg in &func.args {
-		let arg_ty = if let Some(ty) = &arg.1 {
-			let (ty, mut errors) = transform_type(ty, scope, arg.0 .1.clone());
-			errs.append(&mut errors);
-			ty
-		} else {
-			CompType::Unknown
-		};
-		arguments.push(CompVariable {
-			name: arg.0 .0.clone(),
-			constant: true,
-			typing: arg_ty,
-			external: false,
-			declared_at: Some((file.to_string(), arg.0 .1.clone())),
-			initialised: true,
-		});
-	}
-	let (return_type, mut errors) =
-		transform_type(&func.return_type.0, scope, func.return_type.1.clone());
-	errs.append(&mut errors);
-	let arguments = arguments;
-	let func = match &func.body {
-		Some(body) => {
-			let mut local_scope = scope.create_child(arguments.clone());
-			let local_scope = local_scope.resolve_scope(body.as_ref(), file);
-			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
-			errs.append(&mut errors);
-			FunctionAst {
-				generic_arguments: arguments.clone(),
-				arguments,
-				generic_return_type: return_type.clone(),
-				return_type,
-				body: Some(Box::new(body)),
-			}
+impl Function {
+	fn transform_function(&self, scope: &mut Scope, file: &str) -> (FunctionAst, Vec<CompError>) {
+		if self.generics
+			== vec![(
+				"T".to_string(),
+				Some(CustomType::Lone(UseType {
+					name: "Int".to_string(),
+					generics: Vec::new(),
+				})),
+			)] {
+			return self.transform_function_single_constant_int(scope, file);
 		}
-		None => FunctionAst {
-			generic_arguments: arguments.clone(),
-			arguments,
-			generic_return_type: return_type.clone(),
-			return_type,
-			body: None,
-		},
-	};
-	(func, errs)
-}
 
-fn transform_function_single_constant_int(
-	func: &Function,
-	scope: &mut Scope,
-	file: &str,
-) -> (FunctionAst, Vec<CompError>) {
-	let mut errs = Vec::new();
-	let (name, _constraint) = func.generics.first().unwrap();
-	let mut local_scope = scope.create_child(Vec::new());
-	local_scope.add_type(name.clone(), CompType::Int);
-
-	let mut arguments = Vec::new();
-	for arg in &func.args {
-		let arg_ty = if let Some(ty) = &arg.1 {
-			let (ty, mut errors) = transform_type(ty, &local_scope, arg.0 .1.clone());
-			errs.append(&mut errors);
-			ty
-		} else {
-			CompType::Unknown
-		};
-		arguments.push(CompVariable {
-			name: arg.0 .0.clone(),
-			constant: true,
-			typing: arg_ty,
-			external: false,
-			declared_at: Some((file.to_string(), arg.0 .1.clone())),
-			initialised: true,
-		});
-	}
-	let (return_type, mut errors) = transform_type(
-		&func.return_type.0,
-		&local_scope,
-		func.return_type.1.clone(),
-	);
-	errs.append(&mut errors);
-	let arguments = arguments;
-	let (generic_arguments, generic_return_type) = {
-		let mut generic_scope = scope.create_child(Vec::new());
-		for (pos, (name, constraint)) in func.generics.iter().enumerate() {
+		let mut errs = Vec::new();
+		for (pos, (name, constraint)) in self.generics.iter().enumerate() {
 			let constraint = match constraint {
 				Some(ty) => {
 					// TODO: Hacky error reporting until we clean this part up
-					let (ty, mut errors) = transform_type(ty, &generic_scope, 0..0);
+					let (ty, mut errors) = transform_type(ty, scope, 0..0);
 					errs.append(&mut errors);
 					ty
 				}
 				None => CompType::Unknown,
 			};
-			generic_scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+			scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
 		}
 
 		let mut arguments = Vec::new();
-		for arg in &func.args {
+		for arg in &self.args {
 			let arg_ty = if let Some(ty) = &arg.1 {
-				let (ty, mut errors) = transform_type(ty, &generic_scope, arg.0 .1.clone());
+				let (ty, mut errors) = transform_type(ty, scope, arg.0 .1.clone());
 				errs.append(&mut errors);
 				ty
 			} else {
@@ -1768,34 +1660,132 @@ fn transform_function_single_constant_int(
 			});
 		}
 		let (return_type, mut errors) =
-			transform_type(&func.return_type.0, scope, func.return_type.1.clone());
+			transform_type(&self.return_type.0, scope, self.return_type.1.clone());
 		errs.append(&mut errors);
-		(arguments, return_type)
-	};
+		let arguments = arguments;
+		let func = match &self.body {
+			Some(body) => {
+				let mut local_scope = scope.create_child(arguments.clone());
+				let local_scope = local_scope.resolve_scope(body.as_ref(), file);
+				let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
+				errs.append(&mut errors);
+				FunctionAst {
+					generic_arguments: arguments.clone(),
+					arguments,
+					generic_return_type: return_type.clone(),
+					return_type,
+					body: Some(Box::new(body)),
+				}
+			}
+			None => FunctionAst {
+				generic_arguments: arguments.clone(),
+				arguments,
+				generic_return_type: return_type.clone(),
+				return_type,
+				body: None,
+			},
+		};
+		(func, errs)
+	}
 
-	let func = match &func.body {
-		Some(body) => {
-			let mut local_scope = scope.create_child(arguments.clone());
-			let local_scope = local_scope.resolve_scope(body.as_ref(), file);
-			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
+	fn transform_function_single_constant_int(
+		&self,
+		scope: &mut Scope,
+		file: &str,
+	) -> (FunctionAst, Vec<CompError>) {
+		let mut errs = Vec::new();
+		let (name, _constraint) = self.generics.first().unwrap();
+		let mut local_scope = scope.create_child(Vec::new());
+		local_scope.add_type(name.clone(), CompType::Int);
+
+		let mut arguments = Vec::new();
+		for arg in &self.args {
+			let arg_ty = if let Some(ty) = &arg.1 {
+				let (ty, mut errors) = transform_type(ty, &local_scope, arg.0 .1.clone());
+				errs.append(&mut errors);
+				ty
+			} else {
+				CompType::Unknown
+			};
+			arguments.push(CompVariable {
+				name: arg.0 .0.clone(),
+				constant: true,
+				typing: arg_ty,
+				external: false,
+				declared_at: Some((file.to_string(), arg.0 .1.clone())),
+				initialised: true,
+			});
+		}
+		let (return_type, mut errors) = transform_type(
+			&self.return_type.0,
+			&local_scope,
+			self.return_type.1.clone(),
+		);
+		errs.append(&mut errors);
+		let arguments = arguments;
+		let (generic_arguments, generic_return_type) = {
+			let mut generic_scope = scope.create_child(Vec::new());
+			for (pos, (name, constraint)) in self.generics.iter().enumerate() {
+				let constraint = match constraint {
+					Some(ty) => {
+						// TODO: Hacky error reporting until we clean this part up
+						let (ty, mut errors) = transform_type(ty, &generic_scope, 0..0);
+						errs.append(&mut errors);
+						ty
+					}
+					None => CompType::Unknown,
+				};
+				generic_scope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+			}
+
+			let mut arguments = Vec::new();
+			for arg in &self.args {
+				let arg_ty = if let Some(ty) = &arg.1 {
+					let (ty, mut errors) = transform_type(ty, &generic_scope, arg.0 .1.clone());
+					errs.append(&mut errors);
+					ty
+				} else {
+					CompType::Unknown
+				};
+				arguments.push(CompVariable {
+					name: arg.0 .0.clone(),
+					constant: true,
+					typing: arg_ty,
+					external: false,
+					declared_at: Some((file.to_string(), arg.0 .1.clone())),
+					initialised: true,
+				});
+			}
+			let (return_type, mut errors) =
+				transform_type(&self.return_type.0, scope, self.return_type.1.clone());
 			errs.append(&mut errors);
-			FunctionAst {
+			(arguments, return_type)
+		};
+
+		let func = match &self.body {
+			Some(body) => {
+				let mut local_scope = scope.create_child(arguments.clone());
+				let local_scope = local_scope.resolve_scope(body.as_ref(), file);
+				let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
+				errs.append(&mut errors);
+				FunctionAst {
+					generic_arguments,
+					arguments,
+					generic_return_type,
+					return_type,
+					body: Some(Box::new(body)),
+				}
+			}
+			None => FunctionAst {
 				generic_arguments,
 				arguments,
 				generic_return_type,
 				return_type,
-				body: Some(Box::new(body)),
-			}
-		}
-		None => FunctionAst {
-			generic_arguments,
-			arguments,
-			generic_return_type,
-			return_type,
-			body: None,
-		},
-	};
-	(func, errs)
+				body: None,
+			},
+		};
+		(func, errs)
+	}
 }
 pub fn resolve_type(
 	exp: &mut CompExpression,
@@ -2098,5 +2088,23 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
 	} else {
 		// ToDO: Actually match all cases, this should not be reached if correct code is written but still technically reachable and so needs to be handled properly
 		NEVER
+	}
+}
+impl RawData {
+	pub fn transform(&self, scope: &mut Scope, file: &str) -> WithErrors<CompData> {
+		let mut errors: Vec<CompError> = Vec::new();
+		let data = match self {
+			RawData::Int(val) => CompData::Int(*val),
+			RawData::Float(val) => CompData::Float(*val),
+			RawData::Str(val) => CompData::Str(val.clone()),
+			RawData::Bool(val) => CompData::Bool(*val),
+			RawData::Null => CompData::Null,
+			RawData::Func(func) => {
+				let (func, mut errs) = func.transform_function(scope, file);
+				errors.append(&mut errs);
+				CompData::Func(func)
+			}
+		};
+		WithErrors { data, errors }
 	}
 }
