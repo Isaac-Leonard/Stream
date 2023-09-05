@@ -770,6 +770,72 @@ impl PartialEq for Scope {
 }
 
 impl Scope {
+	fn resolve_scope<'a>(
+		&'a mut self,
+		(loc, ast): &SpannedExpression,
+		file: &str,
+	) -> &'a mut Scope {
+		// TODO: Sort out errors and stuff here
+		match ast {
+			Expression::TypeDeclaration(name, generics, declared_type) => {
+				if self.get_type(name).is_err() {
+					let mut subscope = self.create_child(Vec::new());
+					for (pos, (name, constraint)) in generics.iter().enumerate() {
+						let constraint = match constraint {
+							Some(ty) => {
+								// TODO: Hacky error reporting until we clean this part up
+								let (ty, errs) = transform_type(ty, &subscope, loc.clone());
+								if !errs.is_empty() {
+									eprintln!("{:?}", errs);
+								}
+								ty
+							}
+							None => CompType::Unknown,
+						};
+						subscope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
+					}
+					let (ty, errors) = transform_type(declared_type, &subscope, loc.clone());
+					if !errors.is_empty() {
+						eprintln!("{:?}", errors);
+					}
+					self.add_type(name.clone(), ty);
+				}
+				self
+			}
+			Expression::InitAssign(external, constant, name, declared_type, _exp) => {
+				if self.variable_exists(&name.0) {
+					self
+				} else {
+					let typing = match declared_type {
+						None => CompType::Unknown,
+						Some(x) => {
+							let (ty, errs) = transform_type(x, self, loc.clone());
+							for err in errs {
+								eprintln!("{}", err.get_msg_without_lines());
+							}
+							ty
+						}
+					};
+					self.add_variable(CompVariable {
+						name: name.0.clone(),
+						constant: *constant,
+						typing,
+						initialised: false,
+						external: *external,
+						declared_at: Some((file.to_string(), name.1.clone())),
+					})
+				}
+			}
+			Expression::Block(expressions) => {
+				for exp in expressions {
+					self.resolve_scope(exp, file);
+				}
+				self
+			}
+			_x => self,
+		}
+	}
+
 	fn get_inner(&self) -> Ref<'_, InnerScope> {
 		self.0.borrow()
 	}
@@ -1464,7 +1530,7 @@ pub fn create_program(
 	scope: &mut Scope,
 	settings: &Settings,
 ) -> (Program, Vec<CompError>) {
-	resolve_scope(ast, scope, &settings.input_name);
+	scope.resolve_scope(ast, &settings.input_name);
 	transform_ast(ast, scope, &settings.input_name)
 }
 fn bin_exp(
@@ -1611,7 +1677,7 @@ fn transform_function(
 	let func = match &func.body {
 		Some(body) => {
 			let mut local_scope = scope.create_child(arguments.clone());
-			let local_scope = resolve_scope(body.as_ref(), &mut local_scope, file);
+			let local_scope = local_scope.resolve_scope(body.as_ref(), file);
 			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
 			errs.append(&mut errors);
 			FunctionAst {
@@ -1710,7 +1776,7 @@ fn transform_function_single_constant_int(
 	let func = match &func.body {
 		Some(body) => {
 			let mut local_scope = scope.create_child(arguments.clone());
-			let local_scope = resolve_scope(body.as_ref(), &mut local_scope, file);
+			let local_scope = local_scope.resolve_scope(body.as_ref(), file);
 			let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
 			errs.append(&mut errors);
 			FunctionAst {
@@ -2002,71 +2068,6 @@ fn get_env_from_scope(_scope: &Scope) -> ExpEnvironment {
 		result_type: CompType::Null,
 		located: 0..0,
 		expression: Box::new(CompExpression::List(Vec::new())),
-	}
-}
-fn resolve_scope<'a>(
-	(loc, ast): &SpannedExpression,
-	scope: &'a mut Scope,
-	file: &str,
-) -> &'a mut Scope {
-	// TODO: Sort out errors and stuff here
-	match ast {
-		Expression::TypeDeclaration(name, generics, declared_type) => {
-			if scope.get_type(name).is_err() {
-				let mut subscope = scope.clone();
-				for (pos, (name, constraint)) in generics.iter().enumerate() {
-					let constraint = match constraint {
-						Some(ty) => {
-							// TODO: Hacky error reporting until we clean this part up
-							let (ty, errs) = transform_type(ty, scope, loc.clone());
-							if !errs.is_empty() {
-								eprintln!("{:?}", errs);
-							}
-							ty
-						}
-						None => CompType::Unknown,
-					};
-					subscope.add_type(name.clone(), CompType::Generic(pos, constraint.boxed()));
-				}
-				let (ty, errors) = transform_type(declared_type, &subscope, loc.clone());
-				if !errors.is_empty() {
-					eprintln!("{:?}", errors);
-				}
-				scope.add_type(name.clone(), ty);
-			}
-			scope
-		}
-		Expression::InitAssign(external, constant, name, declared_type, _exp) => {
-			if scope.variable_exists(&name.0) {
-				scope
-			} else {
-				let typing = match declared_type {
-					None => CompType::Unknown,
-					Some(x) => {
-						let (ty, errs) = transform_type(x, scope, loc.clone());
-						for err in errs {
-							eprintln!("{}", err.get_msg_without_lines());
-						}
-						ty
-					}
-				};
-				scope.add_variable(CompVariable {
-					name: name.0.clone(),
-					constant: *constant,
-					typing,
-					initialised: false,
-					external: *external,
-					declared_at: Some((file.to_string(), name.1.clone())),
-				})
-			}
-		}
-		Expression::Block(expressions) => {
-			for exp in expressions {
-				resolve_scope(exp, scope, file);
-			}
-			scope
-		}
-		_x => scope,
 	}
 }
 
