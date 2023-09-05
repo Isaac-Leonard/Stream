@@ -35,6 +35,24 @@ pub enum CompType {
 }
 
 impl CompType {
+	fn get_top_type(types: &[CompType]) -> CompType {
+		use CompType::*;
+		let mut highest_types = Vec::new();
+		for ty in types {
+			highest_types.push(match ty {
+				Int | Constant(ConstantData::Int(_)) => Int,
+				Float | Constant(ConstantData::Float(_)) => Float,
+				Null | Constant(ConstantData::Null) => Null,
+				Bool | Constant(ConstantData::Bool(_)) => Bool,
+				Constant(ConstantData::Str(str)) => {
+					Str(ConstantData::Int(str.len() as i32).to_type().boxed())
+				}
+				x => x.clone(),
+			});
+		}
+		Union(highest_types).flatten()
+	}
+
 	pub fn boxed(self) -> Box<Self> {
 		Box::new(self)
 	}
@@ -1784,11 +1802,11 @@ pub fn resolve_type(
 	exp: &mut CompExpression,
 	_env: &ExpEnvironment,
 	located: Range<usize>,
-	mut errs: Vec<CompError>,
-) -> (CompType, Vec<CompError>) {
+) -> WithErrors<CompType> {
 	use CompExpression::*;
-	match exp {
-		Conversion(_exp, ty) => (ty.clone(), errs),
+	let mut errs: Vec<CompError> = Vec::new();
+	let ty = match exp {
+		Conversion(_exp, ty) => ty.clone(),
 		DotAccess(val, (key, _)) => {
 			if let CompType::Union(types) = &val.result_type {
 				let union = get_shared_access_types(types, key);
@@ -1802,7 +1820,7 @@ pub fn resolve_type(
 				} else {
 					CompType::Union(union)
 				};
-				(result_type, errs)
+				result_type
 			} else if let CompType::Struct(fields) = &val.result_type {
 				let result_type = if let Some(ty) = fields.get(key) {
 					ty.clone()
@@ -1814,7 +1832,7 @@ pub fn resolve_type(
 					));
 					CompType::Unknown
 				};
-				(result_type, errs)
+				result_type
 			} else if let CompType::Array(_, len) = &val.result_type {
 				let result_type = if key == "length" {
 					len.as_ref().clone()
@@ -1826,48 +1844,39 @@ pub fn resolve_type(
 					));
 					CompType::Unknown
 				};
-				(result_type, errs)
+				result_type
 			} else {
 				errs.push(CompError::PropertyDoesNotExistOnType(
 					key.clone(),
 					val.result_type.clone(),
 					located,
 				));
-				(CompType::Unknown, errs)
+				CompType::Unknown
 			}
 		}
-		Struct(fields) => {
-			let result_type = CompType::Struct(
-				fields
-					.iter()
-					.map(|(k, v)| (k.clone(), v.1.result_type.clone()))
-					.collect(),
-			)
-			.flatten();
-			(result_type, errs)
-		}
+		Struct(fields) => CompType::Struct(
+			fields
+				.iter()
+				.map(|(k, v)| (k.clone(), v.1.result_type.clone()))
+				.collect(),
+		),
 		Array(elements) => {
 			let el_types = map_vec!(elements, |el| el.result_type.widen());
-			(
-				CompType::Array(
-					el_types
-						.first()
-						.cloned()
-						.unwrap_or(CompType::Unknown)
-						.boxed(),
-					CompType::Constant(ConstantData::Int(elements.len() as i32)).boxed(),
-				),
-				errs,
+			CompType::Array(
+				el_types
+					.first()
+					.cloned()
+					.unwrap_or(CompType::Unknown)
+					.boxed(),
+				CompType::Constant(ConstantData::Int(elements.len() as i32)).boxed(),
 			)
 		}
 
-		Typeof(_) => (CompType::Type, errs),
-		List(exps) => (
-			exps.last()
-				.map(|x| x.result_type.clone())
-				.unwrap_or(CompType::Null),
-			errs,
-		),
+		Typeof(_) => CompType::Type,
+		List(exps) => exps
+			.last()
+			.map(|x| x.result_type.clone())
+			.unwrap_or(CompType::Null),
 		WhileLoop { cond, body } => {
 			if !cond.result_type.is_bool() {
 				errs.push(CompError::BoolInWhile(
@@ -1875,7 +1884,7 @@ pub fn resolve_type(
 					cond.located.clone(),
 				));
 			}
-			(body.result_type.clone(), errs)
+			body.result_type.clone()
 		}
 		IfElse(if_exp) => {
 			if !if_exp.cond.result_type.is_bool() {
@@ -1886,9 +1895,9 @@ pub fn resolve_type(
 			}
 			let then_ty = if_exp.then.result_type.clone();
 			let other_ty = if_exp.otherwise.result_type.clone();
-			(CompType::Union(vec![then_ty, other_ty]).flatten(), errs)
+			CompType::Union(vec![then_ty, other_ty])
 		}
-		Value(data) => (data.get_type(), errs),
+		Value(data) => data.get_type(),
 		Index(arr, i) => {
 			let arr_ty = arr.result_type.clone();
 			let i_ty = i.result_type.clone();
@@ -1906,7 +1915,7 @@ pub fn resolve_type(
 			} else {
 				CompType::Unknown
 			};
-			(result_type, errs)
+			result_type
 		}
 		Assign(var, lhs) => {
 			let exp_ty = lhs.result_type.clone();
@@ -1947,7 +1956,7 @@ pub fn resolve_type(
 			}
 			let exp_ty = if let CompType::Touple(elements) = exp_ty {
 				CompType::Array(
-					get_top_type(&elements).boxed(),
+					CompType::get_top_type(&elements).boxed(),
 					CompType::Constant(ConstantData::Int(elements.len() as i32)).boxed(),
 				)
 			} else {
@@ -1961,20 +1970,16 @@ pub fn resolve_type(
 				));
 			}
 			var.accessing = accesses;
-			(exp_ty, errs)
+			exp_ty
 		}
-		BinOp(op, a, b) => {
-			let result_type = match op.resulting_type(&a.result_type, &b.result_type) {
-				Ok(ty) => ty,
-				Err(err) => {
-					errs.push(err);
-					CompType::Unknown
-				}
-			};
-			(result_type, errs)
-		}
-		OneOp(_, val) => (val.result_type.clone(), errs),
-		Read(var) => (var.get_type(), errs),
+		BinOp(op, a, b) => op
+			.resulting_type(&a.result_type, &b.result_type)
+			.unwrap_or_else(|err| {
+				errs.push(err);
+				CompType::Unknown
+			}),
+		OneOp(_, val) => val.result_type.clone(),
+		Read(var) => var.get_type(),
 		Call(var, generics, args) => {
 			let result_type = if let CompType::Callible(arg_types, return_type) = var.get_type() {
 				if arg_types.len() != args.len() {
@@ -2009,17 +2014,18 @@ pub fn resolve_type(
 				));
 				CompType::Unknown
 			};
-			(result_type, errs)
+			result_type
 		}
-	}
+	};
+	WithErrors::new(ty, errs)
 }
 pub fn get_env(
 	mut exp: CompExpression,
 	env: &ExpEnvironment,
 	located: Range<usize>,
-	errs: Vec<CompError>,
+	mut errs: Vec<CompError>,
 ) -> WithErrors<ExpEnvironment> {
-	let (ty, errs) = resolve_type(&mut exp, env, located.clone(), errs);
+	let ty = resolve_type(&mut exp, env, located.clone()).collect_errors_into(&mut errs);
 	WithErrors::new(
 		ExpEnvironment {
 			expression: Box::new(exp.clone()),
@@ -2028,24 +2034,6 @@ pub fn get_env(
 		},
 		errs,
 	)
-}
-
-fn get_top_type(types: &[CompType]) -> CompType {
-	use CompType::*;
-	let mut highest_types = Vec::new();
-	for ty in types {
-		highest_types.push(match ty {
-			Int | Constant(ConstantData::Int(_)) => Int,
-			Float | Constant(ConstantData::Float(_)) => Float,
-			Null | Constant(ConstantData::Null) => Null,
-			Bool | Constant(ConstantData::Bool(_)) => Bool,
-			Constant(ConstantData::Str(str)) => {
-				Str(ConstantData::Int(str.len() as i32).to_type().boxed())
-			}
-			x => x.clone(),
-		});
-	}
-	Union(highest_types).flatten()
 }
 
 fn get_env_from_scope(_scope: &Scope) -> ExpEnvironment {
@@ -2085,6 +2073,7 @@ fn calc_type_from_not(from: &CompType, not: &CompType) -> CompType {
 		NEVER
 	}
 }
+
 impl RawData {
 	pub fn transform(&self, scope: &mut Scope, file: &str) -> WithErrors<CompData> {
 		let mut errors: Vec<CompError> = Vec::new();
