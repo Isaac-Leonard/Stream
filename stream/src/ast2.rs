@@ -1337,16 +1337,9 @@ pub fn transform_exp(
 	env: &ExpEnvironment,
 	scope: &mut Scope,
 	file: &str,
-) -> (ExpEnvironment, Vec<CompError>) {
+) -> WithErrors<ExpEnvironment> {
 	use Expression::*;
 	let mut errs = Vec::new();
-	macro_rules! get_exp {
-		($exp:expr, $env:expr, $scope:expr) => {{
-			let mut res = transform_exp($exp, $env, $scope, file);
-			errs.append(&mut res.1);
-			res.0
-		}};
-	}
 
 	macro_rules! resolve_memory_location {
 		($exp:expr, $env:expr, $scope:expr) => {{
@@ -1359,26 +1352,43 @@ pub fn transform_exp(
 	let expression = match exp {
 		Struct(data) => CompExpression::Struct(
 			data.iter()
-				.map(|(key, value)| (key.0.clone(), (key.1.clone(), get_exp!(value, env, scope))))
+				.map(|(key, value)| {
+					(
+						key.0.clone(),
+						(
+							key.1.clone(),
+							transform_exp(value, env, scope, file).collect_errors_into(&mut errs),
+						),
+					)
+				})
 				.collect(),
 		),
-		Array(elements) => CompExpression::Array(map_vec!(elements, |x| get_exp!(x, env, scope))),
-		DotAccess(val, key) => CompExpression::DotAccess(get_exp!(val, env, scope), key.clone()),
-		Conversion(exp, ty) => {
-			let ty = transform_type(ty, scope, loc.clone()).collect_errors_into(&mut errs);
-			CompExpression::Conversion(get_exp!(exp, env, scope), ty)
+		Array(elements) => {
+			CompExpression::Array(map_vec!(elements, |x| transform_exp(x, env, scope, file)
+				.collect_errors_into(&mut errs)))
 		}
-		Typeof(exp) => CompExpression::Typeof(get_exp!(exp, env, scope)),
-		Index(arr, index) => {
-			CompExpression::Index(get_exp!(arr, env, scope), get_exp!(index, env, scope))
-		}
+		DotAccess(val, key) => CompExpression::DotAccess(
+			transform_exp(val, env, scope, file).collect_errors_into(&mut errs),
+			key.clone(),
+		),
+		Conversion(exp, ty) => CompExpression::Conversion(
+			transform_exp(exp, env, scope, file).collect_errors_into(&mut errs),
+			transform_type(ty, scope, loc.clone()).collect_errors_into(&mut errs),
+		),
+		Typeof(exp) => CompExpression::Typeof(
+			transform_exp(exp, env, scope, file).collect_errors_into(&mut errs),
+		),
+		Index(arr, index) => CompExpression::Index(
+			transform_exp(arr, env, scope, file).collect_errors_into(&mut errs),
+			transform_exp(index, env, scope, file).collect_errors_into(&mut errs),
+		),
 		TypeDeclaration(_, _, _) => CompExpression::List(Vec::new()),
 		InitAssign(_, _, name, _, exp) => {
 			if scope.variable_initialised(&name.0) {
 				errs.push(CompError::RedeclareInSameScope(name.0.clone(), loc.clone()));
 			}
 
-			let exp = get_exp!(exp, env, scope);
+			let exp = transform_exp(exp, env, scope, file).collect_errors_into(&mut errs);
 			let exp_ty = exp.result_type.clone();
 			let has_type = scope.variable_has_type(&name.0);
 			if !has_type {
@@ -1408,7 +1418,7 @@ pub fn transform_exp(
 		}
 		Assign(name, exp) => {
 			let lhs = resolve_memory_location!(name, env, scope);
-			let exp = get_exp!(exp, env, scope);
+			let exp = transform_exp(exp, env, scope, file).collect_errors_into(&mut errs);
 			if let Some(lhs) = lhs {
 				CompExpression::Assign(lhs, exp)
 			} else {
@@ -1420,9 +1430,9 @@ pub fn transform_exp(
 			}
 		}
 		IfElse(cond, left, right) => {
-			let cond = get_exp!(cond, env, scope);
-			let then = get_exp!(left, env, scope);
-			let otherwise = get_exp!(right, env, scope);
+			let cond = transform_exp(cond, env, scope, file).collect_errors_into(&mut errs);
+			let then = transform_exp(left, env, scope, file).collect_errors_into(&mut errs);
+			let otherwise = transform_exp(right, env, scope, file).collect_errors_into(&mut errs);
 			CompExpression::IfElse(crate::ast2::IfElse {
 				cond,
 				then,
@@ -1430,29 +1440,29 @@ pub fn transform_exp(
 			})
 		}
 		Expression::Loop(exp, body) => {
-			let cond = get_exp!(exp, env, scope);
-			let body = get_exp!(body, env, scope);
+			let cond = transform_exp(exp, env, scope, file).collect_errors_into(&mut errs);
+			let body = transform_exp(body, env, scope, file).collect_errors_into(&mut errs);
 			CompExpression::WhileLoop { cond, body }
 		}
 		Expression::Block(expressions) => {
 			let mut env = env.clone();
 			let mut oks = Vec::new();
 			for exp in expressions {
-				env = get_exp!(exp, &env, scope);
+				env = transform_exp(exp, &env, scope, file).collect_errors_into(&mut errs);
 				oks.push(env.clone());
 			}
 			CompExpression::List(oks)
 		}
-		Expression::BinOp(op, l, r) => {
-			let mut exp = bin_exp(op, l.as_ref(), r, env, scope, file);
-			errs.append(&mut exp.1);
-			exp.0
+		Expression::BinOp(op, left, right) => {
+			let left = transform_exp(left, env, scope, file).collect_errors_into(&mut errs);
+			let right = transform_exp(right, env, scope, file).collect_errors_into(&mut errs);
+			CompExpression::BinOp(op.clone(), left, right)
 		}
 		Expression::FuncCall(name, generics, arguments) => {
 			let mut args = Vec::new();
 			let mut env = env.clone();
 			for exp in arguments {
-				env = get_exp!(exp, &env, scope);
+				env = transform_exp(exp, &env, scope, file).collect_errors_into(&mut errs);
 				args.push(env.clone());
 			}
 			let func = if let Ok(var) = scope.get_variable(name) {
@@ -1469,8 +1479,7 @@ pub fn transform_exp(
 				}
 			};
 			let generics = map_vec!(generics, |x| {
-				let ty = transform_type(x, scope, loc.clone()).collect_errors_into(&mut errs);
-				ty
+				transform_type(x, scope, loc.clone()).collect_errors_into(&mut errs)
 			});
 			CompExpression::Call(func, generics, args)
 		}
@@ -1499,16 +1508,14 @@ pub fn transform_exp(
 	};
 	get_env(expression, env, loc.clone(), errs)
 }
-fn transform_ast(
-	ast: &SpannedExpression,
-	scope: &mut Scope,
-	file: &str,
-) -> (Program, Vec<CompError>) {
+
+fn transform_ast(ast: &SpannedExpression, scope: &mut Scope, file: &str) -> WithErrors<Program> {
+	let mut errors = Vec::new();
 	let env = get_env_from_scope(scope);
-	let mut expression = transform_exp(ast, &env, scope, file);
+	let expression = transform_exp(ast, &env, scope, file).collect_errors_into(&mut errors);
 	let mut prog = Program {
 		scope: scope.clone(),
-		body: expression.0,
+		body: expression,
 	};
 	prog.body.replace_arrays();
 	let functions = prog.body.get_functions();
@@ -1520,7 +1527,7 @@ fn transform_ast(
 				if let Some(sub_prog) = &sub_func.body {
 					let sub_variables = sub_prog.body.get_all_mentioned_variables();
 					if sub_variables.iter().any(|x| variables.contains(x)) {
-						expression.1.push(CompError::NotImplemented(
+						errors.push(CompError::NotImplemented(
 							"Closures that capture variables are not currently implemented"
 								.to_string(),
 							0..0,
@@ -1530,14 +1537,14 @@ fn transform_ast(
 			}
 		}
 	}
-	(prog, expression.1)
+	WithErrors::new(prog, errors)
 }
 
 pub fn create_program(
 	ast: &SpannedExpression,
 	scope: &mut Scope,
 	settings: &Settings,
-) -> (Program, Vec<CompError>) {
+) -> WithErrors<Program> {
 	scope.resolve_scope(ast, &settings.input_name);
 	transform_ast(ast, scope, &settings.input_name)
 }
@@ -1548,13 +1555,11 @@ fn bin_exp(
 	env: &ExpEnvironment,
 	scope: &mut Scope,
 	file: &str,
-) -> (CompExpression, Vec<CompError>) {
-	let left = transform_exp(left, env, scope, file);
-	let right = transform_exp(right, env, scope, file);
-	(
-		CompExpression::BinOp(op.clone(), left.0, right.0),
-		left.1.into_iter().chain(right.1).collect(),
-	)
+) -> WithErrors<CompExpression> {
+	let mut errors = Vec::new();
+	let left = transform_exp(left, env, scope, file).collect_errors_into(&mut errors);
+	let right = transform_exp(right, env, scope, file).collect_errors_into(&mut errors);
+	WithErrors::new(CompExpression::BinOp(op.clone(), left, right), errors)
 }
 
 pub fn transform_type(
@@ -1569,7 +1574,7 @@ pub fn transform_type(
 				.map(|(key, value)| {
 					(
 						key.clone(),
-						transform_type(value, &scope, location.clone())
+						transform_type(value, scope, location.clone())
 							.collect_errors_into(&mut errors),
 					)
 				})
@@ -1577,13 +1582,13 @@ pub fn transform_type(
 		),
 		CustomType::Array(el_ty, len) => {
 			let el_ty =
-				transform_type(el_ty, &scope, location.clone()).collect_errors_into(&mut errors);
+				transform_type(el_ty, scope, location.clone()).collect_errors_into(&mut errors);
 			let len =
-				transform_type(len, &scope, location.clone()).collect_errors_into(&mut errors);
+				transform_type(len, scope, location.clone()).collect_errors_into(&mut errors);
 			CompType::Array(el_ty.boxed(), len.boxed())
 		}
 		CustomType::Union(sub_types) => CompType::Union(map_vec!(sub_types, |x| {
-			transform_type(x, &scope, location.clone()).collect_errors_into(&mut errors)
+			transform_type(x, scope, location.clone()).collect_errors_into(&mut errors)
 		}))
 		.flatten(),
 
@@ -1607,7 +1612,7 @@ pub fn transform_type(
 			let found_type = scope.get_type(&referenced_type.name);
 			if let Ok(found_type) = found_type {
 				let generics = map_vec!(referenced_type.generics, |x| {
-					transform_type(x, &scope, location.clone()).collect_errors_into(&mut errors)
+					transform_type(x, scope, location.clone()).collect_errors_into(&mut errors)
 				});
 				// We want to preserve lone generics
 				// As in we only want to substitute generics that are part of another type
@@ -1677,8 +1682,8 @@ impl Function {
 			Some(body) => {
 				let mut local_scope = scope.create_child(arguments.clone());
 				let local_scope = local_scope.resolve_scope(body.as_ref(), file);
-				let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
-				errs.append(&mut errors);
+				let body =
+					transform_ast(body.as_ref(), local_scope, file).collect_errors_into(&mut errs);
 				FunctionAst {
 					generic_arguments: arguments.clone(),
 					arguments,
@@ -1770,8 +1775,8 @@ impl Function {
 			Some(body) => {
 				let mut local_scope = scope.create_child(arguments.clone());
 				let local_scope = local_scope.resolve_scope(body.as_ref(), file);
-				let (body, mut errors) = transform_ast(body.as_ref(), local_scope, file);
-				errs.append(&mut errors);
+				let body =
+					transform_ast(body.as_ref(), local_scope, file).collect_errors_into(&mut errs);
 				FunctionAst {
 					generic_arguments,
 					arguments,
@@ -2029,9 +2034,9 @@ pub fn get_env(
 	env: &ExpEnvironment,
 	located: Range<usize>,
 	errs: Vec<CompError>,
-) -> (ExpEnvironment, Vec<CompError>) {
+) -> WithErrors<ExpEnvironment> {
 	let (ty, errs) = resolve_type(&mut exp, env, located.clone(), errs);
-	(
+	WithErrors::new(
 		ExpEnvironment {
 			expression: Box::new(exp.clone()),
 			result_type: ty,

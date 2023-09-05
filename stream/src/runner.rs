@@ -161,14 +161,13 @@ pub fn transform_files(name: &str, programs: &mut HashMap<String, ImportMap>) {
 
 	// Have to drop the borrow and get a mutable one
 	if let Some(program) = programs.get_mut(name) {
-		let mut prog = create_program(
+		let prog = create_program(
 			program.ast.as_ref().unwrap(),
 			&mut global_scope,
 			&program.settings,
 		);
-		program.program = Some(prog.0);
 		program.errors = import_errors;
-		program.errors.append(&mut prog.1);
+		program.program = Some(prog.collect_errors_into(&mut program.errors));
 	}
 }
 
