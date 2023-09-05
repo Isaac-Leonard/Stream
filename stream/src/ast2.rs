@@ -1194,6 +1194,13 @@ impl Op {
 						a > b
 					})))
 				}
+				(Int, Generic(_, ty)) | (Generic(_, ty), Int) => {
+					if ty.is_int() {
+						Ok(Bool)
+					} else {
+						Err(self.invalid_comparison_msg(a, b))
+					}
+				}
 				_ => Err(self.invalid_comparison_msg(a, b)),
 			},
 			Add => Ok(match (a, b) {
@@ -1798,6 +1805,7 @@ impl Function {
 		WithErrors::new(func, errs)
 	}
 }
+
 pub fn resolve_type(
 	exp: &mut CompExpression,
 	_env: &ExpEnvironment,
@@ -2019,6 +2027,7 @@ pub fn resolve_type(
 	};
 	WithErrors::new(ty, errs)
 }
+
 pub fn get_env(
 	mut exp: CompExpression,
 	env: &ExpEnvironment,
