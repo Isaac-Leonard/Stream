@@ -5,6 +5,9 @@ pub struct WithErrors<T: Sized> {
 	pub errors: Vec<CompError>,
 }
 impl<T: Sized> WithErrors<T> {
+	pub fn new(data: T, errors: Vec<CompError>) -> Self {
+		Self { data, errors }
+	}
 	pub fn collect_errors_into(mut self, errors: &mut Vec<CompError>) -> T {
 		errors.append(&mut self.errors);
 		self.data

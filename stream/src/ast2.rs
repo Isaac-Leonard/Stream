@@ -129,35 +129,50 @@ impl CompType {
 		&self,
 		generics: &Vec<CompType>,
 		location: Range<usize>,
-	) -> (CompType, Vec<CompError>) {
+	) -> WithErrors<CompType> {
 		use CompType::*;
 		let mut errors = Vec::new();
-		macro_rules! substitute_generics {
-			($ty:expr) => {{
-				let mut res = $ty.substitute_generics(generics, location.clone());
-				errors.append(&mut res.1);
-				res.0
-			}};
-		}
 
 		let ty = match self {
 			IntPtr | Ptr | Type | Not(_) | Unknown | Char | Bool | Constant(_) | Null | Int
 			| Float => self.clone(),
-			Str(len) => Str(substitute_generics!(len).boxed()),
+			Str(len) => Str(len
+				.substitute_generics(generics, location.clone())
+				.collect_errors_into(&mut errors)
+				.boxed()),
 			Array(el_ty, len) => Array(
-				substitute_generics!(el_ty).boxed(),
-				substitute_generics!(len).boxed(),
+				el_ty
+					.substitute_generics(generics, location.clone())
+					.collect_errors_into(&mut errors)
+					.boxed(),
+				len.substitute_generics(generics, location.clone())
+					.collect_errors_into(&mut errors)
+					.boxed(),
 			),
 			Struct(data) => Struct(
 				data.iter()
-					.map(|(key, ty)| (key.clone(), substitute_generics!(ty)))
+					.map(|(key, ty)| {
+						(
+							key.clone(),
+							ty.substitute_generics(generics, location.clone())
+								.collect_errors_into(&mut errors),
+						)
+					})
 					.collect(),
 			),
-			Union(types) => Union(map_vec!(types, |ty| substitute_generics!(ty))),
-			Touple(elements) => Touple(map_vec!(elements, |ty| substitute_generics!(ty))),
+			Union(types) => Union(map_vec!(types, |ty| ty
+				.substitute_generics(generics, location.clone())
+				.collect_errors_into(&mut errors))),
+			Touple(elements) => Touple(map_vec!(elements, |ty| ty
+				.substitute_generics(generics, location.clone())
+				.collect_errors_into(&mut errors))),
 			Callible(args, ret) => Callible(
-				map_vec!(args, |x| substitute_generics!(x)),
-				substitute_generics!(ret).boxed(),
+				map_vec!(args, |x| x
+					.substitute_generics(generics, location.clone())
+					.collect_errors_into(&mut errors)),
+				ret.substitute_generics(generics, location.clone())
+					.collect_errors_into(&mut errors)
+					.boxed(),
 			),
 			Generic(position, extends_type) => {
 				let substitute_type = generics.get(*position);
@@ -178,7 +193,7 @@ impl CompType {
 				}
 			} // TODO: Hack till I can fill in the rest (I'm tired and its late)
 		};
-		(ty.flatten(), errors)
+		WithErrors::new(ty.flatten(), errors)
 	}
 
 	pub fn match_generics<'a, 'b>(&'a self, ty: &'b Self) -> Vec<(&'a Self, &'b Self)> {
@@ -1598,9 +1613,9 @@ pub fn transform_type(
 				// As in we only want to substitute generics that are part of another type
 				// Generics found here are ones that get substituted in themselves
 				if !matches!(found_type, CompType::Generic(_, _)) {
-					let (ty, mut errs) = found_type.substitute_generics(&generics, location);
-					errors.append(&mut errs);
-					ty
+					found_type
+						.substitute_generics(&generics, location)
+						.collect_errors_into(&mut errors)
 				} else {
 					found_type
 				}
@@ -1614,7 +1629,7 @@ pub fn transform_type(
 		}
 		CustomType::Constant(data) => CompType::Constant(data.clone()),
 	};
-	WithErrors { data: ty, errors }
+	WithErrors::new(ty, errors)
 }
 
 impl Function {
@@ -1972,7 +1987,7 @@ pub fn resolve_type(
 		OneOp(_, val) => (val.result_type.clone(), errs),
 		Read(var) => (var.get_type(), errs),
 		Call(var, generics, args) => {
-			let result_type = if let CompType::Callible(arg_types, ret) = var.get_type() {
+			let result_type = if let CompType::Callible(arg_types, return_type) = var.get_type() {
 				if arg_types.len() != args.len() {
 					errs.push(CompError::WrongArgumentsCount(
 						var.get_name(),
@@ -1982,8 +1997,9 @@ pub fn resolve_type(
 					))
 				}
 				for (x, y) in arg_types.iter().zip(args) {
-					let (x, mut errors) = x.substitute_generics(generics, located.clone());
-					errs.append(&mut errors);
+					let x = x
+						.substitute_generics(generics, located.clone())
+						.collect_errors_into(&mut errs);
 					if !x.super_type_of(&y.result_type) {
 						errs.push(CompError::InvalidAssignment(
 							y.result_type.clone(),
@@ -1992,9 +2008,10 @@ pub fn resolve_type(
 						))
 					}
 				}
-				let (ret, mut errors) = ret.substitute_generics(generics, located.clone());
-				errs.append(&mut errors);
-				ret
+				// We've checked the arguments, the resulting type must be the return type of the function
+				return_type
+					.substitute_generics(generics, located.clone())
+					.collect_errors_into(&mut errs)
 			} else {
 				errs.push(CompError::NonfunctionCall(
 					var.get_name(),
