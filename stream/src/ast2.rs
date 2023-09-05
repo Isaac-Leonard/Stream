@@ -144,7 +144,7 @@ impl CompType {
 	/// TODO: Work out a way to determine if too many generics were provided
 	pub fn substitute_generics(
 		&self,
-		generics: &Vec<CompType>,
+		generics: &[CompType],
 		location: Range<usize>,
 	) -> WithErrors<CompType> {
 		use CompType::*;
@@ -1116,6 +1116,21 @@ impl FunctionAst {
 		)
 	}
 
+	pub fn with_generics(&self, generics: &[CompType]) -> Self {
+		let body = if let Some(ref body) = self.body {
+			body
+		} else {
+			return self.clone();
+		};
+		let prog = Program {
+			scope: body.scope.create_child(Vec::new()),
+			body: body.body.replace_generics(generics),
+		};
+		FunctionAst {
+			body: Some(Box::new(prog)),
+			..self.clone()
+		}
+	}
 	pub fn get_all_written_variables(&self) -> Vec<CompVariable> {
 		let mut vars = self.arguments.clone();
 		if let Some(body) = &self.body {
@@ -2098,5 +2113,90 @@ impl RawData {
 			),
 		};
 		WithErrors { data, errors }
+	}
+}
+
+impl CompExpression {
+	pub fn replace_generics(&self, generics: &[CompType]) -> Self {
+		use CompExpression::*;
+		let generics_err_msg =
+			"Generics error when calling generic function with generics from current function";
+		match &self {
+			Array(expressions) => Array(
+				expressions
+					.iter()
+					.map(|x| x.replace_generics(generics))
+					.collect(),
+			),
+			DotAccess(exp, property) => DotAccess(exp.replace_generics(generics), property.clone()),
+			// TODO: Work out how to keep track of generics through nested functions
+			// Currently it will take on multiple sets of generics but not distinguish between which set when accessing them by position
+			Value(x) => Value(x.clone()),
+			Typeof(exp) => Typeof(exp.replace_generics(generics)),
+			Struct(fields) => Struct(
+				fields
+					.iter()
+					.map(|(prop, (loc, exp))| {
+						(prop.clone(), (loc.clone(), exp.replace_generics(generics)))
+					})
+					.collect(),
+			),
+			BinOp(op, left, right) => BinOp(
+				op.clone(),
+				left.replace_generics(generics),
+				right.replace_generics(generics),
+			),
+			// TODO: make generics work properly here
+			Read(var) => Read(var.clone()),
+			OneOp(op, exp) => OneOp(op.clone(), exp.replace_generics(generics)),
+			Call(var, passed_generics, args) => Call(
+				var.clone(),
+				map_vec!(passed_generics, |x| {
+					x.substitute_generics(generics, 0..0)
+						.expect(generics_err_msg)
+				}),
+				args.iter().map(|x| x.replace_generics(generics)).collect(),
+			),
+			Assign(mem, exp) => Assign(mem.clone(), exp.replace_generics(generics)),
+			IfElse(crate::ast2::IfElse {
+				cond,
+				then,
+				otherwise,
+			}) => IfElse(crate::ast2::IfElse {
+				cond: cond.replace_generics(generics),
+				then: then.replace_generics(generics),
+				otherwise: otherwise.replace_generics(generics),
+			}),
+			WhileLoop { cond, body } => WhileLoop {
+				cond: cond.replace_generics(generics),
+				body: body.replace_generics(generics),
+			},
+			Index(arr, i) => Index(arr.replace_generics(generics), i.replace_generics(generics)),
+			List(expressions) => List(
+				expressions
+					.iter()
+					.map(|x| x.replace_generics(generics))
+					.collect(),
+			),
+			Conversion(exp, ty) => Conversion(
+				exp.replace_generics(generics),
+				ty.substitute_generics(generics, 0..0)
+					.expect("Error in conversion"),
+			),
+		}
+	}
+}
+impl ExpEnvironment {
+	pub fn replace_generics(&self, generics: &[CompType]) -> Self {
+		let exp = self.expression.replace_generics(generics);
+		let ty = self
+			.result_type
+			.substitute_generics(generics, self.located.clone())
+			.expect("Errors found when substituting generics in expressions");
+		Self {
+			expression: Box::new(exp),
+			result_type: ty,
+			located: self.located.clone(),
+		}
 	}
 }

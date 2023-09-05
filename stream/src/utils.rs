@@ -12,4 +12,15 @@ impl<T: Sized> WithErrors<T> {
 		errors.append(&mut self.errors);
 		self.data
 	}
+
+	/// # Panics with the given message if called when there are errors
+	pub fn expect(self, message: &str) -> T {
+		if !self.errors.is_empty() {
+			for error in self.errors {
+				eprintln!("{}", error.get_msg_without_lines())
+			}
+			panic!("{}", message)
+		}
+		self.data
+	}
 }
